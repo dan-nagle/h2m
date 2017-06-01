@@ -1,0 +1,81 @@
+# If at all possible, paths to the LLVMConfig.cmake and ClangConfig.cmake
+# files should be specified. If this is not possible, or they cannot be
+# found, there is the option to specify three directories for clang and
+# llvm. 
+# IMPORTANT NOTE: PATH EXPANSION (~ expansion) DOES NOT OCCUR. USE FULLY
+# QUALIFIED PATHS (ie /Users/manderso/clang-llvm/llvm/tools/clang/include)
+# For Clang:
+# speficy -DCLANG_INCLUDE_DIRS on the command line to be the directory containing
+# ./clang/Frontend/FrontendAction.h (usually llvm/tools/clang/include)
+# specify -DCLANG_BUILD_PATH on the command line to be the directory containing
+# ./clang/AST/DeclNodes.inc (usually /build/tools/clang/include
+# specify -DCLANG_LIB_PATH on the command line to be the directory containing
+# all .a/.so files for clang. This should be in /build/lib
+
+cmake_minimum_required(VERSION 3.2)
+project(h2m)
+
+# Find the package for LLVM or else obtain paths to includes and library files
+find_package(LLVM CONFIG QUIET)
+if(LLVM_FOUND) # We found the config and can use its definitions
+  message(STATUS "Found LLVM as ${LLVM_PACKAGE_VERSION}")
+  message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+
+  add_definitions(${LLVM_DEFINITIONS})
+  include_directories(${LLVM_INCLUDE_DIRS})
+  llvm_map_components_to_libnames(llvm_libs all)
+elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all must be done by hand
+  message(STATUS "Found LLVM directory information")
+  message(STATUS "Using LLVM libs in ${LLVM_LIB_PATH}")
+  message(STATUS "USING LLVM includes in ${LLVM_INCLUDE_PATH}")
+
+  add_definitions(-DLLVM_BUILD_GLOBAL_ISEL -D_DEBUG -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS)
+  include_directories(${LLVM_INCLUDE_PATH})
+else()
+  message(STATUS "Failed fo find LLVMConfig.cmake")
+  message(STATUS "Valid LLVM_LIB_PATH and LLVM_INCLUDE_PATH not found")
+  message(STATUS "Specify path to LLVMConfig.cmake as -DLLVM_DIR=")
+  message(STATUS "Otherwise specify -DLLVM_LIB_PATH and -DLLVM_INCLUDE_PATH")
+  message(FATAL_ERROR "LLVM not found and valid paths not specified")
+endif()
+
+# Find the package for clang or else obtain paths to includes and library files
+find_package(Clang CONFIG QUIET)
+if(Clang_FOUND) # We found the config and can use its definitions
+  message(STATUS "Found Clang")
+  message(STATUS "Proceeding from ClangConfig.cmake")
+
+  include_directories(${CLANG_INCLUDE_DIRS})
+  set(clang_libs clangTooling clangBasic clangASTMatchers clangFrontend)
+elseif((EXISTS ${CLANG_LIB_PATH}) AND (EXISTS ${CLANG_INCLUDE_PATH}) AND (EXISTS ${CLANG_BUILD_PATH})) # Woe, all by hand
+  message(STATUS "Found Clang directory information")
+  message(STATUS "Using clang libs in ${CLANG_LIB_PATH}")
+  message(STATUS "Using clang includes in ${CLANG_INCLUDE_PATH}")
+  message(STATUS "Using clang build library in ${CLANG_BUILD_PATH}")
+
+  # Include files from the two paths as needed
+  # Afterwards, seek out the libraries from the given path, searching for a variety of names
+  include_directories(${CLANG_INCLUDE_PATH} ${CLANG_BUILD_PATH})
+  # Search through the list and find all the libraries to link to; set them as clang_libs
+  link_directories("${CLANG_LIB_DIR}")
+  set(clang_libs clangTooling clangFrontendTool clangFrontend clangDriver clangSerialization clangCodeGen
+    clangParse clangSema clangStaticAnalyzerFrontend clangStaticAnalyzerChekers clangStaticAnalyzerCore
+    clangAnalysis clangARCMigrate clangRewrite clangRewriteFrontend clangEdit clangAST clangLex clangBasic
+    clangASTMatchers)
+else() # This could be because paths were not given or are invalid
+  message(STATUS "Failed to find ClangConfig.cmake")
+  message(STATUS "Valid CLANG_LIB_PATH, CLANG_BUILD_PATH and CLANG_INCLUDE_PATH not found")
+  message(STATUS "Specify path to ClangConfig.cmake as -DClang_DIR=")
+  message(STATUS "Otherwise specify -DCLANG_LIB_PATH, -DCLANG_BUILD_PATH and -DCLANG_INCLUDE_PATH")
+  message(FATAL_ERROR "Clang not found and valid paths not specified")
+endif()
+
+# All clang projects MUST be compiled with hidden visibility and no rtti
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden")
+
+# get_property(included DIRECTORY PROPERTY INCLUDE_DIRECTORIES) # Debugging message
+# message(STATUS ${included})
+
+add_executable(h2m h2m.cpp)
+
+target_link_libraries(h2m ${clang_libs} ${llvm_libs}) 
