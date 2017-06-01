@@ -11,9 +11,11 @@
 # ./clang/AST/DeclNodes.inc (usually /build/tools/clang/include
 # specify -DCLANG_LIB_PATH on the command line to be the directory containing
 # all .a/.so files for clang. This should be in /build/lib
-
+#make . -DCLANG_LIB_PATH=/Users/manderso/make_vs_ninja/clang-llvm/build/lib -DCLANG_INCLUDE_PATH=/Users/manderso/make_vs_ninja/clang-llvm/build/tools/clang/include/ -DCLANG_BUILD_PATH=/Users/manderso/make_vs_ninja/clang-llvm/llvm/tools/clang/include
+#-DClang_DIR=/Users/manderso/make_vs_ninja/clang-llvm/build/lib/cmake/clang
 cmake_minimum_required(VERSION 3.2)
 project(h2m)
+
 
 # Find the package for LLVM or else obtain paths to includes and library files
 find_package(LLVM CONFIG QUIET)
@@ -57,11 +59,11 @@ elseif((EXISTS ${CLANG_LIB_PATH}) AND (EXISTS ${CLANG_INCLUDE_PATH}) AND (EXISTS
   # Afterwards, seek out the libraries from the given path, searching for a variety of names
   include_directories(${CLANG_INCLUDE_PATH} ${CLANG_BUILD_PATH})
   # Search through the list and find all the libraries to link to; set them as clang_libs
-  link_directories("${CLANG_LIB_DIR}")
-  set(clang_libs clangTooling clangFrontendTool clangFrontend clangDriver clangSerialization clangCodeGen
+  set(link_clang_libs clangTooling clangFrontendTool clangFrontend clangDriver clangSerialization clangCodeGen
     clangParse clangSema clangStaticAnalyzerFrontend clangStaticAnalyzerChekers clangStaticAnalyzerCore
     clangAnalysis clangARCMigrate clangRewrite clangRewriteFrontend clangEdit clangAST clangLex clangBasic
     clangASTMatchers)
+
 else() # This could be because paths were not given or are invalid
   message(STATUS "Failed to find ClangConfig.cmake")
   message(STATUS "Valid CLANG_LIB_PATH, CLANG_BUILD_PATH and CLANG_INCLUDE_PATH not found")
@@ -77,5 +79,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fno-rtti -fvisibility=hidden
 # message(STATUS ${included})
 
 add_executable(h2m h2m.cpp)
+
+foreach(lib ${link_clang_libs})
+  target_link_libraries(h2m "${CLANG_LIB_DIR}/lib${lib}.a")
+  message(STATUS "${lib} included")
+endforeach()
 
 target_link_libraries(h2m ${clang_libs} ${llvm_libs}) 
