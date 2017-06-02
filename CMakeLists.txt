@@ -1,7 +1,7 @@
 # If at all possible, paths to the LLVMConfig.cmake and ClangConfig.cmake
 # files should be specified. If this is not possible, or they cannot be
 # found, there is the option to specify three directories for clang and
-# llvm. 
+# llvm.
 # IMPORTANT NOTE: PATH EXPANSION (~ expansion) DOES NOT OCCUR. USE FULLY
 # QUALIFIED PATHS (ie /Users/manderso/clang-llvm/llvm/tools/clang/include)
 # For Clang:
@@ -60,7 +60,7 @@ elseif((EXISTS ${CLANG_LIB_PATH}) AND (EXISTS ${CLANG_INCLUDE_PATH}) AND (EXISTS
   include_directories(${CLANG_INCLUDE_PATH} ${CLANG_BUILD_PATH})
   # Search through the list and find all the libraries to link to; set them as clang_libs
   set(link_clang_libs clangTooling clangFrontendTool clangFrontend clangDriver clangSerialization clangCodeGen
-    clangParse clangSema clangStaticAnalyzerFrontend clangStaticAnalyzerChekers clangStaticAnalyzerCore
+    clangParse clangSema clangStaticAnalyzerFrontend clangStaticAnalyzerCheckers clangStaticAnalyzerCore
     clangAnalysis clangARCMigrate clangRewrite clangRewriteFrontend clangEdit clangAST clangLex clangBasic
     clangASTMatchers)
 
@@ -80,9 +80,20 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fno-rtti -fvisibility=hidden
 
 add_executable(h2m h2m.cpp)
 
+# Find and map all the given libraries and link them to the executable
 foreach(lib ${link_clang_libs})
-  target_link_libraries(h2m "${CLANG_LIB_DIR}/lib${lib}.a")
-  message(STATUS "${lib} included")
+  # Find library has special caching so this has to be done with double variables
+  find_library(found_${lib} NAMES lib${lib}.a lib${lib}.so ${lib}.a ${lib}.so
+               HINTS "${CLANG_LIB_PATH}")
+  # Determine whether or not find_library was successful
+  if((EXISTS ${found_${lib}}))
+    message(STATUS "Including clang library ${found_${lib}}")
+  else()
+    message(WARNING "Unable to locate clang library, ${lib}")
+  endif()
+  add_library(${lib} UNKNOWN IMPORTED)
+  set_property(TARGET ${lib} PROPERTY IMPORTED_LOCATION ${found_${lib}})
+  target_link_libraries(h2m "${lib}")
 endforeach()
 
-target_link_libraries(h2m ${clang_libs} ${llvm_libs}) 
+target_link_libraries(h2m ${clang_libs} ${llvm_libs})
