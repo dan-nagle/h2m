@@ -20,28 +20,29 @@ then
 fi
 
 # If there is a requested download, commence!
-if [ "$download" ]
+if [ "$1" == "-download" ]
 then
-  install_dir="clang-llvm"
+  install_dir=./clang-llvm
   start_dir="$PWD"
 
   # Obtain source code from git
-  mkdir "$install_dir" && error_report "Can't create $install_dir"
-  cd "$install_dir" && error_report "Can't change to $install_dir"
-  git clone http://llvm.org/git/llvm.git && error_report "Can't clone http://llvm.org/git/llvm.git"
-  cd llvm/tools && error_report "Can't change to llvm/tools"
-  git clone http://llvm.org/git/clang.git && error_report "Can't clone http://llvm.org/git/clang.git"
-  cd "$start_dir" && error_report "Can't change to $start_dir"
+  #TODO: check for existing directory
+  mkdir "$install_dir" || error_report "Can't create $install_dir"
+  cd "$install_dir" || error_report "Can't change to $install_dir"
+  git clone http://llvm.org/git/llvm.git || error_report "Can't clone http://llvm.org/git/llvm.git"
+  cd llvm/tools || error_report "Can't change to llvm/tools"
+  git clone http://llvm.org/git/clang.git || error_report "Can't clone http://llvm.org/git/clang.git"
+  cd "$start_dir" || error_report "Can't change to $start_dir"
 
   # Install clang and llvm
-  mkdir "$install_dir"/clang-llvm/build && error_report "Can't create "$install_dir/clang-llvm/build"
-  cd "$intall_dir"/clang-llvm/build && error_report "Can't change to build directory"
-  cmake -G "Unix Makefiles" ../llvm && error_report "CMakeError"
-  make && error_report "Make error"
+  mkdir "$install_dir"/clang-llvm/build || error_report "Can't create $install_dir/clang-llvm/build"
+  cd "$intall_dir"/clang-llvm/build || error_report "Can't change to build directory"
+  cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError"
+  make || error_report "Make error"
 
   # Make h2m
-  cd "$start_dir" && error_report "Can't change to $start_dir"
-  cmake . -DClangDIR="$install_dir"/build/lib/cmake/clang -DLLVMDIR="$intall_dir"/build/lib/cmake/llvm 
+  cd "$start_dir" || error_report "Can't change to $start_dir"
+  cmake . -DClangDIR="$install_dir"/build/lib/cmake/clang -DLLVMDIR="$intall_dir"/build/lib/cmake/llvm || exit
   make
-    
+
 fi 
