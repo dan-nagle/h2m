@@ -18,7 +18,7 @@ project(h2m)
 
 
 # Find the package for LLVM or else obtain paths to includes and library files
-find_package(LLVM CONFIG QUIET)
+# find_package(LLVM CONFIG QUIET)
 if(LLVM_FOUND) # We found the config and can use its definitions
   message(STATUS "Found LLVM as ${LLVM_PACKAGE_VERSION}")
   message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
@@ -33,6 +33,31 @@ elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all m
 
   add_definitions(-DLLVM_BUILD_GLOBAL_ISEL -D_DEBUG -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS)
   include_directories(${LLVM_INCLUDE_PATH})
+  set(LLVM_include_libs LLVMLTO LLVMPasses LLVMObjCARCOpts LLVMMIRParser LLVMSymbolize LLVMDebugInfoPDB
+     LLVMDebugInfoDWARF LLVMCoverage LLVMTableGen LLVMOrcJIT LLVMXCoreDisassembler LLVMXCoreCodeGen 
+     LLVMXCoreDesc LLVMXCoreInfo LLVMXCoreAsmPrinter LLVMSystemZDisassembler LLVMSystemZCodeGen 
+     LLVMSystemZAsmParser LLVMSystemZDesc LLVMSystemZInfo LLVMSystemZAsmPrinter LLVMSparcDisassembler 
+     LLVMSparcCodeGen LLVMSparcAsmParser LLVMSparcDesc LLVMSparcInfo LLVMSparcAsmPrinter LLVMRISCVDesc 
+     LLVMRISCVCodeGen LLVMRISCVInfo LLVMPowerPCDisassembler LLVMPowerPCCodeGen LLVMPowerPCAsmParser 
+     LLVMPowerPCDesc LLVMPowerPCInfo LLVMPowerPCAsmPrinter LLVMNVPTXCodeGen LLVMNVPTXDesc LLVMNVPTXInfo 
+     LLVMNVPTXAsmPrinter LLVMMSP430CodeGen LLVMMSP430Desc LLVMMSP430Info LLVMMSP430AsmPrinter 
+     LLVMMipsDisassembler LLVMMipsCodeGen LLVMMipsAsmParser LLVMMipsDesc LLVMMipsInfo LLVMMipsAsmPrinter 
+     LLVMLanaiDisassembler LLVMLanaiCodeGen LLVMLanaiAsmParser LLVMLanaiDesc LLVMLanaiAsmPrinter 
+     LLVMLanaiInfo LLVMHexagonDisassembler LLVMHexagonCodeGen LLVMHexagonAsmParser LLVMHexagonDesc 
+     LLVMHexagonInfo LLVMBPFDisassembler LLVMBPFCodeGen LLVMBPFDesc LLVMBPFInfo LLVMBPFAsmPrinter 
+     LLVMARMDisassembler LLVMARMCodeGen LLVMARMAsmParser LLVMARMDesc LLVMARMInfo LLVMARMAsmPrinter 
+     LLVMAMDGPUDisassembler LLVMAMDGPUCodeGen LLVMAMDGPUAsmParser LLVMAMDGPUDesc LLVMAMDGPUInfo 
+     LLVMAMDGPUAsmPrinter LLVMAMDGPUUtils LLVMAArch64Disassembler LLVMAArch64CodeGen LLVMAArch64AsmParser 
+     LLVMAArch64Desc LLVMAArch64Info LLVMAArch64AsmPrinter LLVMAArch64Utils LLVMObjectYAML LLVMLibDriver 
+     LLVMOption LLVMX86Disassembler LLVMX86AsmParser LLVMX86CodeGen LLVMGlobalISel LLVMSelectionDAG 
+     LLVMAsmPrinter LLVMDebugInfoCodeView LLVMDebugInfoMSF LLVMX86Desc LLVMMCDisassembler LLVMX86Info 
+     LLVMX86AsmPrinter LLVMX86Utils LLVMMCJIT LLVMLineEditor LLVMInterpreter LLVMExecutionEngine 
+     LLVMRuntimeDyld LLVMCodeGen LLVMTarget LLVMCoroutines LLVMipo LLVMInstrumentation libLLVMVectorize 
+     LLVMScalarOpts LLVMLinker LLVMIRReader LLVMAsmParser LLVMInstCombine LLVMTransformUtils LLVMBitWriter 
+     LLVMAnalysis LLVMObject LLVMMCParser LLVMMC LLVMBitReader LLVMProfileData LLVMCore LLVMSupport 
+     LLVMDemangle)
+     # Manually link in required system libraries
+     SET(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lcurses -lz -lm")
 else()
   message(STATUS "Failed fo find LLVMConfig.cmake")
   message(STATUS "Valid LLVM_LIB_PATH and LLVM_INCLUDE_PATH not found")
@@ -80,20 +105,40 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fno-rtti -fvisibility=hidden
 
 add_executable(h2m h2m.cpp)
 
-# Find and map all the given libraries and link them to the executable
+# Find and map all the given clang libraries and link them to the executable
+# Only invoked if the cmake.config file wasn't found
 foreach(lib ${link_clang_libs})
   # Find library has special caching so this has to be done with double variables
-  find_library(found_${lib} NAMES lib${lib}.a lib${lib}.so ${lib}.a ${lib}.so
+  find_library(found_${lib} NAMES lib${lib}.a ${lib}.a lib${lib}.so ${lib}.so
                HINTS "${CLANG_LIB_PATH}")
   # Determine whether or not find_library was successful
   if((EXISTS ${found_${lib}}))
     message(STATUS "Including clang library ${found_${lib}}")
+    add_library(${lib} UNKNOWN IMPORTED)
+    set_property(TARGET ${lib} PROPERTY IMPORTED_LOCATION ${found_${lib}})
+    target_link_libraries(h2m "${lib}")
   else()
     message(WARNING "Unable to locate clang library, ${lib}")
+    message(STATUS "Searched ${CLANG_LIB_PATH}/lib${lib}.a")
   endif()
-  add_library(${lib} UNKNOWN IMPORTED)
-  set_property(TARGET ${lib} PROPERTY IMPORTED_LOCATION ${found_${lib}})
-  target_link_libraries(h2m "${lib}")
+endforeach()
+
+# Find and map all the given LLVM libraries and link them to the executable
+# Only invoked if the cmake.config file wasn't found
+foreach(llvm_lib ${LLVM_include_libs})
+  # Find library has special chacing so this has to be done with double variables
+  find_library(found_${llvm_lib} NAMES lib${llvm_lib}.a ${llvm_lib}.a  lib${llvm_lib}.so ${llvm_lib}.so
+               HINTS "${LLVM_LIB_PATH}")
+  # Detemine the find success 
+  if((EXISTS "${found_${llvm_lib}}"))
+    message(STATUS "Including llvm library ${found_${llvm_lib}}")
+    add_library(${llvm_lib} UNKNOWN IMPORTED)
+    set_property(TARGET ${llvm_lib} PROPERTY IMPORTED_LOCATION ${found_${llvm_lib}})
+    target_link_libraries(h2m "${llvm_lib}")
+  else()
+    message(WARNING "Unable to locate llvm library, ${llvm_lib}")
+    message(STATUS "Searched ${LLVM_LIB_PATH}/lib${llvm_lib}.a")
+  endif()
 endforeach()
 
 target_link_libraries(h2m ${clang_libs} ${llvm_libs})
