@@ -110,7 +110,7 @@ add_executable(h2m h2m.cpp)
 foreach(lib ${link_clang_libs})
   # Find library has special caching so this has to be done with double variables
   find_library(found_${lib} NAMES lib${lib}.a ${lib}.a lib${lib}.so ${lib}.so
-               HINTS "${CLANG_LIB_PATH}")
+    HINTS "${CLANG_LIB_PATH}")
   # Determine whether or not find_library was successful
   if((EXISTS ${found_${lib}}))
     message(STATUS "Including clang library ${found_${lib}}")
@@ -128,7 +128,7 @@ endforeach()
 foreach(llvm_lib ${LLVM_include_libs})
   # Find library has special chacing so this has to be done with double variables
   find_library(found_${llvm_lib} NAMES lib${llvm_lib}.a ${llvm_lib}.a  lib${llvm_lib}.so ${llvm_lib}.so
-               HINTS "${LLVM_LIB_PATH}")
+    HINTS "${LLVM_LIB_PATH}")
   # Detemine the find success 
   if((EXISTS "${found_${llvm_lib}}"))
     message(STATUS "Including llvm library ${found_${llvm_lib}}")
