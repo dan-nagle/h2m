@@ -22,7 +22,7 @@ print_help ()
   echo "-CLANG_BUILD_PATH gives the path to an existing Clang build directory"
   echo "-CLANG_INCLUDE_PATH gives the path to existing Clang header files"
   echo "-tools requests the download of additional clang tools."
-  echo "-install requests attempted installation of the software"
+  echo "-install requests attempted installation of the software llvm and clang"
   echo "See README.txt for additional details."
   exit 0
 }
@@ -58,7 +58,7 @@ do
     -CLANG_INCLUDE_PATH) CLANG_INCLUDE_PATH="$2"; shift;;  # Path to existing Clang include files
     -tools) tools=yes;;  # Download optional clang tools
     -install) install=yes;;
-    *) error_report "Invalid option. Invoke ./h2mbuild.sh -help for option information"
+    *) echo "Invalid option, $1." && print_help;;
   esac
   shift
 done
@@ -130,8 +130,8 @@ then
 
   # Build clang and llvm
   echo "Building clang and llvm"
-  mkdir "$install_dir"/clang-llvm/build || error_report "Can't create $install_dir/clang-llvm/build"
-  cd "$intall_dir"/clang-llvm/build || error_report "Can't change to build directory"
+  mkdir "$install_dir"/build || error_report "Can't create $install_dir/clang-llvm/build"
+  cd "$intall_dir"/llvm/build || error_report "Can't change to build directory"
   cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError"
   make || error_report "Make error"
   if [ "$install" == "yes" ]  # Attempted installation requested
@@ -221,7 +221,7 @@ if [ "$CLANG_DIR" ]  # Include Clang location specs in the command
 then
   echo "Configuring cmake Clang information:"
   echo "CLANG_DIR=$CLANG_DIR"
-  cmake_command="$cmake_command -DCLANG_DIR=$CLANG_DIR"
+  cmake_command="$cmake_command -DClang_DIR=$CLANG_DIR"
 fi
 
 if [ "$LLVM_LIB_PATH" ] && [ "$LLVM_INCLUDE_PATH" ]  # Check for all manual LLVM specs
@@ -252,13 +252,8 @@ fi
 # Attempt to execute the cmake commands to create h2m
 echo "cmake command is $cmake_command"  # Debugging line
 
-cmake . "$cmake_command" || exit 1 # Disabled for debugging
-
-if [ "$install" == "yes" ]  # Attempt to install h2m
-then
-  echo "Attempting to install h2m"
-  make install || error_report "Unable to install h2m"
-fi
+# The echo use is necessary to keep cmake from interpretting everything as the source directory
+cmake . `echo "$cmake_command" ` || exit 1 
 
 exit 0
 

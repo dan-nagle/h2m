@@ -18,7 +18,7 @@ project(h2m)
 
 
 # Find the package for LLVM or else obtain paths to includes and library files
-# find_package(LLVM CONFIG QUIET)
+find_package(LLVM CONFIG QUIET)
 if(LLVM_FOUND) # We found the config and can use its definitions
   message(STATUS "Found LLVM as ${LLVM_PACKAGE_VERSION}")
   message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
