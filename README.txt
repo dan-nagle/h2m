@@ -78,37 +78,42 @@ interactively. Other options will be ignored.
 
 -install_dir [path]	Option to specify the directory where 
 Clang and LLVM will be downloaded and built if -download is specified.	
+This option will be ignored if -download was not specified.
 
 -LLVM_DIR [path]	Option to specify the absolute path to the 
 location of the LLVMConfig.cmake file if LLVM is already installed 
 (ie if LLVMConfig.cmake is installed in /Users/lib/cmake/LLVM, specify
 -LLVM_DIR /Users/lib/cmake/LLVM). If this option is found, manual path
 specifications will be ignored (ie LLVM_LIB_PATH will be ignored).
+This option will be ignored if -download is specified.
 
 -CLANG_DIR [path]	Option to specify the absolute path to the
 location of the ClangConfig.cmake file if Clang is already installed
 (ie if ClangConfig.cmake is installed in /Users/lib/cmake/Clang, specify
 -CLANG_DIR /Users/lib/cmake/Clang). If this option is found, manual
 path specifications will be ignored (ie CLANG_LIB_PATH will be ignored.)
+This option will be ignored if -download is specified.
 
 -LLVM_LIB_PATH [path]		Option to specify the absolute path to the 
 location of LLVM library files (either .a or .so files). The directory
 specified should contain libLLVMArch64AsmParser to libLLVMipo. This
 only needs to be provided if LLVMConfig.cmake cannot be found. If
 this option is specified, -LLVM_INCLUDE_PATH must also be provided.
+This option will be ignored if -download is specified.
 
 -LLVM_INCLUDE_PATH [path]	Option to specify the absolute path to
 the location of LLVM include files (.h files). The directory specified
 should contain subdirectories ADT, Analysis, AsmParser... Transforms, XRay.
 This option only needs to be provided if LLVMConfig.cmake cannot be
 found. If this options is specified, -LLVM_LIB_PATH must also be provided.
+This option will be ignored if -download is specified.
 
 -CLANG_LIB_PATH	[path]		Option to specify the absolute path to 
 the Clang libraries. The directory specified should contain libclang... 
 libclangToolingRefactor. These may be .a or .so files. This option only 
 needs to be specified if ClangConfig.cmake cannot be found. If this 
 option is specified, -CLANG_BUILD_PATH and -CLANG_INCLUDE_PATH must 
-also be provided.
+also be provided. This option will be ignored if -download is specified.
 
 -CLANG_BUILD_PATH [path]	Option to specify the absolute path to
 the Clang build directory which has some necessary include files in it.
@@ -116,22 +121,49 @@ This directory needs to contain ./clang/AST/DeclNodes.inc. This is
 probably .../build/tools/clang/include on standard builds. This option
 only needs to be specified if ClangConfig.cmake cannot be found. If
 this option is specified, -CLANG_LIB_PATH and CLANG_INCLUDE_PATH
-must also be specified.
+must also be specified. This option will be ignored if -download
+is specified.
 
 -CLANG_INCLUDE_PATH [path]	Option to specify the absolute path to
 the Clang include directory. This directory needs to contain ./clang/AST...
 ./clang/StaticAnalyzer, usually llvm/tools/clang/include on standard
 builds. This option only needs to be specified if ClangConfig.cmake
 cannot be found. If this option is specified, -Clang_LIB_PATH and
--CLANG_INCLUDE_PATH must also be specified.
+-CLANG_INCLUDE_PATH must also be specified. This option will be
+ignored if -download is specified.
 
 -tools		Option to request the download and build of additional 
-Clang tools along with Clang and LLVM.
+Clang tools along with Clang and LLVM. Note this is only supported with
+git downloads and will be ignored if curl is specified. This option 
+will be ignored if -download is not specified.
 
 -install	Requests attempted installation of the software LLVM
 and Clang. This will be standard, default installation. If specialized
 installation locations are necessary, run make install seperately after 
-the build is complete.
+the build is complete. This option will be ignored if -download is 
+not specified.
+
+-curl		Requests a download using curl rather than git. Note
+that the download of extra Clang tools is not supported with Curl.
+This option will be ignored if -download is not specified.
+
+-LLVM_URL [url]		Option to specify an alternative path to the
+download location for LLVM. For git downloads the default URL is
+https://llvm.org/git/llvm.git. For Curl downloads the default URL
+is https://github.com/llvm-mirror/llvm/archive/master.zip.
+This option will be ignored if -download is not specified.
+
+-CLANG_URL [url]	Option to specify an alternative path to
+the download location for Clang. For git downloads the default URL
+is https://llvm.org/git/clang.git. For Curl downloads, the default
+URL is https://github.com/llvm-mirror/clang/archive/master.zip.
+This optoin will be ignored if -download is not specified.
+
+-TOOLS_URL [url]	Option to specify an alternative path to
+the download location for the extra clang tools. Note that tools
+download is only supported using git. The default URL is
+https://llvm.org/git/clang-tools-extra.git. This option will
+be ignored if -download is not specified.
 
 3)   USAGE OF H2M
 
