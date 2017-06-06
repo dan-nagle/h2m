@@ -12,7 +12,7 @@ Contents:
   4) Known Issues
 
 0)   Quick Start
-Always run ./h2mbuild.sh. Do not run it from a different working 
+Always run ./h2mbuild.sh. Do not run the script from a different working 
 directory. 
 
 To build h2m if you do not have Clang or LLVM installed, run:
@@ -52,6 +52,7 @@ LLVM license for additional details.
 
 2)   BUILD AND INSTALLATION
 
+General Information:
 LLVM and Clang are absolutely required to run h2m. The h2mbuild.sh
 script can handle the installation of this software if necessary.
 If LLVM and Clang are already installed, CMake will need information
@@ -61,8 +62,76 @@ paths to the directories containing the LLVMConfig.cmake and
 ClangConfig.cmake files which will provide all the needed variables
 to complete a build. If these files do not exist, manual paths to
 library and header files can be specified.
+Because the h2mbuild.sh script must change directories, always run
+it as ./h2mbuild.sh. It will not work correctly if run from a 
+different working directory (although it will not cause any damage,
+it will not complete the installation process).
 
-Usage of the h2mbuild.sh script
+Usage of the h2mbuild.sh script:
+Usage: ./h2mbuild.sh [options]
+Options:
+
+-i	Invokes an interactive build. All variables will be specified
+interactively. Other options will be ignored.
+
+-download	Requests that LLVM and Clang be downloaded and built.
+
+-install_dir [path]	Option to specify the directory where 
+Clang and LLVM will be downloaded and built if -download is specified.	
+
+-LLVM_DIR [path]	Option to specify the absolute path to the 
+location of the LLVMConfig.cmake file if LLVM is already installed 
+(ie if LLVMConfig.cmake is installed in /Users/lib/cmake/LLVM, specify
+-LLVM_DIR /Users/lib/cmake/LLVM). If this option is found, manual path
+specifications will be ignored (ie LLVM_LIB_PATH will be ignored).
+
+-CLANG_DIR [path]	Option to specify the absolute path to the
+location of the ClangConfig.cmake file if Clang is already installed
+(ie if ClangConfig.cmake is installed in /Users/lib/cmake/Clang, specify
+-CLANG_DIR /Users/lib/cmake/Clang). If this option is found, manual
+path specifications will be ignored (ie CLANG_LIB_PATH will be ignored.)
+
+-LLVM_LIB_PATH [path]		Option to specify the absolute path to the 
+location of LLVM library files (either .a or .so files). The directory
+specified should contain libLLVMArch64AsmParser to libLLVMipo. This
+only needs to be provided if LLVMConfig.cmake cannot be found. If
+this option is specified, -LLVM_INCLUDE_PATH must also be provided.
+
+-LLVM_INCLUDE_PATH [path]	Option to specify the absolute path to
+the location of LLVM include files (.h files). The directory specified
+should contain subdirectories ADT, Analysis, AsmParser... Transforms, XRay.
+This option only needs to be provided if LLVMConfig.cmake cannot be
+found. If this options is specified, -LLVM_LIB_PATH must also be provided.
+
+-CLANG_LIB_PATH	[path]		Option to specify the absolute path to 
+the Clang libraries. The directory specified should contain libclang... 
+libclangToolingRefactor. These may be .a or .so files. This option only 
+needs to be specified if ClangConfig.cmake cannot be found. If this 
+option is specified, -CLANG_BUILD_PATH and -CLANG_INCLUDE_PATH must 
+also be provided.
+
+-CLANG_BUILD_PATH [path]	Option to specify the absolute path to
+the Clang build directory which has some necessary include files in it.
+This directory needs to contain ./clang/AST/DeclNodes.inc. This is 
+probably .../build/tools/clang/include on standard builds. This option
+only needs to be specified if ClangConfig.cmake cannot be found. If
+this option is specified, -CLANG_LIB_PATH and CLANG_INCLUDE_PATH
+must also be specified.
+
+-CLANG_INCLUDE_PATH [path]	Option to specify the absolute path to
+the Clang include directory. This directory needs to contain ./clang/AST...
+./clang/StaticAnalyzer, usually llvm/tools/clang/include on standard
+builds. This option only needs to be specified if ClangConfig.cmake
+cannot be found. If this option is specified, -Clang_LIB_PATH and
+-CLANG_INCLUDE_PATH must also be specified.
+
+-tools		Option to request the download and build of additional 
+Clang tools.
+
+-install	Requests attempted installation of the software LLVM
+and Clang. This will be standard, default installation. If specialized
+installation locations are necessary, run make install seperately after 
+the build is complete.
 
 
 
