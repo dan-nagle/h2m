@@ -44,8 +44,8 @@ compiler and will often generate warnings about the C code during
 this phase.
 
 The h2m Autofortran tool was envisioned by Dan Nagle and completed
-at NCAR by Garnet **I DON'T KNOW HER LAST NAME** and revised by
-Michelle Anderson and *** VARIOUS ACKNOWLEDGMENTS ***
+at NCAR by Sisi Liu and revised by Michelle Anderson and 
+*** VARIOUS ACKNOWLEDGMENTS ***
 LLVM and Clang are released under the University of Illinois/NCSA
 Open Source License by the LLVM Team (http://llvm.org). See the 
 LLVM license for additional details. 
@@ -126,20 +126,28 @@ cannot be found. If this option is specified, -Clang_LIB_PATH and
 -CLANG_INCLUDE_PATH must also be specified.
 
 -tools		Option to request the download and build of additional 
-Clang tools.
+Clang tools along with Clang and LLVM.
 
 -install	Requests attempted installation of the software LLVM
 and Clang. This will be standard, default installation. If specialized
 installation locations are necessary, run make install seperately after 
 the build is complete.
 
+3)   USAGE OF H2M
 
+The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
+The output translation will appear on standard output and can be sent to
+a written to a file with standard shell redirection: 
+./h2m [path to header] > [file to write]
 
+4)   KNOWN ISSUES
 
+Warnings are not yet implemented for C features which have no Fortran 
+equivalent. Note that names in Fortran may not begin with an underscore,
+"_" but this is legal in C.
 
-
-
-
+Clang warnings may be generated during translation. This does not mean
+that there is necessarilly something wrong with the code in question.
 
 
 

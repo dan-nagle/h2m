@@ -1,4 +1,6 @@
 #!/bin/sh
+# Installation script for the h2m Autofortran tool.
+# Original Author: Michelle Anderson.
 
 # Reports the error condition and exits
 error_report ()
@@ -27,7 +29,7 @@ print_help ()
   exit 0
 }
 
-# Process command line args via shift
+# Default values of variables which may appear on command line
 download=no  # Default is no installation of clang/llvm
 install_dir="./clang-llvm"  # Default installation directory is ./clang-llvm
 LLVM_DIR=
@@ -42,6 +44,7 @@ install=
 interactive=
 
 
+# Process command line args via shift in a while loop
 while [ $# -gt 0 ]
 do
   case "$1" in
@@ -131,7 +134,7 @@ then
   # Build clang and llvm
   echo "Building clang and llvm"
   mkdir "$install_dir"/build || error_report "Can't create $install_dir/clang-llvm/build"
-  cd "$intall_dir"/llvm/build || error_report "Can't change to build directory"
+  cd "$install_dir"/build || error_report "Can't change to build directory"
   cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError"
   make || error_report "Make error"
   if [ "$install" == "yes" ]  # Attempted installation requested
