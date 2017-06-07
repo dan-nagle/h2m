@@ -78,6 +78,16 @@ do
   shift
 done
 
+echo "$PWD/h2m.cpp"
+if [ ! -f "$PWD/h2m.cpp" ]
+then
+  echo "Please run this script from the directory where h2m.cpp,"
+  echo "h2m.h, CMakeLists.txt, and h2mbuild.sh are located."
+  echo "Run ./h2mbuild.sh -help for help."
+  exit 1
+fi
+
+
 # Get initial download information interactively. The rest can be obtained later
 # when we begin the Cmake configuration
 if [ "$interactive" == "yes" ]
@@ -175,11 +185,11 @@ else   # We are using git. Configure URLs for git
   then
     LLVM_URL="http://llvm.org/git/llvm.git"
   fi
-  if [ ! "CLANG_URL" ]
+  if [ ! "$CLANG_URL" ]
   then
     CLANG_URL="http://llvm.org/git/clang.git"
   fi
-  if [ ! "TOOLS_URL" ]
+  if [ ! "$TOOLS_URL" ]
   then
     TOOLS_URL="http://llvm.org/git/clang-tools-extra.git"
   fi
@@ -201,6 +211,7 @@ then
   # Download LLVm using the requested tool
   if [ "$curl" == "yes" ]
   then
+    echo "Downloading LLVM from $LLVM_URL via curl to $install_dir/llvm.tar"
     # Download from the given URL, following redirections
     curl -L "$LLVM_URL" > llvm.tar || error_report "Unable to curl at LLVM at $LLVM_URL"
     # This will filter out the name of the main folder inside the tar directory
@@ -214,6 +225,7 @@ then
   if [ "$curl" == "yes" ]
   then
     # Download Clang using Curl
+    echo "Downloading Clang from $CLANG_URL via curl to $install_dir/llvm/tools/clang.tar"
     curl -L "$CLANG_URL" > clang.tar || error_report "Unable to curl at clang at $CLANG_URL"
     # This filters out the name of the main folder inside the tar directory
     temp_clang_name=`tar -tzf clang.tar | head -1 | cut -f1 -d "/"` || error_report "Can't find clang.tar subdir name."
@@ -250,7 +262,8 @@ then
   # The most likely problem would be with a change in installation location with a later clang/llvm release
   # so that the cmake config files are no longer in the directories specified here.
   echo "Attempting to build h2m using default cmake configuration file locations"
-  cmake . -DClangDIR="$install_dir"/build/lib/cmake/clang -DLLVMDIR="$intall_dir"/build/lib/cmake/llvm || exit 1
+  echo "Directive: cmake . -DClangDIR="$install_dir"/build/lib/cmake/clang -DLLVMDIR="$install_dir"/build/lib/cmake/llvm || exit 1"
+  cmake . `echo -DClangDIR="$install_dir"/build/lib/cmake/clang -DLLVMDIR="$install_dir"/build/lib/cmake/llvm` || exit 1
   make  || exit 1
   if [ "$install" == "yes" ]  # Attempted installation of software requested
   then

@@ -1299,7 +1299,7 @@ int main(int argc, const char **argv) {
     // The file is opened in text mode and returns an error if it already exists
     llvm::tool_output_file output(filename, error, llvm::sys::fs::F_Text);
     if (error) {  // Error opening file
-      llvm::errs() << "Error opening output file: " << OutputFile << error.message() << "\n";
+      errs() << "Error opening output file: " << OutputFile << error.message() << "\n";
     }
     output_ref = &output;
 
