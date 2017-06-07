@@ -2,6 +2,9 @@
 #include "h2m.h"
 //-----------formatter functions----------------------------------------------------------------------------------------------------
 
+// A filewide pointer to the output stream to use in place of (*output_ref).os()
+static llvm::tool_output_file *output_ref;
+
 // Command line options:
 // Positional parameter: the first input parameter should be the compilation files
 static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),
@@ -941,7 +944,7 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     
     // strangely there might be a "(" follows the macroName for function macros, remove it if there is
     if (macroName.back() == '(') {
-      //outs() << "unwanted parenthesis found, remove it \n";
+      //(*output_ref).os() << "unwanted parenthesis found, remove it \n";
       macroName.erase(macroName.size()-1);
     }
 
@@ -1111,31 +1114,31 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     FunctionDeclFormatter fdf(cast<FunctionDecl> (d), TheRewriter);
     allFunctionDecls += fdf.getFortranFunctDeclASString();
     
-    // llvm::outs() << "INTERFACE\n" 
+    // (*output_ref).os() << "INTERFACE\n" 
     // << fdf.getFortranFunctDeclASString()
     // << "END INTERFACE\n";      
   } else if (isa<TypedefDecl> (d)) {
     TypedefDecl *tdd = cast<TypedefDecl> (d);
     TypedefDeclFormater tdf(tdd, TheRewriter);
-    outs() << tdf.getFortranTypedefDeclASString();
+    (*output_ref).os() << tdf.getFortranTypedefDeclASString();
 
   } else if (isa<RecordDecl> (d)) {
     RecordDecl *rd = cast<RecordDecl> (d);
     RecordDeclFormatter rdf(rd, TheRewriter);
-    outs() << rdf.getFortranStructASString();
+    (*output_ref).os() << rdf.getFortranStructASString();
 
 
   } else if (isa<VarDecl> (d)) {
     VarDecl *varDecl = cast<VarDecl> (d);
     VarDeclFormatter vdf(varDecl, TheRewriter);
-    outs() << vdf.getFortranVarDeclASString();
+    (*output_ref).os() << vdf.getFortranVarDeclASString();
 
   } else if (isa<EnumDecl> (d)) {
     EnumDeclFormatter edf(cast<EnumDecl> (d), TheRewriter);
-    outs() << edf.getFortranEnumASString();
+    (*output_ref).os() << edf.getFortranEnumASString();
   } else {
 
-    llvm::outs() << "!found other type of declaration \n";
+    (*output_ref).os() << "!found other type of declaration \n";
     d->dump();
     RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
   }
@@ -1155,14 +1158,14 @@ bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
   for (std::string line; std::getline(in, line);) {
     stmtText += "! " + line + "\n";
   }
-  llvm::outs() << stmtText;
+  (*output_ref).os() << stmtText;
 
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseStmt(x);
   return true;
 };
 bool TraverseNodeVisitor::TraverseType(QualType x) {
   string qt_string = "!" + x.getAsString ();
-  llvm::outs() << qt_string;
+  (*output_ref).os() << qt_string;
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseType(x);
   return true;
 };
@@ -1179,11 +1182,11 @@ public:
 
   explicit TraverseMacros(CompilerInstance &ci)
   : ci(ci) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()), 
-  //Indent(0), FOuts(llvm::outs()) {}
+  //Indent(0), FOuts((*output_ref).os()) {}
 
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD) {
     MacroFormatter mf(MacroNameTok, MD, ci);
-    outs() << mf.getFortranMacroASString();
+    (*output_ref).os() << mf.getFortranMacroASString();
   }
 
 };
@@ -1202,7 +1205,7 @@ public:
 
     // wrap all func decls in a single interface
     if (!Visitor.allFunctionDecls.empty()) {
-      llvm::outs() << "INTERFACE\n" 
+      (*output_ref).os() << "INTERFACE\n" 
       << Visitor.allFunctionDecls
       << "END INTERFACE\n";   
     }
@@ -1233,7 +1236,7 @@ public:
     beginSourceModule = "MODULE " + moduleName + "\n";
     beginSourceModule += "USE, INTRINSIC :: iso_c_binding\n";
     beginSourceModule += "implicit none\n";
-    outs() << beginSourceModule;
+    (*output_ref).os() << beginSourceModule;
 
 
     // std::unique_ptr<Find_Includes> find_includes_callback(new Find_Includes());
@@ -1248,7 +1251,7 @@ public:
 
   void EndSourceFileAction() override {
     //Now emit the rewritten buffer.
-    //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(llvm::outs());
+    //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write((*output_ref).os());
     
     size_t slashes = fullPathFileName.find_last_of("/\\");
     string filename = fullPathFileName.substr(slashes+1);
@@ -1257,7 +1260,7 @@ public:
 
     string endSourceModle;
     endSourceModle = "END MODULE " + moduleName + "\n";
-    outs() << endSourceModle;
+    (*output_ref).os() << endSourceModle;
   }
 
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
@@ -1279,24 +1282,28 @@ int main(int argc, const char **argv) {
     sys::fs::current_path(PathBuf);
     Compilations.reset(new FixedCompilationDatabase(Twine(PathBuf), other));
 
-    llvm::tool_output_file output;
-    std::error_code error;
-    if (OutputFile.size()) {  // If there is an output file given
-      output(OutputFile, &error, llvm::sys::fs::F_Text);  // Default llvm open
+    // Determine file to open and initialize it
+    string filename;
+    if (OutputFile.size()) {
+      filename = OutputFile;
     } else {
-      output("-", &error, llvm::sys::fs::F_Text);
+      filename = "-";
     }
+    std::error_code error;
+    // The file is opened in text mode and returns an error if it already exists
+    llvm::tool_output_file output(filename, error, llvm::sys::fs::F_Text);
     if (error) {  // Error opening file
-      llvm::errs() << "Error opening output file: " << OutputFile << EC.message() << "\n";
+      llvm::errs() << "Error opening output file: " << OutputFile << error.message() << "\n";
     }
+    output_ref = &output;
 
     ClangTool Tool(*Compilations, SourcePaths);
-    int errors = Tool.run(newFrontendActionFactory<TraverseNodeAction>().get());
+    int tool_errors = Tool.run(newFrontendActionFactory<TraverseNodeAction>().get());
 
-    if (!errors) {
+    if (!tool_errors) {
       output.keep();
     }
-     return(errors);
+     return(tool_errors);
   }
   return(1);
 };
