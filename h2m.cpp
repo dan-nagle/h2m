@@ -4,12 +4,14 @@
 
 // Command line options:
 // Positional parameter: the first input parameter should be the compilation files
-static cl::opt<std::string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),    cl::OneOrMore);
+static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),
+    cl::OneOrMore);
 
-// Output file, option is -o
-static cl::opt<std::string> OutputFile("out", cl::init(""), cl::desc("Output file"));
+// Output file, option is out
+static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"),
+    cl::OneOrMore);
 
-static cl::opt<std::string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
+static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
 // -----------initializer RecordDeclFormatter--------------------
 CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac): ac(ac) {
@@ -1277,14 +1279,24 @@ int main(int argc, const char **argv) {
     sys::fs::current_path(PathBuf);
     Compilations.reset(new FixedCompilationDatabase(Twine(PathBuf), other));
 
+    llvm::tool_output_file output;
+    std::error_code error;
+    if (OutputFile.size()) {  // If there is an output file given
+      output(OutputFile, &error, llvm::sys::fs::F_Text);  // Default llvm open
+    } else {
+      output("-", &error, llvm::sys::fs::F_Text);
+    }
+    if (error) {  // Error opening file
+      llvm::errs() << "Error opening output file: " << OutputFile << EC.message() << "\n";
+    }
+
     ClangTool Tool(*Compilations, SourcePaths);
-    return Tool.run(newFrontendActionFactory<TraverseNodeAction>().get());
+    int errors = Tool.run(newFrontendActionFactory<TraverseNodeAction>().get());
+
+    if (!errors) {
+      output.keep();
+    }
+     return(errors);
   }
-  //  else if (argc == 3) {
-  //   clang::tooling::runToolOnCode(new TraverseNodeAction, argv[1]);
-  // } else {
-  //   llvm::outs() 
-  //   << "USAGE: ~/clang-llvm/build/bin/node-inspect <PATH> OR "
-  //   << "~/clang-llvm/build/bin/node-inspect <CODE> inline";
-  // }
+  return(1);
 };
