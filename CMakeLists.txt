@@ -25,7 +25,7 @@ if(LLVM_FOUND) # We found the config and can use its definitions
 
   add_definitions(${LLVM_DEFINITIONS})
   include_directories(${LLVM_INCLUDE_DIRS})
-  llvm_map_components_to_libnames(llvm_libs all)
+  llvm_map_components_to_libnames(llvm_libs support core irreader)
 elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all must be done by hand
   message(STATUS "Found LLVM directory information")
   message(STATUS "Using LLVM libs in ${LLVM_LIB_PATH}")
