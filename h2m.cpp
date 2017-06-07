@@ -2,6 +2,15 @@
 #include "h2m.h"
 //-----------formatter functions----------------------------------------------------------------------------------------------------
 
+// Command line options:
+// Positional parameter: the first input parameter should be the compilation files
+static cl::opt<std::string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),    cl::OneOrMore);
+
+// Output file, option is -o
+static cl::opt<std::string> OutputFile("out", cl::init(""), cl::desc("Output file"));
+
+static cl::opt<std::string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
+
 // -----------initializer RecordDeclFormatter--------------------
 CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac): ac(ac) {
   c_qualType = qt;
@@ -1262,8 +1271,13 @@ private:
 
 int main(int argc, const char **argv) {
   if (argc > 1) {
-    CommonOptionsParser OptionsParser(argc, argv, MyToolCategory);
-    ClangTool Tool(OptionsParser.getCompilations(), OptionsParser.getSourcePathList());
+    cl::ParseCommandLineOptions(argc, argv, "h2m\n");
+    std::unique_ptr<CompilationDatabase> Compilations;
+    SmallString<256> PathBuf;
+    sys::fs::current_path(PathBuf);
+    Compilations.reset(new FixedCompilationDatabase(Twine(PathBuf), other));
+
+    ClangTool Tool(*Compilations, SourcePaths);
     return Tool.run(newFrontendActionFactory<TraverseNodeAction>().get());
   }
   //  else if (argc == 3) {
