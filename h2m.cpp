@@ -2,7 +2,8 @@
 #include "h2m.h"
 //-----------formatter functions----------------------------------------------------------------------------------------------------
 
-// A filewide pointer to the output stream to use in place of (*output_ref).os()
+// A filewide pointer to the output stream to use as (*output_ref).os()
+// in place of outs()
 static llvm::tool_output_file *output_ref;
 
 // Command line options:
@@ -11,8 +12,8 @@ static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<source
     cl::OneOrMore);
 
 // Output file, option is out
-static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"),
-    cl::OneOrMore);
+static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
+
 
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
@@ -200,6 +201,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
     f_type = etf.getFortranTypeASString(typeWrapper);
   } else {
     f_type = "unrecognized_type(" + c_qualType.getAsString()+")";
+    errs() << "Warning: unrecognized type " << c_qualType.getAsString() << "\n";
   }
   return f_type;
 };
@@ -326,6 +328,8 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   if (macroName[0] == '_') {
     ft_buffer = "! underscore is invalid character name\n";
     ft_buffer += "!TYPE, BIND(C) :: " + macroName+ "\n";
+    errs() << "Warning: Fortran names may not start with '_' ";
+    errs() << macroName << " is invalid \n";
     if (macroVal.find("char") != std::string::npos) {
       ft_buffer += "!    CHARACTER(C_CHAR) :: " + type_id + "\n";
     } else if (macroVal.find("long") != std::string::npos) {
@@ -419,6 +423,7 @@ string VarDeclFormatter::getInitValueASString() {
       }
     } else {
       valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
+      errs() << "Invalid declaration: " << valString << " \n";
     }
   }
   return valString;
@@ -675,6 +680,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     string fieldsInFortran = getFortranFields();
     if (fieldsInFortran.empty()) {
       rd_buffer = "! struct without fields may cause warning\n";
+      errs() << "Warning: struct without fields may cuase warnings \n";
     }
 
     if (mode == ID_ONLY) {
