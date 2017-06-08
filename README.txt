@@ -165,6 +165,24 @@ download is only supported using git. The default URL is
 https://llvm.org/git/clang-tools-extra.git. This option will
 be ignored if -download is not specified.
 
+Troubleshooting
+
+1. It can cause problems if an older version of Clang or LLVM is
+used with a newer version of the other. Check to make sure there
+is not a mismatch between versions if linker errors are seen.
+
+2. Multiple copies of some files exist within the LLVM/Clang
+build tree. Make sure, if manual paths are specified, that the directory
+given has the proper structure (ie, the headers or library files are in
+the positions mentioned in this document).
+
+3. LLVM/Clang packages will be searched for in standard places before
+CMake even looks at the configuration variables specified. If CMake
+gives a message about unused variables, this often indicates that a cached
+variable is being used or the package is in a default location and has
+been found. This may result in incompatible versions of Clang and LLVM
+and linker errors.
+
 3)   USAGE OF H2M
 
 The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
@@ -174,7 +192,7 @@ a written to a file with standard shell redirection:
 
 4)   KNOWN ISSUES
 
-Warnings are not yet implemented for C features which have no Fortran 
+Warnings are not yet fully implemented for C features which have no Fortran 
 equivalent. Note that names in Fortran may not begin with an underscore,
 "_" but this is legal in C.
 

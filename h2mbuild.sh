@@ -39,7 +39,7 @@ print_help ()
 is_absolute()
 {
   case "$1" in 
-     /*) return 0;;  # The path started by a / is absolute
+     "/"*) return 0;;  # The path started by a / is absolute
      *) return 1;;   # Otherwise it is not absolute
    esac
 }
@@ -397,9 +397,9 @@ then
   echo "CLANG_BUILD_PATH=$CLANG_BUILD_PATH"
   # CMake sometimes complains about relative paths, so all relative paths
   # are prepended here in order to guarantee absolute paths.
-  is_absolute "CLANG_INCLUDE_PATH" || CLANG_INCLUDE_PATH="$start_dir/$CLANG_INCLUDE_PATH"
+  is_absolute "$CLANG_INCLUDE_PATH" || CLANG_INCLUDE_PATH="$start_dir/$CLANG_INCLUDE_PATH"
   is_absolute "$CLANG_LIB_PATH" || CLANG_LIB_PATH="$start_dir/$CLANG_LIB_PATH"
-  is_absolute "CLANG_BUILD_PATH" || CLANG_BUILD_PATH="$start_dir/$CLANG_BUILD_PATH"
+  is_absolute "$CLANG_BUILD_PATH" || CLANG_BUILD_PATH="$start_dir/$CLANG_BUILD_PATH"
   cmake_command="$cmake_command -DCLANG_INCLUDE_PATH=$CLANG_INCLUDE_PATH"
   cmake_command="$cmake_command -DCLANG_LIB_PATH=$CLANG_LIB_PATH"
   cmake_command="$cmake_command -DCLANG_BUILD_PATH=$CLANG_BUILD_PATH"
