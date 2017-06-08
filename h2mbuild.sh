@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/sh -x
 # Installation script for the h2m Autofortran tool.
 # Original Author: Michelle Anderson.
 
@@ -31,6 +31,17 @@ print_help ()
   echo "-TOOLS_URL gives an alternate URL from which to download Clang tools"
   echo "See README.txt for additional details."
   exit "$1"
+}
+
+# Function which determines whether or not a path is relative vs absolute 
+# and returns 1 if it is absolute, 0 if relative. First argument is the
+# path to be evaluated.
+is_absolute()
+{
+  case "$1" in 
+     /*) return 0;;  # The path started by a / is absolute
+     *) return 1;;   # Otherwise it is not absolute
+   esac
 }
 
 # Default values of variables which may appear on command line
@@ -73,7 +84,7 @@ do
     -LLVM_URL) LLVM_URL="$2"; shift;;  # The overriding address of the LLVM source
     -CLANG_URL) CLANG_URL="$2"; shift;;  # The overriding address of the Clang source
     -TOOLS_URL) TOOLS_URL="$2"; shift;;  # The overriding address of the Tools source
-    *) echo "Invalid option, $1." && print_help 1;;  # Print help. Exit with error.
+    *) echo "Invalid option, $1."; print_help 1;;  # Print help. Exit with error.
   esac
   shift
 done
@@ -195,12 +206,13 @@ else   # We are using git. Configure URLs for git
   fi
 fi  # End configuration of URLs for Curl vs Git
 
+# We start in this directory. We keep track of it for future reference.
+start_dir="$PWD"
 
 # If there is a requested download, commence!
 if [ "$download"  == "yes" ]
 then
   echo "Beginning download to $install_dir of clang and llvm"
-  start_dir="$PWD"
 
   # Obtain source code from git
   if [ ! -d "$install_dir" ]  # Checks to make sure the directory doesn't exit before creating it.
@@ -262,8 +274,13 @@ then
   # The most likely problem would be with a change in installation location with a later clang/llvm release
   # so that the cmake config files are no longer in the directories specified here.
   echo "Attempting to build h2m using default cmake configuration file locations"
-  echo "Directive: cmake . -DClangDIR="$install_dir"/build/lib/cmake/clang -DLLVMDIR="$install_dir"/build/lib/cmake/llvm || exit 1"
-  cmake . `echo -DClangDIR="$install_dir"/build/lib/cmake/clang -DLLVMDIR="$install_dir"/build/lib/cmake/llvm` || exit 1
+  # This variable keeps track of whether the build directory reference is relative
+  absolute=`is_absolute "$install_dir"`
+  if [ ! "$absolute" ]  # If we built in a relative direcotry, we have a relative path.
+  then
+    install_dir="$start_dir"/"$install_dir"  # Now we have an absolute path which Cmake needs!
+  fi
+  cmake . -DClang_DIR="$install_dir"/build/lib/cmake/clang -DLLVM_DIR="$install_dir"/build/lib/cmake/llvm
   make  || exit 1
   if [ "$install" == "yes" ]  # Attempted installation of software requested
   then
@@ -272,7 +289,7 @@ then
   fi
   exit 0
 fi
-# Installation and configuration are finished if an installation was requested... otherwise...
+# Installation and configuration are finished if a download was requested... otherwise...
 
 
 # Request information about installation paths from the user. Information
@@ -337,6 +354,8 @@ cmake_command=
 if [ "$LLVM_DIR" ]  # Include LLVM location specs in the command
 then
   echo "Configuring cmake LLVM information:"
+  # CMake may complain about relative paths, so they are made absoulte here
+  is_absolute "$LLVM_DIR" || LLVM_DIR="$start_dir/$LLVM_DIR"
   echo "LLVM_DIR=$LLVM_DIR"
   cmake_command="$cmake_command -DLLVM_DIR=$LLVM_DIR"
 fi
@@ -346,6 +365,8 @@ fi
 if [ "$CLANG_DIR" ]  # Include Clang location specs in the command
 then
   echo "Configuring cmake Clang information:"
+  # CMake many complain about relative paths, so they are made absoulte here
+  is_absolute "$CLANG_DIR" || CLANG_DIR="$start_dir/$CLANG_DIR"
   echo "CLANG_DIR=$CLANG_DIR"
   cmake_command="$cmake_command -DClang_DIR=$CLANG_DIR"
 fi
@@ -355,6 +376,10 @@ fi
 if [ "$LLVM_LIB_PATH" ] && [ "$LLVM_INCLUDE_PATH" ]  # Check for all manual LLVM specs
 then
   echo "Manually configuring llvm installation information:"
+  # CMake sometimes complains about relative paths, so it is a good idea to 
+  # prepend all relative paths to make them absolute
+  is_absolute "$LLVM_LIB_PATH" || LLVM_LIB_PATH="$start_dir/$LLVM_LIB_PATH"
+  is_absolute "$LLVM_INCLUDE_PATH" || LLVM_INCLUDE_PATH="$start_dir/$LLVM_INCLUDE_PATH"
   echo "LLVM_LIB_PATH=$LLVM_LIB_PATH, LLVM_INCLUDE_PATH=$LLVM_INCLUDE_PATH"
   cmake_command="$cmake_command -DLLVM_INCLUDE_PATH=$LLVM_INCLUDE_PATH -DLLVM_LIB_PATH=$LLVM_LIB_PATH"
 elif [ "$LLVM_LIB_PATH" ] || [ "$LLVM_INCLUDE_PATH" ]
@@ -370,6 +395,11 @@ then
   echo "Manually configuring clang installation information:"
   echo "CLANG_LIB_PATH=$CLANG_LIB_PATH, CLANG_INCLUDE_PATH=$CLANG_INCLUDE_PATH,"
   echo "CLANG_BUILD_PATH=$CLANG_BUILD_PATH"
+  # CMake sometimes complains about relative paths, so all relative paths
+  # are prepended here in order to guarantee absolute paths.
+  is_absolute "CLANG_INCLUDE_PATH" || CLANG_INCLUDE_PATH="$start_dir/$CLANG_INCLUDE_PATH"
+  is_absolute "$CLANG_LIB_PATH" || CLANG_LIB_PATH="$start_dir/$CLANG_LIB_PATH"
+  is_absolute "CLANG_BUILD_PATH" || CLANG_BUILD_PATH="$start_dir/$CLANG_BUILD_PATH"
   cmake_command="$cmake_command -DCLANG_INCLUDE_PATH=$CLANG_INCLUDE_PATH"
   cmake_command="$cmake_command -DCLANG_LIB_PATH=$CLANG_LIB_PATH"
   cmake_command="$cmake_command -DCLANG_BUILD_PATH=$CLANG_BUILD_PATH"

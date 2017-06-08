@@ -18,7 +18,7 @@ project(h2m)
 
 
 # Find the package for LLVM or else obtain paths to includes and library files
-find_package(LLVM CONFIG QUIET)
+find_package(LLVM CONFIG)
 if(LLVM_FOUND) # We found the config and can use its definitions
   message(STATUS "Found LLVM as ${LLVM_PACKAGE_VERSION}")
   message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
@@ -67,7 +67,7 @@ else()
 endif()
 
 # Find the package for clang or else obtain paths to includes and library files
-find_package(Clang CONFIG QUIET)
+find_package(Clang CONFIG)
 if(Clang_FOUND) # We found the config and can use its definitions
   message(STATUS "Found Clang")
   message(STATUS "Proceeding from ClangConfig.cmake")
