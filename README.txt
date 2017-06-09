@@ -5,7 +5,7 @@ Contents:
   0) Quick Start
   1) Introduction and Credits
   2) Build and Installation
-     General informatoin
+     General information
      Usage of the h2mbuild.sh script
      Troubleshooting
   3) Usage of h2m
@@ -16,9 +16,8 @@ Always run ./h2mbuild.sh. Do not run the script from a different working
 directory. 
 
 To build h2m if you do not have Clang or LLVM installed, run:
-./h2mbuild.sh -download -curl -install_dir [path to desired Clang/LLVM download]
+./h2mbuild.sh -download -install_dir [path to desired Clang/LLVM download]
 or run ./h2mbuild.sh -i for interactive mode.
-Curl is the recommended mode of download. Git is slower and less reliable.
 
 To build h2m if you have Clang and LLVM installed, run:
 ./h2mbuild.sh -CLANG_DIR [path to directory containing ClangConfig.cmake]
@@ -74,7 +73,8 @@ Usage: ./h2mbuild.sh [options]
 Options:
 
 -i	Invokes an interactive build. All variables will be specified
-interactively. Other options will be ignored.
+interactively. Other options will be ignored. Do not use tilde expansion,
+ie "~/Documents", in interactively specified paths.
 
 -download	Requests that LLVM and Clang be downloaded and built.
 
@@ -135,9 +135,8 @@ cannot be found. If this option is specified, -Clang_LIB_PATH and
 ignored if -download is specified.
 
 -tools		Option to request the download and build of additional 
-Clang tools along with Clang and LLVM. Note this is only supported with
-git downloads and will be ignored if curl is specified. This option 
-will be ignored if -download is not specified.
+Clang tools along with Clang and LLVM. This option will be ignored if 
+-download is not specified.
 
 -install	Requests attempted installation of the software LLVM
 and Clang. This will be standard, default installation. If specialized
@@ -145,27 +144,18 @@ installation locations are necessary, run make install seperately after
 the build is complete. This option will be ignored if -download is 
 not specified.
 
--curl		Requests a download using curl rather than git. Note
-that the download of extra Clang tools is not supported with Curl.
-This option will be ignored if -download is not specified.
-
 -LLVM_URL [url]		Option to specify an alternative path to the
-download location for LLVM. For git downloads the default URL is
-https://llvm.org/git/llvm.git. For Curl downloads the default URL
-is https://github.com/llvm-mirror/llvm/archive/master.zip.
+download location for LLVM. The default URL is:
+https://github.com/llvm-mirror/llvm/archive/master.zip.
 This option will be ignored if -download is not specified.
 
 -CLANG_URL [url]	Option to specify an alternative path to
-the download location for Clang. For git downloads the default URL
-is https://llvm.org/git/clang.git. For Curl downloads, the default
-URL is https://github.com/llvm-mirror/clang/archive/master.zip.
-This optoin will be ignored if -download is not specified.
+the download location for Clang. The default URL is:
+http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz
+This option will be ignored if -download is not specified.
 
 -TOOLS_URL [url]	Option to specify an alternative path to
-the download location for the extra clang tools. Note that tools
-download is only supported using git. The default URL is
-https://llvm.org/git/clang-tools-extra.git. This option will
-be ignored if -download is not specified.
+the download location for the extra clang tools. The default URL is:
 
 Troubleshooting
 
@@ -184,9 +174,9 @@ gives a message about unused variables, this often indicates that a cached
 variable is being used or the package is in a default location and has
 been found. This often results in incompatible versions and linker errors.
 
-4. Problems with the LLVM build occur more frequently with github downloads
-than with Curl downloads. Often, the problem will be resolved by restarting
-the process.
+4. Newer versions of Clang/LLVm may be incompatible with the h2m
+implementation. Release 4.0 is known to work, and this is the 
+default download URL.
 
 3)   USAGE OF H2M
 

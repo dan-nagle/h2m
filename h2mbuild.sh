@@ -25,7 +25,6 @@ print_help ()
   echo "-CLANG_INCLUDE_PATH gives the path to existing Clang header files"
   echo "-tools requests the download of additional clang tools."
   echo "-install requests attempted installation of the software llvm and clang"
-  echo "-curl requests a download of LLVM and Clang via curl rather than git"
   echo "-LLVM_URL gives an alternate URL from which to download LLVM"
   echo "-CLANG_URL gives an alternate URL from which to download Clang"
   echo "-TOOLS_URL gives an alternate URL from which to download Clang tools"
@@ -57,10 +56,12 @@ CLANG_INCLUDE_PATH=
 tools=
 install=
 interactive=
-curl=no  # Default installation uses git. Curl can be requested
-LLVM_URL=
-CLANG_URL=
-TOOLS_URL=
+LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
+CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
+TOOLS_URL="http://releases.llvm.org/4.0.0/clang-tools-extra-4.0.0.src.tar.xz"
+
+# Testing for features used within this script. Failures are fatal.
+which cmake || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
 
 
 # Process command line args via shift in a while loop
@@ -80,7 +81,6 @@ do
     -CLANG_INCLUDE_PATH) CLANG_INCLUDE_PATH="$2"; shift;;  # Path to existing Clang include files
     -tools) tools=yes;;  # Download optional clang tools
     -install) install=yes;;
-    -curl) curl=yes;;
     -LLVM_URL) LLVM_URL="$2"; shift;;  # The overriding address of the LLVM source
     -CLANG_URL) CLANG_URL="$2"; shift;;  # The overriding address of the Clang source
     -TOOLS_URL) TOOLS_URL="$2"; shift;;  # The overriding address of the Tools source
@@ -125,13 +125,6 @@ then
       read extra
     done
 
-    echo "Download with Curl instead of git?"  # Obtain download tool identity
-    while [ "$curl_temp" != "y" ] && [ "$curl_temp" != "n" ]
-    do
-      echo "y or n required"
-      read curl_temp
-    done
-
     # Attempts at installation for LLVM and Clang are made upon request.
     echo "Attempt installation of software (run "make install")? (y/n)"
     while [ "$install_attempt" != "y" ] && [ "$install_attempt" != "n" ]
@@ -161,10 +154,6 @@ then
     # Sort the obtained input into usable options for installation
     # including the download tool, download directory, and installation
     # preference.
-    if [ "$curl_temp" == "y" ]  # Set the download tool as curl if requested
-    then
-      curl="yes"
-    fi
     install_dir="$install_dir"  # The given download directory
     if [ "$extra" == "y" ]
     then
@@ -177,35 +166,6 @@ then
   fi  # End obtaining options for the download location and content
 fi  # End interactive processing
 
-# Untangling of the download URLs has to occur. The defaults for Curl and git
-# are not the same, so defaults are insterted here if needed.
-# Note that currently, due to confusing issues, checking out extra clang tools
-# is not suported with curl.
-if [ "$curl" == "yes" ]  # We are using curl to download. Specify defaults if needed
-then
-  if [ ! "$LLVM_URL" ]  # None specified, use the default
-  then
-    LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
-  fi
-  if [ ! "$CLANG_URL" ]
-  then
-    CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
-  fi
-else   # We are using git. Configure URLs for git
-  if [ ! "$LLVM_URL" ]
-  then
-    LLVM_URL="http://llvm.org/git/llvm.git"
-  fi
-  if [ ! "$CLANG_URL" ]
-  then
-    CLANG_URL="http://llvm.org/git/clang.git"
-  fi
-  if [ ! "$TOOLS_URL" ]
-  then
-    TOOLS_URL="http://llvm.org/git/clang-tools-extra.git"
-  fi
-fi  # End configuration of URLs for Curl vs Git
-
 # We start in this directory. We keep track of it for future reference.
 start_dir="$PWD"
 
@@ -217,40 +177,33 @@ then
   # Obtain source code from git
   if [ ! -d "$install_dir" ]  # Checks to make sure the directory doesn't exit before creating it.
   then
-    mkdir "$install_dir" || error_report "Can't create $install_dir"
+    mkdir "$install_dir" || mkdir -p "$install_dir" || error_report "Can't create $install_dir"
   fi
   cd "$install_dir" || error_report "Can't change to $install_dir"
-  # Download LLVm using the requested tool
-  if [ "$curl" == "yes" ]
-  then
-    echo "Downloading LLVM from $LLVM_URL via curl to $install_dir/llvm.tar.xz"
-    # Download from the given URL, following redirections
-    curl -L "$LLVM_URL" > llvm.tar.xz || error_report "Unable to curl at LLVM at $LLVM_URL"
-    # This will filter out the name of the main folder inside the tar directory
-    temp_llvm_name=`tar -tzf llvm.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find llvm.tar.xz subdir name"
-    tar -xf llvm.tar.xz || error_report "Unable to untar llvm.tar.xz"
-    mv "$temp_llvm_name" llvm || error_report "Can't rename $temp_llvm_name to llvm"
-  else  # A git checkout is a good deal easier
-    git clone "$LLVM_URL" || error_report "Can't clone $LLVM_URL"
-  fi
+  echo "Downloading LLVM from $LLVM_URL via curl to $install_dir/llvm.tar.xz"
+  # Download from the given URL, following redirections
+  curl -L "$LLVM_URL" > llvm.tar.xz || error_report "Unable to curl at LLVM at $LLVM_URL"
+  # This will filter out the name of the main folder inside the tar directory
+  temp_llvm_name=`tar -tf llvm.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find llvm.tar.xz subdir name"
+  tar -xf llvm.tar.xz || error_report "Unable to untar llvm.tar.xz"
+  mv "$temp_llvm_name" llvm || error_report "Can't rename $temp_llvm_name to llvm"
   cd llvm/tools || error_report "Can't change to llvm/tools"
-  if [ "$curl" == "yes" ]
-  then
-    # Download Clang using Curl
-    echo "Downloading Clang from $CLANG_URL via curl to $install_dir/llvm/tools/clang.tar"
-    curl -L "$CLANG_URL" > clang.tar.xz || error_report "Unable to curl at clang at $CLANG_URL"
-    # This filters out the name of the main folder inside the tar directory
-    temp_clang_name=`tar -tzf clang.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find clang.tar.xz subdir name."
-    tar -xf clang.tar.xz || error_report "Unable to untar clang.tar.xz"
-    mv "$temp_clang_name" clang  || error_report "Unable to rename $temp_clang_name to clang"
-  else  # A git checkout requires less effort
-    git clone "$CLANG_URL" || error_report "Can't clone clang at $CLANG_URL"
-  fi
-  # Note that, currently, additional tool downloads are not supported with curl.
-  if [ "$tools" == "yes" ] && [ "$curl" != "yes" ] # Download additional clang tools as requested
+  # Download Clang using Curl
+  echo "Downloading Clang from $CLANG_URL via curl to $install_dir/llvm/tools/clang.tar"
+  curl -L "$CLANG_URL" > clang.tar.xz || error_report "Unable to curl at clang at $CLANG_URL"
+  # This filters out the name of the main folder inside the tar directory
+  temp_clang_name=`tar -tf clang.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find clang.tar.xz subdir name."
+  tar -xf clang.tar.xz || error_report "Unable to untar clang.tar.xz"
+  mv "$temp_clang_name" clang  || error_report "Unable to rename $temp_clang_name to clang"
+
+  # If requested, the download for the clang/tools/extra directory is carried out
+  if [ "$tools" == "yes" ] # Download additional clang tools as requested
   then
     cd clang/tools || error_report "Unable to change to clang/tools directory"
-    git clone "$TOOLS_URL" extra || error_report "Can't clone clang tools at $TOOLS_URL"
+    curl -L "$CLANG_URL"> extra.tar.xz || error_report "Unable to curl at $CLANG_URL"
+    temp_extra_name=`tar -tf extra.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find extra.tar.xz subdir name"
+    tar -xf extra.tar.xz || error_report "Unable to untar extra.tar.xz"
+    mv "$temp_extra_name" extra || error_report "Unable to rename $temp_extra_name extra"
   fi
   cd "$start_dir" || error_report "Can't change to $start_dir"
   # We clone the software and return to our initial working directory
