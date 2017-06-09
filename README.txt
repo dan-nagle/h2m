@@ -16,13 +16,15 @@ Always run ./h2mbuild.sh. Do not run the script from a different working
 directory. 
 
 To build h2m if you do not have Clang or LLVM installed, run:
-./h2mbuild.sh -download -install_dir [path to desired Clang/LLVM download]
+./h2mbuild.sh -download -curl -install_dir [path to desired Clang/LLVM download]
 or run ./h2mbuild.sh -i for interactive mode.
+Curl is the recommended mode of download. Git is slower and less reliable.
 
 To build h2m if you have Clang and LLVM installed, run:
-./h2mbuild.sh -CLANG_DIR [absolute path to ClangConfig.cmake]
--LLVM_DIR [absolute path to LLVMConfig.cmake]
+./h2mbuild.sh -CLANG_DIR [path to directory containing ClangConfig.cmake]
+-LLVM_DIR [path to directory containing LLVMConfig.cmake]
 or run ./h2mbuild.sh -i for interactive mode.
+
 If Clang and LLVM are installed in standard places, these directory
 specifications may not be necessary.
 If you cannot find the Config.cmake files, see Build and Installation.
@@ -177,11 +179,14 @@ given has the proper structure (ie, the headers or library files are in
 the positions mentioned in this document).
 
 3. LLVM/Clang packages will be searched for in standard places before
-CMake even looks at the configuration variables specified. If CMake
+CMake even looks at the manual configuration variables specified. If CMake
 gives a message about unused variables, this often indicates that a cached
 variable is being used or the package is in a default location and has
-been found. This may result in incompatible versions of Clang and LLVM
-and linker errors.
+been found. This often results in incompatible versions and linker errors.
+
+4. Problems with the LLVM build occur more frequently with github downloads
+than with Curl downloads. Often, the problem will be resolved by restarting
+the process.
 
 3)   USAGE OF H2M
 

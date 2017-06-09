@@ -1,4 +1,4 @@
-#!/bin/sh -x
+#!/bin/bash -x
 # Installation script for the h2m Autofortran tool.
 # Original Author: Michelle Anderson.
 
@@ -185,11 +185,11 @@ if [ "$curl" == "yes" ]  # We are using curl to download. Specify defaults if ne
 then
   if [ ! "$LLVM_URL" ]  # None specified, use the default
   then
-    LLVM_URL="https://github.com/llvm-mirror/llvm/archive/master.zip"
+    LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
   fi
   if [ ! "$CLANG_URL" ]
   then
-    CLANG_URL="https://github.com/llvm-mirror/clang/archive/master.zip"
+    CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
   fi
 else   # We are using git. Configure URLs for git
   if [ ! "$LLVM_URL" ]
@@ -223,12 +223,12 @@ then
   # Download LLVm using the requested tool
   if [ "$curl" == "yes" ]
   then
-    echo "Downloading LLVM from $LLVM_URL via curl to $install_dir/llvm.tar"
+    echo "Downloading LLVM from $LLVM_URL via curl to $install_dir/llvm.tar.xz"
     # Download from the given URL, following redirections
-    curl -L "$LLVM_URL" > llvm.tar || error_report "Unable to curl at LLVM at $LLVM_URL"
+    curl -L "$LLVM_URL" > llvm.tar.xz || error_report "Unable to curl at LLVM at $LLVM_URL"
     # This will filter out the name of the main folder inside the tar directory
-    temp_llvm_name=`tar -tzf llvm.tar | head -1 | cut -f1 -d "/"` || error_report "Can't find llvm.tar subdir name"
-    tar -xf llvm.tar || error_report "Unable to untar llvm.tar"
+    temp_llvm_name=`tar -tzf llvm.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find llvm.tar.xz subdir name"
+    tar -xf llvm.tar.xz || error_report "Unable to untar llvm.tar.xz"
     mv "$temp_llvm_name" llvm || error_report "Can't rename $temp_llvm_name to llvm"
   else  # A git checkout is a good deal easier
     git clone "$LLVM_URL" || error_report "Can't clone $LLVM_URL"
@@ -238,10 +238,10 @@ then
   then
     # Download Clang using Curl
     echo "Downloading Clang from $CLANG_URL via curl to $install_dir/llvm/tools/clang.tar"
-    curl -L "$CLANG_URL" > clang.tar || error_report "Unable to curl at clang at $CLANG_URL"
+    curl -L "$CLANG_URL" > clang.tar.xz || error_report "Unable to curl at clang at $CLANG_URL"
     # This filters out the name of the main folder inside the tar directory
-    temp_clang_name=`tar -tzf clang.tar | head -1 | cut -f1 -d "/"` || error_report "Can't find clang.tar subdir name."
-    tar -xf clang.tar || error_report "Unable to untar clang.tar"
+    temp_clang_name=`tar -tzf clang.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find clang.tar.xz subdir name."
+    tar -xf clang.tar.xz || error_report "Unable to untar clang.tar.xz"
     mv "$temp_clang_name" clang  || error_report "Unable to rename $temp_clang_name to clang"
   else  # A git checkout requires less effort
     git clone "$CLANG_URL" || error_report "Can't clone clang at $CLANG_URL"
@@ -282,11 +282,6 @@ then
   fi
   cmake . -DClang_DIR="$install_dir"/build/lib/cmake/clang -DLLVM_DIR="$install_dir"/build/lib/cmake/llvm
   make  || exit 1
-  if [ "$install" == "yes" ]  # Attempted installation of software requested
-  then
-    echo "Attempting installation of h2m"
-    make install || error_report "Unable to install h2m software"
-  fi
   exit 0
 fi
 # Installation and configuration are finished if a download was requested... otherwise...
