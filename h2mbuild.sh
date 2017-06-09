@@ -56,9 +56,9 @@ CLANG_INCLUDE_PATH=
 tools=
 install=
 interactive=
-LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
-CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
-TOOLS_URL="http://releases.llvm.org/4.0.0/clang-tools-extra-4.0.0.src.tar.xz"
+LLVM_URL="http://releases.llvm.org/3.9.1/llvm-3.9.1.src.tar.xz"
+CLANG_URL="http://releases.llvm.org/3.9.1/cfe-3.9.1.src.tar.xz"
+TOOLS_URL="http://releases.llvm.org/3.9.1/clang-tools-extra-3.9.1.src.tar.xz"
 
 # Testing for features used within this script. Failures are fatal.
 which cmake || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
@@ -199,11 +199,13 @@ then
   # If requested, the download for the clang/tools/extra directory is carried out
   if [ "$tools" == "yes" ] # Download additional clang tools as requested
   then
-    cd clang/tools || error_report "Unable to change to clang/tools directory"
-    curl -L "$CLANG_URL"> extra.tar.xz || error_report "Unable to curl at $CLANG_URL"
-    temp_extra_name=`tar -tf extra.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find extra.tar.xz subdir name"
-    tar -xf extra.tar.xz || error_report "Unable to untar extra.tar.xz"
-    mv "$temp_extra_name" extra || error_report "Unable to rename $temp_extra_name extra"
+    echo "Very sorry to disappoint you, but this is broken (just really, really broken)"
+    echo "so you cannot have any cool extra clang tools today. Sorry."
+    #cd clang/tools || error_report "Unable to change to clang/tools directory"
+    #curl -L "$CLANG_URL"> extra.tar.xz || error_report "Unable to curl at $CLANG_URL"
+    #temp_extra_name=`tar -tf extra.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find extra.tar.xz subdir name"
+    #tar -xf extra.tar.xz || error_report "Unable to untar extra.tar.xz"
+    #mv "$temp_extra_name" extra || error_report "Unable to rename $temp_extra_name extra"
   fi
   cd "$start_dir" || error_report "Can't change to $start_dir"
   # We clone the software and return to our initial working directory

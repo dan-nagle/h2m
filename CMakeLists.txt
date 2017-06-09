@@ -25,6 +25,7 @@ if(LLVM_FOUND) # We found the config and can use its definitions
 
   add_definitions(${LLVM_DEFINITIONS})
   include_directories(${LLVM_INCLUDE_DIRS})
+  message(STATUS "LLVM include directories are ${LLVM_INCLUDE_DIRS}")
   llvm_map_components_to_libnames(llvm_libs support core irreader)
 elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all must be done by hand
   message(STATUS "Found LLVM directory information")
@@ -72,7 +73,24 @@ if(Clang_FOUND) # We found the config and can use its definitions
   message(STATUS "Found Clang")
   message(STATUS "Proceeding from ClangConfig.cmake")
 
-  include_directories(${CLANG_INCLUDE_DIRS})
+  # A bug in one of the releases means that the directories might need manual specification
+  # Two different directory paths are needed to find all the clang includes.
+  find_path(AUX_CLANG_DIR_H NAMES ../tools/clang/include/clang/Basic/Version.h HINTS ${LLVM_INCLUDE_DIRS})
+  if(IS_DIRECTORY "${AUX_CLANG_DIR_H}") 
+    include_directories("${AUX_CLANG_DIR_H}/../tools/clang/include")
+    message(STATUS "Including ${AUX_CLANG_DIR_H}/../tools/clang/include")
+  endif()
+  find_path(AUX_CLANG_DIR_INC NAMES ../tools/clang/include/clang/Basic/Version.inc HINTS ${LLVM_INCLUDE_DIRS})
+  if(IS_DIRECTORY "${AUX_CLANG_DIR_INC}")
+    include_directories("${AUX_CLANG_DIR_INC}/../tools/clang/include")
+    message(STATUS "Including ${AUX_CLANG_DIR_INC}/../tools/clang/include")
+  endif()
+
+
+  if(IS_DIRECTORY "${CLANG_INCLUDE_DIRS}")
+    include_directories("${CLANG_INCLUDE_DIRS}")
+    message(STATUS "Including ${CLANG_INCLUDE_DIRS}")
+  endif() 
   set(clang_libs clangTooling clangBasic clangASTMatchers clangFrontend)
 elseif((EXISTS ${CLANG_LIB_PATH}) AND (EXISTS ${CLANG_INCLUDE_PATH}) AND (EXISTS ${CLANG_BUILD_PATH})) # Woe, all by hand
   message(STATUS "Found Clang directory information")
