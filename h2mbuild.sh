@@ -56,9 +56,9 @@ CLANG_INCLUDE_PATH=
 tools=
 install=
 interactive=
-LLVM_URL="http://releases.llvm.org/3.9.1/llvm-3.9.1.src.tar.xz"
-CLANG_URL="http://releases.llvm.org/3.9.1/cfe-3.9.1.src.tar.xz"
-TOOLS_URL="http://releases.llvm.org/3.9.1/clang-tools-extra-3.9.1.src.tar.xz"
+LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
+CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
+TOOLS_URL="http://releases.llvm.org/4.0.0/clang-tools-extra-4.0.0.src.tar.xz"
 
 # Testing for features used within this script. Failures are fatal.
 which cmake || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
@@ -173,24 +173,46 @@ start_dir="$PWD"
 if [ "$download"  == "yes" ]
 then
   echo "Beginning download to $install_dir of clang and llvm"
+  # Autodetect download tool
+  which which || error_report "Command 'which' not found. Autodetection of curl/wget failed."
+  if [ `which curl` ] 
+  then
+    echo "Curl found." 
+    curl="yes"
+  elif [ `which wget` ] 
+  then
+    echo "Wget found."
+  else
+    error_report "Unable to locate wget or curl to commplete download."
+  fi
 
-  # Obtain source code from git
+  # Obtain source code from the internet with Wget or Curl
   if [ ! -d "$install_dir" ]  # Checks to make sure the directory doesn't exit before creating it.
   then
     mkdir "$install_dir" || mkdir -p "$install_dir" || error_report "Can't create $install_dir"
   fi
   cd "$install_dir" || error_report "Can't change to $install_dir"
-  echo "Downloading LLVM from $LLVM_URL via curl to $install_dir/llvm.tar.xz"
-  # Download from the given URL, following redirections
-  curl -L "$LLVM_URL" > llvm.tar.xz || error_report "Unable to curl at LLVM at $LLVM_URL"
+  echo "Downloading LLVM from $LLVM_URL to $install_dir/llvm.tar.xz"
+  # Download from the given URL, following redirections with wget or curl as requested
+  if [ "$curl" == "yes" ]
+  then 
+    curl -L "$LLVM_URL" > llvm.tar.xz || error_report "Unable to curl at LLVM at $LLVM_URL"
+  else 
+    wget -O llvm.tar.xz "$LLVM_URL" || error_report "Unable to wget at LLVM at $LLVM_URL"
+  fi
   # This will filter out the name of the main folder inside the tar directory
   temp_llvm_name=`tar -tf llvm.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find llvm.tar.xz subdir name"
   tar -xf llvm.tar.xz || error_report "Unable to untar llvm.tar.xz"
   mv "$temp_llvm_name" llvm || error_report "Can't rename $temp_llvm_name to llvm"
   cd llvm/tools || error_report "Can't change to llvm/tools"
-  # Download Clang using Curl
-  echo "Downloading Clang from $CLANG_URL via curl to $install_dir/llvm/tools/clang.tar"
-  curl -L "$CLANG_URL" > clang.tar.xz || error_report "Unable to curl at clang at $CLANG_URL"
+  # Download Clang using Curl or Wget
+  echo "Downloading Clang from $CLANG_URL to $install_dir/llvm/tools/clang.tar"
+  if [ "$curl" == "yes" ] 
+  then
+    curl -L "$CLANG_URL" > clang.tar.xz || error_report "Unable to curl at clang at $CLANG_URL"
+  else
+    wget -O clang.tar.xz "$CLANG_URL" || error_report "Unable to wget at clang at $CLANG_URL" 
+  fi
   # This filters out the name of the main folder inside the tar directory
   temp_clang_name=`tar -tf clang.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find clang.tar.xz subdir name."
   tar -xf clang.tar.xz || error_report "Unable to untar clang.tar.xz"
@@ -214,12 +236,12 @@ then
   echo "Building clang and llvm"
   mkdir "$install_dir"/build || error_report "Can't create $install_dir/clang-llvm/build"
   cd "$install_dir"/build || error_report "Can't change to build directory"
-  cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError"
+  cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError building clang/llvm."
   make || error_report "Make error"
   if [ "$install" == "yes" ]  # Attempted installation requested. Run make install.
   then
     echo "Attempting to install llvm and clang"
-    make install || error_report "Unable to install clang and llvm"
+    make install || error_report "Unable to install clang and llvm."
   fi
 
   # Make h2m, knowing the location of the installations' cmake configuration files
@@ -265,7 +287,9 @@ then
       read use_llvm_config
     done
     echo "Specify paths to cmake configuration files for Clang?"
-    echo "otherwise library and include paths are needed"
+    echo "Otherwise library and include paths are needed."
+    echo "Note that if a cmake configuration file was not provided"
+    echo "for LLVM, this is almost certainly necessary."
     while [ "$use_clang_config" != "y" ] && [ "$use_clang_config" != "n" ]
     do
       echo "y/n required"
@@ -277,21 +301,21 @@ then
     echo "Specify path to LLVM configuration file"
     read LLVM_DIR
   else
-    echo "Specify path to LLVM include files"
+    echo "Specify path to LLVM include files. See README.txt for details."
     read LLVM_INCLUDE_PATH
-    echo "Specify path to LLVM library files"
+    echo "Specify path to LLVM library files. See README.txt for details."
     read LLVM_LIB_PATH
   fi
   if [ "$use_clang_config" == "y" ]  # Obtain directory path to ClangConfig.cmake
   then
     echo "Specify path to Clang cmake configuration file"
     read CLANG_DIR
-  else
-    echo "Specify path to Clang library files"
+  else  # Otherwise, obtain all the unpleasant paths we need for manual configuration.
+    echo "Specify path to Clang library files. See README.txt for details."
     read CLANG_LIB_PATH
-    echo "Specify path to Clang include files"
+    echo "Specify path to Clang include files. See README.txt for details."
     read CLANG_INCLUDE_PATH
-    echo "Specify path to Clang build files"
+    echo "Specify path to Clang build files. See README.txt for details."
     read CLANG_BUILD_PATH
   fi
 fi  # End interactive section
@@ -357,6 +381,12 @@ then
 elif [ "$CLANG_LIB_PATH" ] || [ "$CLANG_INCLUDE_PATH" ] || [ "$CLANG_BUILD_PATH" ]
 then
   error_report "Invalid options. CLANG_LIB_PATH, CLANG_INCLUDE_PATH, and CLANG_BUILD_PATH are all needed"
+elif [ "$CLANG_DIR_PATH" ] && [ ! "$LLVM_DIR_PATH" ]  # This is probably a fatal mistake.
+then
+  echo "Warning: the Clang package cannot be located without LLVM package information.">&2
+  echo "If CMake is unable to find LLVM, it will not be able to find Clang.">&2
+  echo "If errors occur, make sure to either specify LLVM's directory, or provide">&2
+  echo "Clang's include and library path information manually">&2
 fi
 
 # Attempt to execute the cmake commands to create h2m

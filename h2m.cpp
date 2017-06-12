@@ -326,10 +326,10 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   }
 
   if (macroName[0] == '_') {
-    ft_buffer = "! underscore is invalid character name\n";
-    ft_buffer += "!TYPE, BIND(C) :: " + macroName+ "\n";
     errs() << "Warning: Fortran names may not start with '_' ";
     errs() << macroName << " is invalid \n";
+    ft_buffer = "! underscore is invalid character name\n";
+    ft_buffer += "!TYPE, BIND(C) :: " + macroName+ "\n";
     if (macroVal.find("char") != std::string::npos) {
       ft_buffer += "!    CHARACTER(C_CHAR) :: " + type_id + "\n";
     } else if (macroVal.find("long") != std::string::npos) {
@@ -986,6 +986,8 @@ string MacroFormatter::getFortranMacroASString() {
       if (!macroVal.empty()) {
         if (CToFTypeFormatter::isString(macroVal)) {
           if (macroName[0] == '_') {
+            errs() << "Warning: Fortran names may not start with an underscore.";
+            errs() << macroName << "Is invalid.\n";
             fortranMacro = "! underscore is invalid character name\n";
             fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
@@ -994,6 +996,8 @@ string MacroFormatter::getFortranMacroASString() {
         
         } else if (CToFTypeFormatter::isChar(macroVal)) {
           if (macroName[0] == '_') {
+            errs() << "Warning: Fortran names may not start with an underscore.";
+            errs() << macroName << "Is invalid.\n";
             fortranMacro = "! underscore is invalid character name\n";
             fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
@@ -1003,6 +1007,8 @@ string MacroFormatter::getFortranMacroASString() {
         } else if (CToFTypeFormatter::isIntLike(macroVal)) {
           // invalid chars
           if (macroVal.find_first_of("UL") != std::string::npos or macroName[0] == '_') {
+            errs() << "Warning: Fortran name with invalid characters detected.";
+            errs() << macroName << "Is invalid.\n";
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else if (macroVal.find("x") != std::string::npos) {
             size_t x = macroVal.find_last_of("x");
@@ -1016,6 +1022,8 @@ string MacroFormatter::getFortranMacroASString() {
 
         } else if (CToFTypeFormatter::isDoubleLike(macroVal)) {
           if (macroVal.find_first_of("FUL") != std::string::npos or macroName[0] == '_') {
+            errs() << "Warning: Fortran names may not start with an underscore.";
+            errs() << macroName << "Is invalid.\n";
             fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
             fortranMacro = "REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
@@ -1033,6 +1041,8 @@ string MacroFormatter::getFortranMacroASString() {
         }
     } else { // macroVal.empty(), make the object a bool positive
       if (macroName[0] == '_') {
+        errs() << "Warning: Fortran names may not start with an underscore.";
+        errs() << macroName << "Is invalid.\n";
         fortranMacro = "! underscore is invalid character name\n";
         fortranMacro += "!INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
       } else {

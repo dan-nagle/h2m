@@ -29,6 +29,8 @@ if(LLVM_FOUND) # We found the config and can use its definitions
   llvm_map_components_to_libnames(llvm_libs support core irreader)
 elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all must be done by hand
   message(STATUS "Found LLVM directory information")
+  message(STATUS "Be aware that Clang directory information must also be specified manually")
+  message(STATUS "because automatic location of the Clang package depends on the LLVM package.")
   message(STATUS "Using LLVM libs in ${LLVM_LIB_PATH}")
   message(STATUS "USING LLVM includes in ${LLVM_INCLUDE_PATH}")
 
@@ -86,7 +88,9 @@ if(Clang_FOUND) # We found the config and can use its definitions
     message(STATUS "Including ${AUX_CLANG_DIR_INC}/../tools/clang/include")
   endif()
 
-
+  # If the include directories are defined (as they should be!) use those.
+  # Double includes are not an issue as far as I can tell. CMake doesn't care
+  # if these directories are included twice.
   if(IS_DIRECTORY "${CLANG_INCLUDE_DIRS}")
     include_directories("${CLANG_INCLUDE_DIRS}")
     message(STATUS "Including ${CLANG_INCLUDE_DIRS}")
@@ -116,7 +120,7 @@ else() # This could be because paths were not given or are invalid
 endif()
 
 # All clang projects MUST be compiled with hidden visibility and no rtti
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11 -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden")
 
 # get_property(included DIRECTORY PROPERTY INCLUDE_DIRECTORIES) # Debugging message
 # message(STATUS ${included})
