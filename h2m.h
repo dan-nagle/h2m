@@ -54,8 +54,9 @@ class CToFTypeFormatter {
 public:
   QualType c_qualType;
   ASTContext &ac;
+  PresumedLoc sloc;
 
-  CToFTypeFormatter(QualType qt, ASTContext &ac);
+  CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc);
   string getFortranTypeASString(bool typeWrapper);
   string getFortranIdASString(string raw_id);
   bool isSameType(QualType qt2);
@@ -64,7 +65,7 @@ public:
   static bool isType(const string input);
   static bool isString(const string input);
   static bool isChar(const string input);
-  static string createFortranType(const string macroName, const string macroVal);
+  static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc);
 };
 
 class RecordDeclFormatter {
@@ -83,6 +84,7 @@ public:
   bool structOrUnion = STRUCT;
   string tag_name;
   bool isInSystemHeader;
+  PresumedLoc sloc;
 
   // Member functions declarations
   RecordDeclFormatter(RecordDecl *rd, Rewriter &r);
@@ -104,6 +106,7 @@ class EnumDeclFormatter {
 public:
   EnumDecl *enumDecl;
   bool isInSystemHeader;
+  PresumedLoc sloc;
 
   // Member functions declarations
   EnumDeclFormatter(EnumDecl *e, Rewriter &r);
@@ -118,6 +121,7 @@ class VarDeclFormatter {
 public:
   VarDecl *varDecl;
   bool isInSystemHeader;
+  PresumedLoc sloc;
 
   // Member functions declarations
   VarDeclFormatter(VarDecl *v, Rewriter &r);
@@ -136,6 +140,7 @@ class TypedefDeclFormater {
 public:
   TypedefDecl *typedefDecl;
   bool isInSystemHeader;
+  PresumedLoc sloc;
 
   // Member functions declarations
   TypedefDeclFormater(TypedefDecl *t, Rewriter &r);
@@ -151,6 +156,7 @@ class FunctionDeclFormatter {
 public:
   FunctionDecl *funcDecl;
   bool isInSystemHeader;
+  PresumedLoc sloc;
 
   // Member functions declarations
   FunctionDeclFormatter(FunctionDecl *f, Rewriter &r);
@@ -174,6 +180,7 @@ public:
   string macroVal;
   string macroDef;
   bool isInSystemHeader;
+  PresumedLoc sloc;
 
   MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci);
   bool isObjectLike();

@@ -87,6 +87,8 @@ if(Clang_FOUND) # We found the config and can use its definitions
     include_directories("${AUX_CLANG_DIR_INC}/../tools/clang/include")
     message(STATUS "Including ${AUX_CLANG_DIR_INC}/../tools/clang/include")
   endif()
+  message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.h in ${LLVM_INCLUDE_DIRS}")
+  message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.inc in ${LLVM_INCLUDE_DIRS}")
 
   # If the include directories are defined (as they should be!) use those.
   # Double includes are not an issue as far as I can tell. CMake doesn't care

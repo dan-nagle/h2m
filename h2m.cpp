@@ -18,8 +18,10 @@ static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
 // -----------initializer RecordDeclFormatter--------------------
-CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac): ac(ac) {
+CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc loc): ac(ac) {
   c_qualType = qt;
+  sloc = loc;
+  // sloc = ac.getSourceManager().getPresumedLoc(TypeLoc(qt, qt.getAsOpaquePtr()).getEndLoc()); // # TODO: WHY DOESN'T THIS WORK?
 };
 
 bool CToFTypeFormatter::isSameType(QualType qt2) {
@@ -196,12 +198,13 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
     const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
     // recursively get element type
     QualType e_qualType = at->getElementType ();
-    CToFTypeFormatter etf(e_qualType, ac);
+    CToFTypeFormatter etf(e_qualType, ac, sloc);
 
     f_type = etf.getFortranTypeASString(typeWrapper);
   } else {
     f_type = "unrecognized_type(" + c_qualType.getAsString()+")";
     errs() << "Warning: unrecognized type " << c_qualType.getAsString() << "\n";
+    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn();
   }
   return f_type;
 };
@@ -315,7 +318,7 @@ bool CToFTypeFormatter::isType(const string input) {
   return false;
 };
 
-string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal) {
+string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal, PresumedLoc loc) {
   string ft_buffer;
   string type_id = "typeID_" + macroName ;
   // replace space with underscore 
@@ -328,6 +331,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   if (macroName[0] == '_') {
     errs() << "Warning: Fortran names may not start with '_' ";
     errs() << macroName << " is invalid \n";
+    errs() << loc.getFilename() << " " << loc.getLine() << ":" << loc.getColumn() << "\n";
     ft_buffer = "! underscore is invalid character name\n";
     ft_buffer += "!TYPE, BIND(C) :: " + macroName+ "\n";
     if (macroVal.find("char") != std::string::npos) {
@@ -424,6 +428,7 @@ string VarDeclFormatter::getInitValueASString() {
     } else {
       valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
       errs() << "Invalid declaration: " << valString << " \n";
+      errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
     }
   }
   return valString;
@@ -459,7 +464,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 string VarDeclFormatter::getFortranArrayDeclASString() {
   string arrayDecl;
   if (varDecl->getType().getTypePtr()->isArrayType() and !isInSystemHeader) {
-    CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext());
+    CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc);
     if (!varDecl->hasInit()) {
       // only declared, no init
       arrayDecl = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
@@ -547,7 +552,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       varDecl->getType().getTypePtr()->getPointeeType()->isCharType()) {
       // string declaration
       string value = getInitValueASString();
-      CToFTypeFormatter tf(varDecl->getType().getTypePtr()->getPointeeType(), varDecl->getASTContext());
+      CToFTypeFormatter tf(varDecl->getType().getTypePtr()->getPointeeType(), varDecl->getASTContext(), sloc);
       if (value.empty()) {
         vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
       } else if (value[0] == '!') {
@@ -557,7 +562,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       }
     } else {
       string value = getInitValueASString();
-      CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext());
+      CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc);
       if (value.empty()) {
         vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
       } else if (value[0] == '!') {
@@ -579,7 +584,8 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r) : rewriter
   isLocValid = typedefDecl->getSourceRange().getBegin().isValid();
   if (isLocValid) {
     isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(typedefDecl->getSourceRange().getBegin());
-  } 
+    sloc = rewriter.getSourceMgr().getPresumedLoc(typedefDecl->getSourceRange().getBegin());
+  }  
   
 };
 
@@ -592,7 +598,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       } else {
         // other regular type defs
         TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
-        CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext());
+        CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc);
         string identifier = typedefDecl->getNameAsString();
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
         typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
@@ -603,9 +609,11 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
 };
 
 // -----------initializer EnumDeclFormatter--------------------
+//# SAME FOR ENUM DECL FORMATTER
 EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r) : rewriter(r) {
   enumDecl = e;
   isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(enumDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
 };
 
 string EnumDeclFormatter::getFortranEnumASString() {
@@ -641,9 +649,11 @@ string EnumDeclFormatter::getFortranEnumASString() {
 
 // -----------initializer RecordDeclFormatter--------------------
 
+//# TODO: HERE's HOW TO GET THE LINE NUMBER FROM RECORDDECLS
 RecordDeclFormatter::RecordDeclFormatter(RecordDecl* rd, Rewriter &r) : rewriter(r) {
   recordDecl = rd;
   isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(recordDecl->getSourceRange().getBegin());
+  sloc = rewriter.getSourceMgr().getPresumedLoc(recordDecl->getSourceRange().getBegin());
 };
 
 bool RecordDeclFormatter::isStruct() {
@@ -662,7 +672,7 @@ string RecordDeclFormatter::getFortranFields() {
   string fieldsInFortran = "";
   if (!recordDecl->field_empty()) {
     for (auto it = recordDecl->field_begin(); it != recordDecl->field_end(); it++) {
-      CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext());
+      CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext(), sloc);
       string identifier = tf.getFortranIdASString((*it)->getNameAsString());
 
       fieldsInFortran += "    " + tf.getFortranTypeASString(true) + " :: " + identifier + "\n";
@@ -680,7 +690,8 @@ string RecordDeclFormatter::getFortranStructASString() {
     string fieldsInFortran = getFortranFields();
     if (fieldsInFortran.empty()) {
       rd_buffer = "! struct without fields may cause warning\n";
-      errs() << "Warning: struct without fields may cuase warnings \n";
+      errs() << "Warning: struct without fields may cause warnings: \n";
+      errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn();
     }
 
     if (mode == ID_ONLY) {
@@ -752,6 +763,7 @@ FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r) : rew
   returnQType = funcDecl->getReturnType();
   params = funcDecl->parameters();
   isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(funcDecl->getSourceRange().getBegin());
+  sloc = rewriter.getSourceMgr().getPresumedLoc(funcDecl->getSourceRange().getBegin());
 };
 
 // for inserting types to "USE iso_c_binding, only: <<< c_ptr, c_int>>>""
@@ -765,14 +777,14 @@ string FunctionDeclFormatter::getParamsTypesASString() {
     if (first) {
       prev_qt = (*it)->getOriginalType();
       qts.push_back(prev_qt);
-      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext());
+      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc);
       if (tf.getFortranTypeASString(false).find("C_") != std::string::npos) {
         paramsType = tf.getFortranTypeASString(false);
       }
       first = false;
 
       // add the return type too
-      CToFTypeFormatter rtf(returnQType, funcDecl->getASTContext());
+      CToFTypeFormatter rtf(returnQType, funcDecl->getASTContext(), sloc);
       if (!returnQType.getTypePtr()->isVoidType()) {
         if (rtf.isSameType(prev_qt)) {
         } else {
@@ -800,7 +812,7 @@ string FunctionDeclFormatter::getParamsTypesASString() {
       }
 
     } else {
-      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext());
+      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc);
       if (tf.isSameType(prev_qt)) {
       } else {
           // check if type is in the vector
@@ -835,7 +847,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       pname = "arg_" + to_string(index);
     }
     
-    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext());
+    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(),sloc);
     // in some cases parameter doesn't have a name
     paramsDecl += "    " + tf.getFortranTypeASString(true) + ", value" + " :: " + pname + "\n"; // need to handle the attribute later
     index ++;
@@ -869,6 +881,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
   return paramsNames;
 };
 
+//# TODO: COPY THIS FOR USE WITH SOURCE LOCATION FOR FUNCTIONS LOGIC
 bool FunctionDeclFormatter::argLocValid() {
   for (auto it = params.begin(); it != params.end(); it++) {
     if ((*it)->getSourceRange().getBegin().isValid()) {
@@ -899,13 +912,13 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     if (returnQType.getTypePtr()->isVoidType()) {
       funcType = "SUBROUTINE";
     } else {
-      CToFTypeFormatter tf(returnQType, funcDecl->getASTContext());
+      CToFTypeFormatter tf(returnQType, funcDecl->getASTContext(), sloc);
       funcType = tf.getFortranTypeASString(true) + " FUNCTION";
     }
     // if (funcDecl->getNameAsString()[0] == '_') {
     //   fortanFunctDecl = funcType + " f" + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // } else {
-      fortanFunctDecl = funcType + " " + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
+    fortanFunctDecl = funcType + " " + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // }
     
     fortanFunctDecl += imports;
@@ -943,6 +956,8 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     // define macro properties
     isObjectOrFunction = mi->isObjectLike();
     isInSystemHeader = SM.isInSystemHeader(mi->getDefinitionLoc());
+   
+    sloc = SM.getPresumedLoc(mi->getDefinitionLoc());
 
     // source text
     macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(), MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
@@ -986,8 +1001,9 @@ string MacroFormatter::getFortranMacroASString() {
       if (!macroVal.empty()) {
         if (CToFTypeFormatter::isString(macroVal)) {
           if (macroName[0] == '_') {
-            errs() << "Warning: Fortran names may not start with an underscore.";
-            errs() << macroName << "Is invalid.\n";
+            errs() << "Warning: Fortran names may not start with an underscore. ";
+            errs() << macroName << " Is invalid.";
+            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
             fortranMacro = "! underscore is invalid character name\n";
             fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
@@ -998,6 +1014,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroName[0] == '_') {
             errs() << "Warning: Fortran names may not start with an underscore.";
             errs() << macroName << "Is invalid.\n";
+            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
             fortranMacro = "! underscore is invalid character name\n";
             fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
@@ -1009,6 +1026,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroVal.find_first_of("UL") != std::string::npos or macroName[0] == '_') {
             errs() << "Warning: Fortran name with invalid characters detected.";
             errs() << macroName << "Is invalid.\n";
+            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else if (macroVal.find("x") != std::string::npos) {
             size_t x = macroVal.find_last_of("x");
@@ -1024,6 +1042,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroVal.find_first_of("FUL") != std::string::npos or macroName[0] == '_') {
             errs() << "Warning: Fortran names may not start with an underscore.";
             errs() << macroName << "Is invalid.\n";
+            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
             fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
             fortranMacro = "REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
@@ -1031,7 +1050,7 @@ string MacroFormatter::getFortranMacroASString() {
           
         } else if (CToFTypeFormatter::isType(macroVal)) {
           // only support int short long char for now
-          fortranMacro = CToFTypeFormatter::createFortranType(macroName, macroVal);
+          fortranMacro = CToFTypeFormatter::createFortranType(macroName, macroVal, sloc);
 
         } else {
           std::istringstream in(macroDef);
@@ -1043,6 +1062,7 @@ string MacroFormatter::getFortranMacroASString() {
       if (macroName[0] == '_') {
         errs() << "Warning: Fortran names may not start with an underscore.";
         errs() << macroName << "Is invalid.\n";
+        errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
         fortranMacro = "! underscore is invalid character name\n";
         fortranMacro += "!INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
       } else {
@@ -1058,6 +1078,7 @@ string MacroFormatter::getFortranMacroASString() {
       if (macroName[0] == '_') {
         fortranMacro = "! underscore is invalid character name.\n";
         fortranMacro += "!INTERFACE\n";
+        errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
         if (md->getMacroInfo()->arg_empty()) {
           fortranMacro += "!SUBROUTINE "+ macroName + "() bind (C)\n";
         } else {
@@ -1200,6 +1221,8 @@ public:
   : ci(ci) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()), 
   //Indent(0), FOuts((*output_ref).os()) {}
 
+  //# TODO: MODIFY THIS FUNCTION TO PASS SOURCE LOCATION TO ERRORS IF NECESSARY
+  //# MACRO DIRECTIVES DO HAVE FUNCTION getLocation()
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD) {
     MacroFormatter mf(MacroNameTok, MD, ci);
     (*output_ref).os() << mf.getFortranMacroASString();
