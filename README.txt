@@ -37,12 +37,13 @@ The h2m Autofortran tool is designed to allow easy calls to C
 routines from Fortran programs. Given a header file in standard C,
 h2m will produce a Fortran module providing function interfaces
 which maintain interoperability with C. Features for which there
-are no Fortran equivalents will not be translated. 
-The h2m Autofortran tool is build into Clang, the LLVM C compiler.
+are no Fortran equivalents will not be translated and warnings 
+will be written to standard error.
+The h2m Autofortran tool is built into Clang, the LLVM C compiler.
 During translation, the Clang abstract syntax tree is used to 
 assemble information about the header file. Clang is a very strict
 compiler and will often generate warnings about the C code during
-this phase.
+this phase. Standard Clang options can be specified.
 
 The h2m Autofortran tool was envisioned by Dan Nagle and completed
 at NCAR by Sisi Liu and revised by Michelle Anderson and 
@@ -66,7 +67,7 @@ library and header files can be specified.
 Because the h2mbuild.sh script must change directories, always run
 it as ./h2mbuild.sh. It will not work correctly if run from a 
 different working directory (although it will not cause any damage,
-it will not complete the installation process).
+it will not complete the build process).
 
 Usage of the h2mbuild.sh script:
 Usage: ./h2mbuild.sh [options]
@@ -178,21 +179,24 @@ been found. This often results in incompatible versions and linker errors.
 implementation. Release 4.0 is known to work, and this is the 
 default download URL.
 
+5. If Clang suffers a fatal error during an attempted compilation (this
+may include failure to locate header files) the program will stop and
+the output file will not be produced.
+
 3)   USAGE OF H2M
 
 The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
-The output translation will appear on standard output and can be sent to
-a written to a file with standard shell redirection: 
-./h2m [path to header] > [file to write]
+By default h2m sends the translated test to standard output. This can be
+redirected with an option or the shell.
+
+./h2m -out=[path to output file] [path to header] -- [Clang options]
+
 
 4)   KNOWN ISSUES
-
-Warnings are not yet fully implemented for C features which have no Fortran 
-equivalent. Note that names in Fortran may not begin with an underscore,
-"_" but this is legal in C.
 
 Clang warnings may be generated during translation. This does not mean
 that there is necessarilly something wrong with the code in question.
 
+Clang errors are fatal to the tool. Translation will not occur.
 
 

@@ -6,6 +6,16 @@
 // in place of outs()
 static llvm::tool_output_file *output_ref;
 
+// A helper function to be used to output error line information
+// If the location is invalid, it returns a message about that.
+static void LineError(PresumedLoc sloc) {
+  if (sloc.isValid()) {
+    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+  } else {
+    errs() << "Invalid file location \n";
+  }
+}
+
 // Command line options:
 // Positional parameter: the first input parameter should be the compilation files
 static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),
@@ -203,8 +213,11 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
     f_type = etf.getFortranTypeASString(typeWrapper);
   } else {
     f_type = "unrecognized_type(" + c_qualType.getAsString()+")";
-    errs() << "Warning: unrecognized type " << c_qualType.getAsString() << "\n";
-    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn();
+    // Avoids repetitive error messages
+    if (typeWrapper) {
+      errs() << "Warning: unrecognized type (" << c_qualType.getAsString() << ")\n";
+      LineError(sloc);
+    }
   }
   return f_type;
 };
@@ -331,7 +344,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   if (macroName[0] == '_') {
     errs() << "Warning: Fortran names may not start with '_' ";
     errs() << macroName << " is invalid \n";
-    errs() << loc.getFilename() << " " << loc.getLine() << ":" << loc.getColumn() << "\n";
+    LineError(loc);
     ft_buffer = "! underscore is invalid character name\n";
     ft_buffer += "!TYPE, BIND(C) :: " + macroName+ "\n";
     if (macroVal.find("char") != std::string::npos) {
@@ -364,6 +377,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
 VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r) : rewriter(r) {
   varDecl = v;
   isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(varDecl->getSourceRange().getBegin());
+  sloc = rewriter.getSourceMgr().getPresumedLoc(varDecl->getSourceRange().getBegin());
 };
 
 string VarDeclFormatter::getInitValueASString() {
@@ -428,7 +442,7 @@ string VarDeclFormatter::getInitValueASString() {
     } else {
       valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
       errs() << "Invalid declaration: " << valString << " \n";
-      errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+      LineError(sloc);
     }
   }
   return valString;
@@ -570,8 +584,6 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } else {
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + value + "\n";
       }
-
-
     }
   }
 
@@ -584,8 +596,8 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r) : rewriter
   isLocValid = typedefDecl->getSourceRange().getBegin().isValid();
   if (isLocValid) {
     isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(typedefDecl->getSourceRange().getBegin());
-    sloc = rewriter.getSourceMgr().getPresumedLoc(typedefDecl->getSourceRange().getBegin());
   }  
+  sloc = rewriter.getSourceMgr().getPresumedLoc(typedefDecl->getSourceRange().getBegin());
   
 };
 
@@ -613,7 +625,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
 EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r) : rewriter(r) {
   enumDecl = e;
   isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(enumDecl->getSourceRange().getBegin());
-    sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
+  sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
 };
 
 string EnumDeclFormatter::getFortranEnumASString() {
@@ -649,7 +661,6 @@ string EnumDeclFormatter::getFortranEnumASString() {
 
 // -----------initializer RecordDeclFormatter--------------------
 
-//# TODO: HERE's HOW TO GET THE LINE NUMBER FROM RECORDDECLS
 RecordDeclFormatter::RecordDeclFormatter(RecordDecl* rd, Rewriter &r) : rewriter(r) {
   recordDecl = rd;
   isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(recordDecl->getSourceRange().getBegin());
@@ -691,7 +702,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     if (fieldsInFortran.empty()) {
       rd_buffer = "! struct without fields may cause warning\n";
       errs() << "Warning: struct without fields may cause warnings: \n";
-      errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn();
+      LineError(sloc);
     }
 
     if (mode == ID_ONLY) {
@@ -881,7 +892,6 @@ string FunctionDeclFormatter::getParamsNamesASString() {
   return paramsNames;
 };
 
-//# TODO: COPY THIS FOR USE WITH SOURCE LOCATION FOR FUNCTIONS LOGIC
 bool FunctionDeclFormatter::argLocValid() {
   for (auto it = params.begin(); it != params.end(); it++) {
     if ((*it)->getSourceRange().getBegin().isValid()) {
@@ -1003,7 +1013,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroName[0] == '_') {
             errs() << "Warning: Fortran names may not start with an underscore. ";
             errs() << macroName << " Is invalid.";
-            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+            LineError(sloc);
             fortranMacro = "! underscore is invalid character name\n";
             fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
@@ -1014,7 +1024,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroName[0] == '_') {
             errs() << "Warning: Fortran names may not start with an underscore.";
             errs() << macroName << "Is invalid.\n";
-            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+            LineError(sloc);
             fortranMacro = "! underscore is invalid character name\n";
             fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
@@ -1026,7 +1036,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroVal.find_first_of("UL") != std::string::npos or macroName[0] == '_') {
             errs() << "Warning: Fortran name with invalid characters detected.";
             errs() << macroName << "Is invalid.\n";
-            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+            LineError(sloc);
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else if (macroVal.find("x") != std::string::npos) {
             size_t x = macroVal.find_last_of("x");
@@ -1042,7 +1052,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroVal.find_first_of("FUL") != std::string::npos or macroName[0] == '_') {
             errs() << "Warning: Fortran names may not start with an underscore.";
             errs() << macroName << "Is invalid.\n";
-            errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+            LineError(sloc);
             fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else {
             fortranMacro = "REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
@@ -1062,7 +1072,7 @@ string MacroFormatter::getFortranMacroASString() {
       if (macroName[0] == '_') {
         errs() << "Warning: Fortran names may not start with an underscore.";
         errs() << macroName << "Is invalid.\n";
-        errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+        LineError(sloc);
         fortranMacro = "! underscore is invalid character name\n";
         fortranMacro += "!INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
       } else {
@@ -1078,7 +1088,9 @@ string MacroFormatter::getFortranMacroASString() {
       if (macroName[0] == '_') {
         fortranMacro = "! underscore is invalid character name.\n";
         fortranMacro += "!INTERFACE\n";
-        errs() << sloc.getFilename() << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+        errs() << "Warning: fortran names may not begin with an underscore \n";
+        errs() << macroName << " is invalid ";
+        LineError(sloc);
         if (md->getMacroInfo()->arg_empty()) {
           fortranMacro += "!SUBROUTINE "+ macroName + "() bind (C)\n";
         } else {
@@ -1221,8 +1233,6 @@ public:
   : ci(ci) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()), 
   //Indent(0), FOuts((*output_ref).os()) {}
 
-  //# TODO: MODIFY THIS FUNCTION TO PASS SOURCE LOCATION TO ERRORS IF NECESSARY
-  //# MACRO DIRECTIVES DO HAVE FUNCTION getLocation()
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD) {
     MacroFormatter mf(MacroNameTok, MD, ci);
     (*output_ref).os() << mf.getFortranMacroASString();
