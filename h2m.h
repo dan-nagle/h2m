@@ -49,6 +49,9 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 // A help message for this specific tool can be added afterwards.
 static cl::extrahelp MoreHelp("\nMore help text...");
 
+// Option to substitute symbols in the C headers for something else
+static cl::opt<string> Subs("substitute", cl::desc("<symbol_present>:<symbol_to_subsitute>"));
+
 //------------Formatter class decl----------------------------------------------------------------------------------------------------
 class CToFTypeFormatter {
 public:

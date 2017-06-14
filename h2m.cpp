@@ -6,6 +6,10 @@
 // in place of outs()
 static llvm::tool_output_file *output_ref;
 
+// A filewide pointer to the substitution parameters
+static string subout;
+static string subin;
+
 // A helper function to be used to output error line information
 // If the location is invalid, it returns a message about that.
 static void LineError(PresumedLoc sloc) {
@@ -50,6 +54,10 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
 };
 
 string CToFTypeFormatter::getFortranIdASString(string raw_id) {
+  errs() << "Comparing " << raw_id << " and " << subout << "\n";
+  if (raw_id.compare(subout) == 0) {  // substitute out this string
+    raw_id = subin;
+  }
   if (c_qualType.getTypePtr()->isArrayType()) {
     const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
     QualType e_qualType = at->getElementType ();
@@ -611,6 +619,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         // other regular type defs
         TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
         CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc);
+        //TODO: NAME SUBSTITUTION
         string identifier = typedefDecl->getNameAsString();
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
         typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
@@ -631,10 +640,12 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r) : rewriter(r) {
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
   if (!isInSystemHeader) {
+     // TODO: NAME SUBSTITUTION
     string enumName = enumDecl->getNameAsString();
     enum_buffer = "ENUM, BIND( C )\n";
     enum_buffer += "    enumerator :: ";
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end (); it++) {
+      // TODO: NAME SUBSTITUTION
       string constName = (*it)->getNameAsString ();
       int constVal = (*it)->getInitVal ().getExtValue ();
       enum_buffer += constName + "=" + to_string(constVal) + ", ";
@@ -684,6 +695,7 @@ string RecordDeclFormatter::getFortranFields() {
   if (!recordDecl->field_empty()) {
     for (auto it = recordDecl->field_begin(); it != recordDecl->field_end(); it++) {
       CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext(), sloc);
+      // TODO: SEE IF THIS IS WORKING
       string identifier = tf.getFortranIdASString((*it)->getNameAsString());
 
       fieldsInFortran += "    " + tf.getFortranTypeASString(true) + " :: " + identifier + "\n";
@@ -706,22 +718,27 @@ string RecordDeclFormatter::getFortranStructASString() {
     }
 
     if (mode == ID_ONLY) {
+      //TODO: Name substitution
       string identifier = "struct_" + recordDecl->getNameAsString();
       
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       
     } else if (mode == TAG_ONLY) {
+      //TODO: Name substitution
       string identifier = tag_name;
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
       string identifier = tag_name;
+      //TODO: Name substitution
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
     } else if (mode == TYPEDEF) {
+      //TODO: Name substitution
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {
+      //TODO: Name substitution
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // replace space with underscore 
       size_t found = identifier.find_first_of(" ");
@@ -730,6 +747,7 @@ string RecordDeclFormatter::getFortranStructASString() {
         found=identifier.find_first_of(" ",found+1);
       }
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
+      //TODO: Name substitution
       string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       // comment out temp_buf
       std::istringstream in(temp_buf);
@@ -853,6 +871,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
   int index = 1;
   for (auto it = params.begin(); it != params.end(); it++) {
     // if the param name is empty, rename it to arg_index
+    //TODO: Name substitution
     string pname = (*it)->getNameAsString();
     if (pname.empty()) {
       pname = "arg_" + to_string(index);
@@ -928,6 +947,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     // if (funcDecl->getNameAsString()[0] == '_') {
     //   fortanFunctDecl = funcType + " f" + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // } else {
+    //TODO: Name substitution
     fortanFunctDecl = funcType + " " + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // }
     
@@ -970,6 +990,7 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     sloc = SM.getPresumedLoc(mi->getDefinitionLoc());
 
     // source text
+    //TODO: Name substitution
     macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(), MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
     macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(), mi->getDefinitionEndLoc()), SM, LangOptions(), 0);
     
@@ -1338,6 +1359,10 @@ int main(int argc, const char **argv) {
     } else {
       filename = "-";
     }
+
+    subout = Subs.substr(0, Subs.find(":"));
+    subin = Subs.substr(Subs.find(":") + 1);
+
     std::error_code error;
     // The file is opened in text mode and returns an error if it already exists
     llvm::tool_output_file output(filename, error, llvm::sys::fs::F_Text);
