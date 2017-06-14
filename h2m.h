@@ -31,6 +31,9 @@
 #include <stdio.h>
 #include <string>
 #include <sstream>
+#include <set>
+#include <deque>
+#include <stack>
 
 using namespace clang;
 using namespace clang::tooling;

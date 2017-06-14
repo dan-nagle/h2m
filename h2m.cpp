@@ -20,6 +20,15 @@ static void LineError(PresumedLoc sloc) {
   }
 }
 
+// A helper function to determine whether or not an identifier should
+// be substituted out of the file.
+static string Substitute(string victim) {
+  if (victim.compare(subout) == 0) {
+    return subin;
+  }
+  return victim;
+}
+
 // Command line options:
 // Positional parameter: the first input parameter should be the compilation files
 static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),
@@ -54,10 +63,8 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
 };
 
 string CToFTypeFormatter::getFortranIdASString(string raw_id) {
-  errs() << "Comparing " << raw_id << " and " << subout << "\n";
-  if (raw_id.compare(subout) == 0) {  // substitute out this string
-    raw_id = subin;
-  }
+  // Determine if it needs to be substituted out
+  raw_id = Substitute(raw_id);
   if (c_qualType.getTypePtr()->isArrayType()) {
     const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
     QualType e_qualType = at->getElementType ();
@@ -445,6 +452,8 @@ string VarDeclFormatter::getInitValueASString() {
       // comment out arrayText
       std::istringstream in(arrayText);
       for (std::string line; std::getline(in, line);) {
+        errs() << "Warning: array contents " << line << " commented out \n";
+        LineError(sloc);
         valString += "! " + line + "\n";
       }
     } else {
@@ -543,6 +552,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             std::istringstream in(arrayText);
             for (std::string line; std::getline(in, line);) {
               arrayDecl += "! " + line + "\n";
+              errs() << "Warning: array text " << line << " commented out.\n";
+              LineError(sloc);
             }
           } else {
                 //INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/))
@@ -621,6 +632,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc);
         //TODO: NAME SUBSTITUTION
         string identifier = typedefDecl->getNameAsString();
+        identifier = Substitute(identifier);
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
         typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
         typdedef_buffer += "END TYPE " + identifier + "\n";
@@ -642,11 +654,13 @@ string EnumDeclFormatter::getFortranEnumASString() {
   if (!isInSystemHeader) {
      // TODO: NAME SUBSTITUTION
     string enumName = enumDecl->getNameAsString();
+    enumName = Substitute(enumName);
     enum_buffer = "ENUM, BIND( C )\n";
     enum_buffer += "    enumerator :: ";
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end (); it++) {
       // TODO: NAME SUBSTITUTION
       string constName = (*it)->getNameAsString ();
+      constName = Substitute(constName);
       int constVal = (*it)->getInitVal ().getExtValue ();
       enum_buffer += constName + "=" + to_string(constVal) + ", ";
     }
@@ -720,26 +734,31 @@ string RecordDeclFormatter::getFortranStructASString() {
     if (mode == ID_ONLY) {
       //TODO: Name substitution
       string identifier = "struct_" + recordDecl->getNameAsString();
+      identifier = Substitute(identifier);
       
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       
     } else if (mode == TAG_ONLY) {
       //TODO: Name substitution
       string identifier = tag_name;
+      identifier = Substitute(identifier);
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
       string identifier = tag_name;
       //TODO: Name substitution
+      identifier = Substitute(identifier);
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
     } else if (mode == TYPEDEF) {
       //TODO: Name substitution
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      identifier = Substitute(identifier);
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {
       //TODO: Name substitution
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      identifier = Substitute(identifier);
       // replace space with underscore 
       size_t found = identifier.find_first_of(" ");
       while (found!=string::npos) {
@@ -748,11 +767,14 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
       //TODO: Name substitution
+      identifier = Substitute(identifier);
       string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       // comment out temp_buf
       std::istringstream in(temp_buf);
       for (std::string line; std::getline(in, line);) {
         rd_buffer += "! " + line + "\n";
+        errs() << "Warning: line " << line << " commented out \n";
+        LineError(sloc);
       }
     }
   }
@@ -873,6 +895,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     // if the param name is empty, rename it to arg_index
     //TODO: Name substitution
     string pname = (*it)->getNameAsString();
+    pname = Substitute(pname);
     if (pname.empty()) {
       pname = "arg_" + to_string(index);
     }
@@ -948,7 +971,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     //   fortanFunctDecl = funcType + " f" + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // } else {
     //TODO: Name substitution
-    fortanFunctDecl = funcType + " " + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
+    fortanFunctDecl = funcType + " " + Substitute(funcDecl->getNameAsString()) + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // }
     
     fortanFunctDecl += imports;
@@ -962,6 +985,8 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       string commentedBody;
       std::istringstream in(bodyText);
       for (std::string line; std::getline(in, line);) {
+        errs() << "Warning: line " << line << " commented out \n";
+        LineError(sloc);
         commentedBody += "! " + line + "\n";
       }
       fortanFunctDecl += commentedBody;
@@ -992,6 +1017,7 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     // source text
     //TODO: Name substitution
     macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(), MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
+    macroName = Substitute(macroName);
     macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(), mi->getDefinitionEndLoc()), SM, LangOptions(), 0);
     
     // strangely there might be a "(" follows the macroName for function macros, remove it if there is
@@ -1086,6 +1112,8 @@ string MacroFormatter::getFortranMacroASString() {
         } else {
           std::istringstream in(macroDef);
           for (std::string line; std::getline(in, line);) {
+            errs() << "Warning: line " << line << " commented out\n";
+            LineError(sloc);
             fortranMacro += "! " + line + "\n";
           }
         }
@@ -1109,8 +1137,8 @@ string MacroFormatter::getFortranMacroASString() {
       if (macroName[0] == '_') {
         fortranMacro = "! underscore is invalid character name.\n";
         fortranMacro += "!INTERFACE\n";
-        errs() << "Warning: fortran names may not begin with an underscore \n";
-        errs() << macroName << " is invalid ";
+        errs() << "Warning: fortran names may not begin with an underscore";
+        errs() << macroName << " is invalid.\n";
         LineError(sloc);
         if (md->getMacroInfo()->arg_empty()) {
           fortranMacro += "!SUBROUTINE "+ macroName + "() bind (C)\n";
@@ -1127,6 +1155,8 @@ string MacroFormatter::getFortranMacroASString() {
         if (!functionBody.empty()) {
           std::istringstream in(functionBody);
           for (std::string line; std::getline(in, line);) {
+            errs() << "Warning: line " << line << " commented out.\n";
+            LineError(sloc);
             fortranMacro += "! " + line + "\n";
           }
         }
@@ -1158,6 +1188,8 @@ string MacroFormatter::getFortranMacroASString() {
         if (!functionBody.empty()) {
           std::istringstream in(functionBody);
           for (std::string line; std::getline(in, line);) {
+            errs() << "Warning: line " << line << " commented out.\n";
+            LineError(sloc);
             fortranMacro += "! " + line + "\n";
           }
         }
@@ -1226,6 +1258,8 @@ bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
   // comment out stmtText
   std::istringstream in(stmtSrc);
   for (std::string line; std::getline(in, line);) {
+    errs() << "Warning: statement " << stmtText << " commented out.\n";
+    LineError(TheRewriter.getSourceMgr().getPresumedLoc(x->getLocStart()));
     stmtText += "! " + line + "\n";
   }
   (*output_ref).os() << stmtText;
@@ -1236,12 +1270,13 @@ bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
 bool TraverseNodeVisitor::TraverseType(QualType x) {
   string qt_string = "!" + x.getAsString ();
   (*output_ref).os() << qt_string;
+  errs() << "Warning: type " << qt_string << " commented out.\n";
+  //TODO: Line errors here? Is this covered elsewehre? I think so?
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseType(x);
   return true;
 };
 
 //-----------PP Callbacks functions----------------------------------------------------------------------------------------------------
-
 class TraverseMacros : public PPCallbacks {
   CompilerInstance &ci;
   // SourceManager& SM;// = ci.getSourceManager();
@@ -1251,7 +1286,7 @@ class TraverseMacros : public PPCallbacks {
 public:
 
   explicit TraverseMacros(CompilerInstance &ci)
-  : ci(ci) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()), 
+  : ci(ci) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()),
   //Indent(0), FOuts((*output_ref).os()) {}
 
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD) {
@@ -1259,8 +1294,22 @@ public:
     (*output_ref).os() << mf.getFortranMacroASString();
   }
 
+  void FileChanged(clang::SourceLocation loc, clang::PPCallbacks::FileChangeReason reason,
+      clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) {
+      clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
+      string filename = ploc.getFilename();
+      if (seenfiles.find(filename) != seenfiles.end()) {
+        errs() << "Skipping old file" << filename << "\n";
+      } else {
+        errs() << "Entering new file" << filename << "\n";
+        seenfiles.insert(filename);
+        stackfiles.push(filename);
+      }
+  }
+private:
+  std::set<string> seenfiles;
+  std::stack<string> stackfiles;
 };
-
 //-----------the main program----------------------------------------------------------------------------------------------------
 
 class TraverseNodeConsumer : public clang::ASTConsumer {
