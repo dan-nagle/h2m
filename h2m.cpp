@@ -6,10 +6,6 @@
 // in place of outs()
 static llvm::tool_output_file *output_ref;
 
-// A filewide pointer to the substitution parameters
-static string subout;
-static string subin;
-
 // A helper function to be used to output error line information
 // If the location is invalid, it returns a message about that.
 static void LineError(PresumedLoc sloc) {
@@ -20,15 +16,6 @@ static void LineError(PresumedLoc sloc) {
   }
 }
 
-// A helper function to determine whether or not an identifier should
-// be substituted out of the file.
-static string Substitute(string victim) {
-  if (victim.compare(subout) == 0) {
-    return subin;
-  }
-  return victim;
-}
-
 // Command line options:
 // Positional parameter: the first input parameter should be the compilation files
 static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),
@@ -37,6 +24,7 @@ static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<source
 // Output file, option is out
 static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
 
+static cl::opt<bool> Recursive("r", cl::desc("Include other header files recursively via USE statements"));
 
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
@@ -64,7 +52,6 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
 
 string CToFTypeFormatter::getFortranIdASString(string raw_id) {
   // Determine if it needs to be substituted out
-  raw_id = Substitute(raw_id);
   if (c_qualType.getTypePtr()->isArrayType()) {
     const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
     QualType e_qualType = at->getElementType ();
@@ -557,7 +544,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             }
           } else {
                 //INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/))
-            arrayDecl += tf.getFortranTypeASString(true)+" :: "+varDecl->getNameAsString()+"("+arrayShapes_fin+")"+" = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
+            arrayDecl += tf.getFortranTypeASString(true)+" :: "+ varDecl->getNameAsString() +"("+arrayShapes_fin+")"+" = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
 
           }
         }
@@ -630,9 +617,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         // other regular type defs
         TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
         CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc);
-        //TODO: NAME SUBSTITUTION
         string identifier = typedefDecl->getNameAsString();
-        identifier = Substitute(identifier);
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
         typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
         typdedef_buffer += "END TYPE " + identifier + "\n";
@@ -652,15 +637,11 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r) : rewriter(r) {
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
   if (!isInSystemHeader) {
-     // TODO: NAME SUBSTITUTION
     string enumName = enumDecl->getNameAsString();
-    enumName = Substitute(enumName);
     enum_buffer = "ENUM, BIND( C )\n";
     enum_buffer += "    enumerator :: ";
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end (); it++) {
-      // TODO: NAME SUBSTITUTION
       string constName = (*it)->getNameAsString ();
-      constName = Substitute(constName);
       int constVal = (*it)->getInitVal ().getExtValue ();
       enum_buffer += constName + "=" + to_string(constVal) + ", ";
     }
@@ -709,7 +690,6 @@ string RecordDeclFormatter::getFortranFields() {
   if (!recordDecl->field_empty()) {
     for (auto it = recordDecl->field_begin(); it != recordDecl->field_end(); it++) {
       CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext(), sloc);
-      // TODO: SEE IF THIS IS WORKING
       string identifier = tf.getFortranIdASString((*it)->getNameAsString());
 
       fieldsInFortran += "    " + tf.getFortranTypeASString(true) + " :: " + identifier + "\n";
@@ -732,33 +712,23 @@ string RecordDeclFormatter::getFortranStructASString() {
     }
 
     if (mode == ID_ONLY) {
-      //TODO: Name substitution
       string identifier = "struct_" + recordDecl->getNameAsString();
-      identifier = Substitute(identifier);
       
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       
     } else if (mode == TAG_ONLY) {
-      //TODO: Name substitution
       string identifier = tag_name;
-      identifier = Substitute(identifier);
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
       string identifier = tag_name;
-      //TODO: Name substitution
-      identifier = Substitute(identifier);
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
     } else if (mode == TYPEDEF) {
-      //TODO: Name substitution
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
-      identifier = Substitute(identifier);
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {
-      //TODO: Name substitution
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
-      identifier = Substitute(identifier);
       // replace space with underscore 
       size_t found = identifier.find_first_of(" ");
       while (found!=string::npos) {
@@ -766,8 +736,6 @@ string RecordDeclFormatter::getFortranStructASString() {
         found=identifier.find_first_of(" ",found+1);
       }
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
-      //TODO: Name substitution
-      identifier = Substitute(identifier);
       string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       // comment out temp_buf
       std::istringstream in(temp_buf);
@@ -893,9 +861,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
   int index = 1;
   for (auto it = params.begin(); it != params.end(); it++) {
     // if the param name is empty, rename it to arg_index
-    //TODO: Name substitution
     string pname = (*it)->getNameAsString();
-    pname = Substitute(pname);
     if (pname.empty()) {
       pname = "arg_" + to_string(index);
     }
@@ -970,8 +936,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     // if (funcDecl->getNameAsString()[0] == '_') {
     //   fortanFunctDecl = funcType + " f" + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // } else {
-    //TODO: Name substitution
-    fortanFunctDecl = funcType + " " + Substitute(funcDecl->getNameAsString()) + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
+    fortanFunctDecl = funcType + " " + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     // }
     
     fortanFunctDecl += imports;
@@ -1015,9 +980,7 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     sloc = SM.getPresumedLoc(mi->getDefinitionLoc());
 
     // source text
-    //TODO: Name substitution
     macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(), MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
-    macroName = Substitute(macroName);
     macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(), mi->getDefinitionEndLoc()), SM, LangOptions(), 0);
     
     // strangely there might be a "(" follows the macroName for function macros, remove it if there is
@@ -1271,7 +1234,6 @@ bool TraverseNodeVisitor::TraverseType(QualType x) {
   string qt_string = "!" + x.getAsString ();
   (*output_ref).os() << qt_string;
   errs() << "Warning: type " << qt_string << " commented out.\n";
-  //TODO: Line errors here? Is this covered elsewehre? I think so?
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseType(x);
   return true;
 };
@@ -1293,24 +1255,9 @@ public:
     MacroFormatter mf(MacroNameTok, MD, ci);
     (*output_ref).os() << mf.getFortranMacroASString();
   }
-
-  void FileChanged(clang::SourceLocation loc, clang::PPCallbacks::FileChangeReason reason,
-      clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) {
-      clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
-      string filename = ploc.getFilename();
-      if (seenfiles.find(filename) != seenfiles.end()) {
-        errs() << "Skipping old file" << filename << "\n";
-      } else {
-        errs() << "Entering new file" << filename << "\n";
-        seenfiles.insert(filename);
-        stackfiles.push(filename);
-      }
-  }
-private:
-  std::set<string> seenfiles;
-  std::stack<string> stackfiles;
 };
-//-----------the main program----------------------------------------------------------------------------------------------------
+
+  //-----------the main program----------------------------------------------------------------------------------------------------
 
 class TraverseNodeConsumer : public clang::ASTConsumer {
 public:
@@ -1409,9 +1356,6 @@ int main(int argc, const char **argv) {
       filename = "-";
     }
 
-    subout = Subs.substr(0, Subs.find(":"));
-    subin = Subs.substr(Subs.find(":") + 1);
-
     std::error_code error;
     // The file is opened in text mode and returns an error if it already exists
     llvm::tool_output_file output(filename, error, llvm::sys::fs::F_Text);
@@ -1420,7 +1364,12 @@ int main(int argc, const char **argv) {
     }
     output_ref = &output;
 
+    std::set<string> seenfiles;
+    std::stack<string> stackfiles;
     ClangTool Tool(*Compilations, SourcePaths);
+    CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles);
+    int initerrs = Tool.run(&CHSFactory);
+
     int tool_errors = Tool.run(newFrontendActionFactory<TraverseNodeAction>().get());
 
     if (!tool_errors) {

@@ -215,3 +215,69 @@ public:
 private:
   Rewriter &TheRewriter;
 };
+
+// Traces the preprocessor as it moves through files and records the inclusions in a stack
+class TraceFiles : public PPCallbacks {
+public:
+  TraceFiles(CompilerInstance &ci, std::set<string>& filesseen, std::stack<string>& filesstack) :
+  ci(ci), seenfiles(filesseen), stackfiles(filesstack) { errs() << "Tracefiles created \n";}
+
+  void FileChanged(clang::SourceLocation loc, clang::PPCallbacks::FileChangeReason reason,
+        clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) override {
+    clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
+    string filename = ploc.getFilename();
+    if (seenfiles.find(filename) != seenfiles.end()) {
+      errs() << "Skipping old file " << filename << "\n";
+     } else {
+      errs() << "Entering new file " << filename << "\n";
+      seenfiles.insert(filename);
+      stackfiles.push(filename);
+    }
+  }
+
+private:
+  CompilerInstance &ci;
+  std::set<string>& seenfiles;
+  std::stack<string>& stackfiles;
+};
+
+// Action to follow the preprocessor and create a stack of files to be dealt with
+class CreateHeaderStackAction : public clang::PreprocessOnlyAction {
+public:
+  CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack) :
+     seenfiles(filesseen), stackfiles(filesstack) {}
+
+ // This did not work.
+ // bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
+ //   Preprocessor &pp = ci.getPreprocessor();
+ //   pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles));
+ //   return true;
+ //  }
+
+  void ExecuteAction() override {
+    getCompilerInstance().getPreprocessor().addPPCallbacks(llvm::make_unique<TraceFiles>(
+        getCompilerInstance(), seenfiles, stackfiles));
+  }
+
+private:
+  std::set<string>& seenfiles;
+  std::stack<string>& stackfiles; 
+};
+
+// Factory to run the preliminary preprocessor file tracing
+class CHSFrontendActionFactory : public FrontendActionFactory {
+public:
+  CHSFrontendActionFactory(std::set<string>& seenfiles, std::stack<string>& stackfiles) :
+     seenfiles(seenfiles), stackfiles(stackfiles) {} 
+
+  CreateHeaderStackAction *create() override {
+    errs() << "Creating new header stack action \n";
+    return new CreateHeaderStackAction(seenfiles, stackfiles);
+  }
+
+private:
+  std::set<string>& seenfiles;
+  std::stack<string>& stackfiles;
+};
+  
+
