@@ -28,6 +28,7 @@ static cl::opt<bool> Recursive("r", cl::desc("Include other header files recursi
 
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
+
 // -----------initializer RecordDeclFormatter--------------------
 CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc loc): ac(ac) {
   c_qualType = qt;
@@ -1363,12 +1364,23 @@ int main(int argc, const char **argv) {
       errs() << "Error opening output file: " << OutputFile << error.message() << "\n";
     }
     output_ref = &output;
-
-    std::set<string> seenfiles;
-    std::stack<string> stackfiles;
     ClangTool Tool(*Compilations, SourcePaths);
-    CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles);
-    int initerrs = Tool.run(&CHSFactory);
+
+    if (Recursive) {  // Recursive inclusion -r was seen on the command line.
+      std::set<string> seenfiles;
+      std::stack<string> stackfiles;
+      CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles);
+      int initerrs = Tool.run(&CHSFactory);
+      if (initerrs) {
+        errs() << "Error during preprocessor-tracing tool run.\n";
+        errs() << "A non-recursive run may succeed.\n";
+        return(initerrs);
+      }
+      while (stackfiles.empty() == false) {
+        errs() << stackfiles.top();
+        stackfiles.pop(); 
+      }
+    }
 
     int tool_errors = Tool.run(newFrontendActionFactory<TraverseNodeAction>().get());
 

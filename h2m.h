@@ -241,22 +241,31 @@ private:
   std::stack<string>& stackfiles;
 };
 
+// Empty. I'm just trying to get this to work. I have no need of this other
+// than to avoid other issues.
+class InactiveNodeConsumer : public clang::ASTConsumer {
+public:
+  InactiveNodeConsumer() {}
+
+  virtual void HandleTranslationUnit(clang::ASTContext &Context) {}
+};
+
 // Action to follow the preprocessor and create a stack of files to be dealt with
-class CreateHeaderStackAction : public clang::PreprocessOnlyAction {
+class CreateHeaderStackAction : public clang::ASTFrontendAction {
 public:
   CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack) :
      seenfiles(filesseen), stackfiles(filesstack) {}
 
  // This did not work.
- // bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
- //   Preprocessor &pp = ci.getPreprocessor();
- //   pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles));
- //   return true;
- //  }
+  bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
+    Preprocessor &pp = ci.getPreprocessor();
+    pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles));
+    return true;
+   }
 
-  void ExecuteAction() override {
-    getCompilerInstance().getPreprocessor().addPPCallbacks(llvm::make_unique<TraceFiles>(
-        getCompilerInstance(), seenfiles, stackfiles));
+  std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
+    clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
+    return llvm::make_unique<InactiveNodeConsumer>();
   }
 
 private:

@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 # Installation script for the h2m Autofortran tool.
 # Original Author: Michelle Anderson.
 
