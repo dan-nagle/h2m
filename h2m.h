@@ -78,7 +78,7 @@ public:
   ASTContext &ac;
   PresumedLoc sloc;
 
-  CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc);
+  CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc, Arguments &arg);
   string getFortranTypeASString(bool typeWrapper);
   string getFortranIdASString(string raw_id);
   bool isSameType(QualType qt2);
@@ -87,7 +87,9 @@ public:
   static bool isType(const string input);
   static bool isString(const string input);
   static bool isChar(const string input);
-  static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc);
+  static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args);
+private:
+  Arguments &args;
 };
 
 class RecordDeclFormatter {
@@ -109,7 +111,7 @@ public:
   PresumedLoc sloc;
 
   // Member functions declarations
-  RecordDeclFormatter(RecordDecl *rd, Rewriter &r);
+  RecordDeclFormatter(RecordDecl *rd, Rewriter &r, Arguments &arg);
   void setMode();
   void setTagName(string name);
   bool isStruct();
@@ -121,6 +123,7 @@ public:
 
 private:
   Rewriter &rewriter;
+  Arguments &args;
   
 };
 
@@ -131,11 +134,12 @@ public:
   PresumedLoc sloc;
 
   // Member functions declarations
-  EnumDeclFormatter(EnumDecl *e, Rewriter &r);
+  EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg);
   string getFortranEnumASString();
 
 private:
   Rewriter &rewriter;
+  Arguments &args;
   
 };
 
@@ -146,7 +150,7 @@ public:
   PresumedLoc sloc;
 
   // Member functions declarations
-  VarDeclFormatter(VarDecl *v, Rewriter &r);
+  VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg);
   string getInitValueASString();
   string getFortranVarDeclASString();
   string getFortranArrayDeclASString();
@@ -155,6 +159,7 @@ public:
 private:
   Rewriter &rewriter;
   string arrayShapes_fin;
+  Arguments &args;
   
 };
 
@@ -165,12 +170,13 @@ public:
   PresumedLoc sloc;
 
   // Member functions declarations
-  TypedefDeclFormater(TypedefDecl *t, Rewriter &r);
+  TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments &args);
   string getFortranTypedefDeclASString();
 
 private:
   Rewriter &rewriter;
   bool isLocValid;
+  Arguments &args;
   
 };
 
@@ -181,7 +187,7 @@ public:
   PresumedLoc sloc;
 
   // Member functions declarations
-  FunctionDeclFormatter(FunctionDecl *f, Rewriter &r);
+  FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg);
   string getParamsNamesASString();
   string getParamsDeclASString();
   string getFortranFunctDeclASString();
@@ -192,6 +198,7 @@ private:
   QualType returnQType;
   llvm::ArrayRef<ParmVarDecl *> params;
   Rewriter &rewriter;
+  Arguments &args;
 };
 
 
@@ -204,7 +211,7 @@ public:
   bool isInSystemHeader;
   PresumedLoc sloc;
 
-  MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci);
+  MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci, Arguments &arg);
   bool isObjectLike();
   bool isFunctionLike();
   string getFortranMacroASString();
@@ -212,6 +219,7 @@ public:
 
 private:
   bool isObjectOrFunction;
+  Arguments &args;
   //CompilerInstance &ci;
 };
 
