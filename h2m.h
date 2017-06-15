@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <string>
 #include <sstream>
+// Set, deque, and stack are needed to keep track of files seen by the preprocessor
 #include <set>
 #include <deque>
 #include <stack>
@@ -40,23 +41,11 @@ using namespace clang::tooling;
 using namespace llvm;
 using namespace std;
 
-// Apply a custom category to all command-line options so that they are the
-// only ones displayed.
-static llvm::cl::OptionCategory MyToolCategory("my-tool options");
-
-// CommonOptionsParser declares HelpMessage with a description of the common
-// command-line options related to the compilation database and input files.
-// It's nice to have this help message in all tools.
-static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
-
-// A help message for this specific tool can be added afterwards.
-static cl::extrahelp MoreHelp("\nMore help text...");
-
-// Option to substitute symbols in the C headers for something else
-static cl::opt<string> Subs("substitute", cl::desc("<symbol_present>:<symbol_to_subsitute>"));
 
 //------------Utility Classes for Argument parsing etc-------------------------------------------------------------------------------
 // Used to pass arguments to the tool factories and actions so I don't have to keep changing them if more are added
+// This keeps track of the queit and silent options, as well as the output file, and allows greater flexibility
+// in the future.
 class Arguments {
 public:
   Arguments(bool q, bool s, llvm::tool_output_file &out) : quiet(q), silent(s), output(out) {}
@@ -65,8 +54,11 @@ public:
   bool getSilent() { return silent; }
   
 private:
+  // Where to send translated Fortran code
   llvm::tool_output_file &output;
+  // Should we report lines which are commented out?
   bool quiet;
+  // Should we report illegal identifiers and more serious issues?
   bool silent;
 };
 
@@ -226,6 +218,7 @@ private:
 
 //------------Visitor class decl----------------------------------------------------------------------------------------------------
 
+// Main class which works to translate the C to Fortran by calling helpers.
 class TraverseNodeVisitor : public RecursiveASTVisitor<TraverseNodeVisitor> {
 public:
   TraverseNodeVisitor(Rewriter &R, Arguments& arg) : TheRewriter(R), args(arg) {}
@@ -238,23 +231,24 @@ public:
 
 private:
   Rewriter &TheRewriter;
+  // Additional translation arguments (ie quiet/silent)
   Arguments &args;
 };
 
 // Traces the preprocessor as it moves through files and records the inclusions in a stack
+// using a set to keep track of files already seen
 class TraceFiles : public PPCallbacks {
 public:
   TraceFiles(CompilerInstance &ci, std::set<string>& filesseen, std::stack<string>& filesstack) :
-  ci(ci), seenfiles(filesseen), stackfiles(filesstack) { errs() << "Tracefiles created \n";}
+  ci(ci), seenfiles(filesseen), stackfiles(filesstack) { }
 
+  // Writes into the stack if a new file is entered by the preprocessor
   void FileChanged(clang::SourceLocation loc, clang::PPCallbacks::FileChangeReason reason,
         clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) override {
     clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
     string filename = ploc.getFilename();
     if (seenfiles.find(filename) != seenfiles.end()) {
-      errs() << "Skipping old file " << filename << "\n";
      } else {
-      errs() << "Entering new file " << filename << "\n";
       seenfiles.insert(filename);
       stackfiles.push(filename);
     }
@@ -262,31 +256,40 @@ public:
 
 private:
   CompilerInstance &ci;
+  // Recording data structures to keep track of files the preprocessor sees
   std::set<string>& seenfiles;
   std::stack<string>& stackfiles;
 };
 
-// Empty. I'm just trying to get this to work. I have no need of this other
-// than to avoid other issues.
+// This is a dummy class. See the explanation for the existence of
+// CreateHeaderStackAction::CreateASTConsumer.
 class InactiveNodeConsumer : public clang::ASTConsumer {
 public:
   InactiveNodeConsumer() {}
 
+  // Intentionally does nothing. We're only using the preprocessor.
   virtual void HandleTranslationUnit(clang::ASTContext &Context) {}
 };
 
 // Action to follow the preprocessor and create a stack of files to be dealt with
+// and translated into fortran in the order seen so as to have the proper order
+// of USE statements.
 class CreateHeaderStackAction : public clang::ASTFrontendAction {
 public:
   CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack) :
      seenfiles(filesseen), stackfiles(filesstack) {}
 
+  // When a source file begins, the callback to trace filechanges is registered
+  // so that all changes are recorded.
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
     Preprocessor &pp = ci.getPreprocessor();
     pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles));
     return true;
    }
 
+  // This is a dummy. For some reason or other, in order to get the action to
+  // work, I had to use an ASTFrontendAction (PreprocessorOnlyAction did not
+  // work) thus this method has to exist (it is pure virtual).
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
     clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
     return llvm::make_unique<InactiveNodeConsumer>();
@@ -297,33 +300,41 @@ private:
   std::stack<string>& stackfiles; 
 };
 
-// Factory to run the preliminary preprocessor file tracing
+// Factory to run the preliminary preprocessor file tracing;
+// determines the order to recursively translate header files
+// when writing modules recursively
 class CHSFrontendActionFactory : public FrontendActionFactory {
 public:
   CHSFrontendActionFactory(std::set<string>& seenfiles, std::stack<string>& stackfiles) :
      seenfiles(seenfiles), stackfiles(stackfiles) {} 
 
+  // Creates a new action which only attends to file changes in the preprocessor.
+  // This allows tracing the files included.
   CreateHeaderStackAction *create() override {
-    errs() << "Creating new header stack action \n";
     return new CreateHeaderStackAction(seenfiles, stackfiles);
   }
 
 private:
+  // Set to keep track of all the files we have seen
   std::set<string>& seenfiles;
+  // Stack to keep track of the order for translation of files
   std::stack<string>& stackfiles;
 };
   
 // Classes, specifications, etc for the main translation program!
 //-----------PP Callbacks functions----------------------------------------------------------------------------------------------------
+// Class used by the main TNActions to inspect and translate C macros
 class TraverseMacros : public PPCallbacks {
 public:
 
   explicit TraverseMacros(CompilerInstance &ci, Arguments &arg)
   : ci(ci), args(arg) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()),
 
+  // Call back to translate each macro when it is defined
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD); 
 private:
   CompilerInstance &ci;
+  // Additional arguments
   Arguments &args;
 };
 
@@ -338,9 +349,11 @@ public:
 private:
 // A RecursiveASTVisitor implementation.
   TraverseNodeVisitor Visitor;
+  // Additional arguments
   Arguments &args;
 };
 
+// Main translation action to be carried out on a C header file
 class TraverseNodeAction : public clang::ASTFrontendAction {
 public:
 
@@ -350,8 +363,10 @@ public:
   // // for macros inspection
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override;
 
+  // Action at the completion of a source file traversal
   void EndSourceFileAction() override;
 
+  // Returns an AST consumer which does the majority of the translation work
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
     clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
     TheRewriter.setSourceMgr(Compiler.getSourceManager(), Compiler.getLangOpts());
@@ -361,24 +376,29 @@ public:
 private:
   Rewriter TheRewriter;
   string fullPathFileName;
+  // Modules to include in USE statements in this file's module
   string use_modules;
+  // Additional arguments
   Arguments &args;
 };
 
+// Clang tools run FrontendActionFactories which implement
+// a method to return a new Action for each file
 class TNAFrontendActionFactory : public FrontendActionFactory {
 public:
   TNAFrontendActionFactory(string to_use, Arguments &arg) :
      use_modules(to_use), args(arg) {};
 
+  // Mandatory function to create a file's TNAction
   TraverseNodeAction *create() override {
     return new TraverseNodeAction(use_modules, args);
   }
 
 private:
+  // Modules previously written to be included in USE statements
   string use_modules;
+  // Additional arguments (ie quiet/silent)
   Arguments &args;
 };
-
-
 
 

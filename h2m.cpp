@@ -21,9 +21,21 @@ static string GetModuleName(string Filename) {
 }
 
 // Command line options:
+
+// Apply a custom category to all command-line options so that they are the
+// only ones displayed.
+static llvm::cl::OptionCategory h2mOpts("Options for the h2m translator.");
+
+// CommonOptionsParser declares HelpMessage with a description of the common
+// command-line options related to the compilation database and input files.
+// It's nice to have this help message in all tools.
+static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
+
+// A help message for this specific tool can be added afterwards.
+static cl::extrahelp MoreHelp("\nMore help text...");
+
 // Positional parameter: the first input parameter should be the compilation files
-static cl::opt<string> SourcePaths(cl::Positional, cl::desc("<source0>...<sourceN>"),
-    cl::OneOrMore);
+static cl::opt<string> SourcePaths(cl::Positional, cl::desc("source to translate"));
 
 // Output file, option is out
 static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
@@ -1205,8 +1217,6 @@ string MacroFormatter::getFortranMacroASString() {
       }
     }
   }
-
-
   return fortranMacro;
 };
 
@@ -1356,7 +1366,7 @@ int main(int argc, const char **argv) {
     }
 
     std::error_code error;
-    // The file is opened in text mode and returns an error if it already exists
+    // The file is opened in text mode
     llvm::tool_output_file OutputFile(filename, error, llvm::sys::fs::F_Text);
     if (error) {  // Error opening file
       errs() << "Error opening args.getOutput() file: " << filename << error.message() << "\n";
@@ -1365,20 +1375,24 @@ int main(int argc, const char **argv) {
 
 
     ClangTool Tool(*Compilations, SourcePaths);
-    int tool_errors = 0;  // No errors have occurred running the tool yet.
+    int tool_errors = 0;  // No errors have occurred running the tool yet!
 
-    if (Recursive) {  // Recursive inclusion -r was seen on the command line.
+    // Follow the preprocessor's inclusions to generate a recursive 
+    // order of hearders to be translated and linked by "USE" statements
+    if (Recursive) {
       std::set<string> seenfiles;
       std::stack<string> stackfiles;
       CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles);
       int initerrs = Tool.run(&CHSFactory);  // Run the first action to follow inclusions
-      if (initerrs) {  // If the info-gathering run failed, this effort is doomed.
+      // If the attempt to find the needed order to translate the headers fails,
+      // this effort is doomed.
+      if (initerrs) {
         errs() << "Error during preprocessor-tracing tool run.\n";
         errs() << "A non-recursive run may succeed.\n";
         return(initerrs);
       }
 
-      // Loop through the created stack of header files we have seen, as prepared by
+      // Dig through the created stack of header files we have seen, as prepared by
       // the first Clang tool which tracks the preprocessor.
       string modules_list;
       while (stackfiles.empty() == false) {
@@ -1388,14 +1402,19 @@ int main(int argc, const char **argv) {
         ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on this file
         TNAFrontendActionFactory factory(modules_list, args);
         tool_errors = stacktool.run(&factory);
+
         if (tool_errors != 0) {  // Tool error occurred
-          if (Silent == false) {
-            errs() << "Unable to run translation on " << headerfile << ". Skipping.\n";
-            modules_list += "!USE " + GetModuleName(headerfile) + "\n";
+          if (Silent == false) {  // Do not report the error if the run is silent.
+            errs() << "Translation error occured on " << headerfile;
+            errs() <<  ". Output may be corrupted or missing.\n";
           }
+          // Comment out the use statement becuase the module may be corrupt.
+          modules_list += "!USE " + GetModuleName(headerfile) + "\n";
         } else {  // Successful run, no errors
+          // Add USE statement to be included in future modules
           modules_list += "USE " + GetModuleName(headerfile) + "\n";
         }
+
         args.getOutput().os() << "\n\n";
       }  // End looking through the stack and processing all headers (including the original).
 
