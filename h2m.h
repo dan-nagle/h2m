@@ -55,6 +55,22 @@ static cl::extrahelp MoreHelp("\nMore help text...");
 // Option to substitute symbols in the C headers for something else
 static cl::opt<string> Subs("substitute", cl::desc("<symbol_present>:<symbol_to_subsitute>"));
 
+//------------Utility Classes for Argument parsing etc-------------------------------------------------------------------------------
+// Used to pass arguments to the tool factories and actions so I don't have to keep changing them if more are added
+class Arguments {
+public:
+  Arguments(bool q, bool s, llvm::tool_output_file &out) : quiet(q), silent(s), output(out) {}
+  llvm::tool_output_file &getOutput() { return output; }
+  bool getQuiet() { return quiet; } 
+  bool getSilent() { return silent; }
+  
+private:
+  llvm::tool_output_file &output;
+  bool quiet;
+  bool silent;
+};
+
+
 //------------Formatter class decl----------------------------------------------------------------------------------------------------
 class CToFTypeFormatter {
 public:
@@ -204,7 +220,7 @@ private:
 
 class TraverseNodeVisitor : public RecursiveASTVisitor<TraverseNodeVisitor> {
 public:
-  TraverseNodeVisitor(Rewriter &R, llvm::tool_output_file &out) : TheRewriter(R), output(out) {}
+  TraverseNodeVisitor(Rewriter &R, Arguments& arg) : TheRewriter(R), args(arg) {}
 
 
   bool TraverseDecl(Decl *d);
@@ -214,7 +230,7 @@ public:
 
 private:
   Rewriter &TheRewriter;
-  llvm::tool_output_file &output;
+  Arguments &args;
 };
 
 // Traces the preprocessor as it moves through files and records the inclusions in a stack
@@ -292,41 +308,36 @@ private:
 // Classes, specifications, etc for the main translation program!
 //-----------PP Callbacks functions----------------------------------------------------------------------------------------------------
 class TraverseMacros : public PPCallbacks {
-  CompilerInstance &ci;
-  // SourceManager& SM;// = ci.getSourceManager();
-  // Preprocessor &pp; // = ci.getPreprocessor();
-  // int Indent;
-  // llvm::formatted_raw_ostream FOuts;
 public:
 
-  explicit TraverseMacros(CompilerInstance &ci, llvm::tool_output_file &out)
-  : ci(ci), output(out) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()),
-  //Indent(0), FOuts((*output_ref).os()) {}
+  explicit TraverseMacros(CompilerInstance &ci, Arguments &arg)
+  : ci(ci), args(arg) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()),
 
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD); 
 private:
-  llvm::tool_output_file &output;
+  CompilerInstance &ci;
+  Arguments &args;
 };
 
   //-----------the main program----------------------------------------------------------------------------------------------------
 
 class TraverseNodeConsumer : public clang::ASTConsumer {
 public:
-  TraverseNodeConsumer(Rewriter &R, llvm::tool_output_file &out) : Visitor(R, out), output(out)  {}
+  TraverseNodeConsumer(Rewriter &R, Arguments &arg) : Visitor(R, arg), args(arg)  {}
 
   virtual void HandleTranslationUnit(clang::ASTContext &Context);
 
 private:
 // A RecursiveASTVisitor implementation.
   TraverseNodeVisitor Visitor;
-  llvm::tool_output_file &output;
+  Arguments &args;
 };
 
 class TraverseNodeAction : public clang::ASTFrontendAction {
 public:
 
-  TraverseNodeAction(string to_use, llvm::tool_output_file &out) :
-       use_modules(to_use), output(out) {}
+  TraverseNodeAction(string to_use, Arguments &arg) :
+       use_modules(to_use), args(arg) {}
 
   // // for macros inspection
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override;
@@ -336,28 +347,28 @@ public:
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
     clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
     TheRewriter.setSourceMgr(Compiler.getSourceManager(), Compiler.getLangOpts());
-    return llvm::make_unique<TraverseNodeConsumer>(TheRewriter, output);
+    return llvm::make_unique<TraverseNodeConsumer>(TheRewriter, args);
   }
 
 private:
   Rewriter TheRewriter;
   string fullPathFileName;
   string use_modules;
-  llvm::tool_output_file &output;
+  Arguments &args;
 };
 
 class TNAFrontendActionFactory : public FrontendActionFactory {
 public:
-  TNAFrontendActionFactory(string to_use, llvm::tool_output_file &out) :
-     use_modules(to_use), output(out) {};
+  TNAFrontendActionFactory(string to_use, Arguments &arg) :
+     use_modules(to_use), args(arg) {};
 
   TraverseNodeAction *create() override {
-    return new TraverseNodeAction(use_modules, output);
+    return new TraverseNodeAction(use_modules, args);
   }
 
 private:
   string use_modules;
-  llvm::tool_output_file &output; 
+  Arguments &args;
 };
 
 

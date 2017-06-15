@@ -30,6 +30,10 @@ static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
 
 static cl::opt<bool> Recursive("r", cl::desc("Include other header files recursively via USE statements"));
 
+static cl::opt<bool> Quiet("q", cl::desc("Silence warnings about lines which have been commented out."));
+
+static cl::opt<bool> Silent("s", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
+
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
 
@@ -990,7 +994,7 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     
     // strangely there might be a "(" follows the macroName for function macros, remove it if there is
     if (macroName.back() == '(') {
-      //output.os() << "unwanted parenthesis found, remove it \n";
+      //args.getOutput().os() << "unwanted parenthesis found, remove it \n";
       macroName.erase(macroName.size()-1);
     }
 
@@ -1184,31 +1188,31 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     FunctionDeclFormatter fdf(cast<FunctionDecl> (d), TheRewriter);
     allFunctionDecls += fdf.getFortranFunctDeclASString();
     
-    // output.os() << "INTERFACE\n" 
+    // args.getOutput().os() << "INTERFACE\n" 
     // << fdf.getFortranFunctDeclASString()
     // << "END INTERFACE\n";      
   } else if (isa<TypedefDecl> (d)) {
     TypedefDecl *tdd = cast<TypedefDecl> (d);
     TypedefDeclFormater tdf(tdd, TheRewriter);
-    output.os() << tdf.getFortranTypedefDeclASString();
+    args.getOutput().os() << tdf.getFortranTypedefDeclASString();
 
   } else if (isa<RecordDecl> (d)) {
     RecordDecl *rd = cast<RecordDecl> (d);
     RecordDeclFormatter rdf(rd, TheRewriter);
-    output.os() << rdf.getFortranStructASString();
+    args.getOutput().os() << rdf.getFortranStructASString();
 
 
   } else if (isa<VarDecl> (d)) {
     VarDecl *varDecl = cast<VarDecl> (d);
     VarDeclFormatter vdf(varDecl, TheRewriter);
-    output.os() << vdf.getFortranVarDeclASString();
+    args.getOutput().os() << vdf.getFortranVarDeclASString();
 
   } else if (isa<EnumDecl> (d)) {
     EnumDeclFormatter edf(cast<EnumDecl> (d), TheRewriter);
-    output.os() << edf.getFortranEnumASString();
+    args.getOutput().os() << edf.getFortranEnumASString();
   } else {
 
-    output.os() << "!found other type of declaration \n";
+    args.getOutput().os() << "!found other type of declaration \n";
     d->dump();
     RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
   }
@@ -1230,14 +1234,14 @@ bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
     LineError(TheRewriter.getSourceMgr().getPresumedLoc(x->getLocStart()));
     stmtText += "! " + line + "\n";
   }
-  output.os() << stmtText;
+  args.getOutput().os() << stmtText;
 
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseStmt(x);
   return true;
 };
 bool TraverseNodeVisitor::TraverseType(QualType x) {
   string qt_string = "!" + x.getAsString ();
-  output.os() << qt_string;
+  args.getOutput().os() << qt_string;
   errs() << "Warning: type " << qt_string << " commented out.\n";
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseType(x);
   return true;
@@ -1246,7 +1250,7 @@ bool TraverseNodeVisitor::TraverseType(QualType x) {
 //---------------------------Main Program Class Functions---------
 void TraverseMacros::MacroDefined (const Token &MacroNameTok, const MacroDirective *MD) {
     MacroFormatter mf(MacroNameTok, MD, ci);
-    output.os() << mf.getFortranMacroASString();
+    args.getOutput().os() << mf.getFortranMacroASString();
 }
 
 void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
@@ -1257,7 +1261,7 @@ void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
 
   // wrap all func decls in a single interface
   if (!Visitor.allFunctionDecls.empty()) {
-    output.os() << "INTERFACE\n" 
+    args.getOutput().os() << "INTERFACE\n" 
     << Visitor.allFunctionDecls
     << "END INTERFACE\n";   
   }
@@ -1274,16 +1278,16 @@ bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef F
   beginSourceModule += "USE, INTRINSIC :: iso_c_binding\n";
   beginSourceModule += use_modules;
   beginSourceModule += "implicit none\n";
-  output.os() << beginSourceModule;
+  args.getOutput().os() << beginSourceModule;
 
   Preprocessor &pp = ci.getPreprocessor();
-  pp.addPPCallbacks(llvm::make_unique<TraverseMacros>(ci, output));
+  pp.addPPCallbacks(llvm::make_unique<TraverseMacros>(ci, args));
   return true;
 }
 
 void TraverseNodeAction::EndSourceFileAction() {
     //Now emit the rewritten buffer.
-    //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(output.os());
+    //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(args.getOutput().os());
     
     size_t slashes = fullPathFileName.find_last_of("/\\");
     string filename = fullPathFileName.substr(slashes+1);
@@ -1292,7 +1296,7 @@ void TraverseNodeAction::EndSourceFileAction() {
 
     string endSourceModle;
     endSourceModle = "END MODULE " + moduleName + "\n";
-    output.os() << endSourceModle;
+    args.getOutput().os() << endSourceModle;
   }
 
 int main(int argc, const char **argv) {
@@ -1313,10 +1317,13 @@ int main(int argc, const char **argv) {
 
     std::error_code error;
     // The file is opened in text mode and returns an error if it already exists
-    llvm::tool_output_file output(filename, error, llvm::sys::fs::F_Text);
+    llvm::tool_output_file OutputFile(filename, error, llvm::sys::fs::F_Text);
     if (error) {  // Error opening file
-      errs() << "Error opening output file: " << OutputFile << error.message() << "\n";
+      errs() << "Error opening args.getOutput() file: " << filename << error.message() << "\n";
     }
+    Arguments args(Quiet, Silent, OutputFile);
+
+
     ClangTool Tool(*Compilations, SourcePaths);
     int tool_errors = 0;  // No errors have occurred running the tool yet.
 
@@ -1339,7 +1346,7 @@ int main(int argc, const char **argv) {
         errs() << headerfile << "\n";  // Debugging help.
         stackfiles.pop(); 
         ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on this file
-        TNAFrontendActionFactory factory(modules_list, output);
+        TNAFrontendActionFactory factory(modules_list, args);
         tool_errors = stacktool.run(&factory);
         if (tool_errors != 0) {  // Tool error occurred
           errs() << "Unable to run translation on " << headerfile << ". Skipping.\n";
@@ -1347,16 +1354,16 @@ int main(int argc, const char **argv) {
         } else {  // Successful run, no errors
           modules_list += "USE " + GetModuleName(headerfile) + "\n";
         }
-        output.os() << "\n\n";
+        args.getOutput().os() << "\n\n";
       }  // End looking through the stack and processing all headers (including the original).
 
     } else {  // No recursion, just run the tool on the first input file.
-      TNAFrontendActionFactory factory("", output);
+      TNAFrontendActionFactory factory("", args);
       tool_errors = Tool.run(&factory);
     }  // End processing for the -r option
 
     if (!tool_errors) {  // If the last run of the tool was not successful, the output is likely garbage
-      output.keep();
+      OutputFile.keep();
     }
      return(tool_errors);
   }
