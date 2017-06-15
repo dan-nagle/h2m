@@ -204,7 +204,7 @@ private:
 
 class TraverseNodeVisitor : public RecursiveASTVisitor<TraverseNodeVisitor> {
 public:
-  TraverseNodeVisitor(Rewriter &R) : TheRewriter(R) {}
+  TraverseNodeVisitor(Rewriter &R, llvm::tool_output_file &out) : TheRewriter(R), output(out) {}
 
 
   bool TraverseDecl(Decl *d);
@@ -214,6 +214,7 @@ public:
 
 private:
   Rewriter &TheRewriter;
+  llvm::tool_output_file &output;
 };
 
 // Traces the preprocessor as it moves through files and records the inclusions in a stack
@@ -256,7 +257,6 @@ public:
   CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack) :
      seenfiles(filesseen), stackfiles(filesstack) {}
 
- // This did not work.
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
     Preprocessor &pp = ci.getPreprocessor();
     pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles));
@@ -289,4 +289,77 @@ private:
   std::stack<string>& stackfiles;
 };
   
+// Classes, specifications, etc for the main translation program!
+//-----------PP Callbacks functions----------------------------------------------------------------------------------------------------
+class TraverseMacros : public PPCallbacks {
+  CompilerInstance &ci;
+  // SourceManager& SM;// = ci.getSourceManager();
+  // Preprocessor &pp; // = ci.getPreprocessor();
+  // int Indent;
+  // llvm::formatted_raw_ostream FOuts;
+public:
+
+  explicit TraverseMacros(CompilerInstance &ci, llvm::tool_output_file &out)
+  : ci(ci), output(out) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()),
+  //Indent(0), FOuts((*output_ref).os()) {}
+
+  void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD); 
+private:
+  llvm::tool_output_file &output;
+};
+
+  //-----------the main program----------------------------------------------------------------------------------------------------
+
+class TraverseNodeConsumer : public clang::ASTConsumer {
+public:
+  TraverseNodeConsumer(Rewriter &R, llvm::tool_output_file &out) : Visitor(R, out), output(out)  {}
+
+  virtual void HandleTranslationUnit(clang::ASTContext &Context);
+
+private:
+// A RecursiveASTVisitor implementation.
+  TraverseNodeVisitor Visitor;
+  llvm::tool_output_file &output;
+};
+
+class TraverseNodeAction : public clang::ASTFrontendAction {
+public:
+
+  TraverseNodeAction(string to_use, llvm::tool_output_file &out) :
+       use_modules(to_use), output(out) {}
+
+  // // for macros inspection
+  bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override;
+
+  void EndSourceFileAction() override;
+
+  std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
+    clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
+    TheRewriter.setSourceMgr(Compiler.getSourceManager(), Compiler.getLangOpts());
+    return llvm::make_unique<TraverseNodeConsumer>(TheRewriter, output);
+  }
+
+private:
+  Rewriter TheRewriter;
+  string fullPathFileName;
+  string use_modules;
+  llvm::tool_output_file &output;
+};
+
+class TNAFrontendActionFactory : public FrontendActionFactory {
+public:
+  TNAFrontendActionFactory(string to_use, llvm::tool_output_file &out) :
+     use_modules(to_use), output(out) {};
+
+  TraverseNodeAction *create() override {
+    return new TraverseNodeAction(use_modules, output);
+  }
+
+private:
+  string use_modules;
+  llvm::tool_output_file &output; 
+};
+
+
+
 
