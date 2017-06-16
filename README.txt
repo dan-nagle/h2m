@@ -9,6 +9,8 @@ Contents:
      Usage of the h2mbuild.sh script
      Troubleshooting
   3) Usage of h2m
+     Behavior
+     Options
   4) Known Issues
 
 0)   Quick Start
@@ -135,10 +137,6 @@ cannot be found. If this option is specified, -Clang_LIB_PATH and
 -CLANG_INCLUDE_PATH must also be specified. This option will be
 ignored if -download is specified.
 
--tools		Option to request the download and build of additional 
-Clang tools along with Clang and LLVM. This option will be ignored if 
--download is not specified.
-
 -install	Requests attempted installation of the software LLVM
 and Clang. This will be standard, default installation. If specialized
 installation locations are necessary, run make install seperately after 
@@ -155,8 +153,12 @@ the download location for Clang. The default URL is:
 http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz
 This option will be ignored if -download is not specified.
 
--TOOLS_URL [url]	Option to specify an alternative path to
-the download location for the extra clang tools. The default URL is:
+-install_h2m		Option to request an installation of the
+h2m binary to a specified directory. The default is /usr/local/bin.
+
+-INSTALL_H2M_DIR [path]		Option to specify a different directory
+to install the h2m binary. A path relative to the current directory
+can be supplied, but an absoulte path is recommended.
 
 Troubleshooting
 
@@ -186,10 +188,76 @@ the output file will not be produced.
 3)   USAGE OF H2M
 
 The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
-By default h2m sends the translated test to standard output. This can be
-redirected with an option or the shell.
+By default h2m sends the translated text to standard output. This can be
+redirected with an option or the shell redirection operators.
 
 ./h2m -out=[path to output file] [path to header] -- [Clang options]
+
+BEHAVIOR
+
+The h2m autofortran tool will attempt to translate struct, function, macros, enum,
+and variable declarations. It is not designed to translate program code. For
+example, if a function definition is provided, it will be commented out in
+the translated fortran.
+Generally, any feature that cannot be translated due to an invalid name or limitations
+with the -q option. Warnings about invalid names or commented out lines will be
+printed to standard error unless supressed.
+Each file is translated into exactly one fortran module. If necessary, USE statements
+will link them based on dependencies in the header files.
+
+Errors: In the case of some errors, the program will terminate and the output file
+will be deleted. Most, however, are expected to be minor and processing will
+continue.
+
+Macros: Because fortran has no equivalent to the C macro, macros are traslated
+into functions. However, because types often cannot be determined for macros,
+a translation attempt may fail. In this case, the line will be commented out
+and a warning will be printed to standard error. These warnings can be silenced
+with the -q or -s option.
+
+Duplicate module names: If multiple header files are found during recursive inclusion,
+a suffix of _[number of repetition] will be appended to create a unique module name.
+
+File Names Begining With "_": Because _ is not a legal character at the begining of 
+a fortran name, the prefix h2m will be prepended to create a unique module name.
+
+Unrecognized Types: When h2m does not recognize a type in a header, it will print a
+warning about the problem and surround the questionably translated text with 
+unrecognized_type(...) in the output.
+
+OPTIONS:
+
+-out=<string>		The output file for the tool can be specified here as either a
+relative or absolute path.
+
+-q			Supress warnings related to lines which have been commented out,
+usually statements, function definitions, comments, or unsupported macros. Errors involving 
+unrecongized types, invalid names, critical errors such as failure to open the output file,
+and Clang errors will still be reported.
+
+-s			Supress warnings related to lines which have been commented out
+as well as warnings related to unrecognized types and invalid names. Critical errors,
+such as failure to open the output file, and Clang errors will still be reported.
+
+-r			Recursively search through include files found in the main file. 
+Run the translation on them in reversed order and link the produced modules with USE
+statements. Any given file will be included exactly once unless it cannot be found in
+which case it will not be translated and future modules will have the USE statement 
+corresponding to the failed translation commented out. In the case that an error is reported
+by Clang, the output may be missing, corrupted, or completely usable depending on the
+nature of the error. However, all following modules will have the USE statement corresponding
+to that module commented out. 
+
+-optimist		Ignore errors during the information gathering phase where the tool
+determines the identities and orders of header files to recursively process. The output file
+will also not be deleted regardless of what errors may occur. This option may potentially
+create unusable code.
+
+-no-system-headers	During recursive processing, ignore all system header files.
+
+Clang Options: Following specification of the input file, options after a "--" are passed
+as arguments to the Clang compiler instance used by the tool. The Clang/LLVM manual pages
+and websites should be used as a reference for these options.
 
 
 4)   KNOWN ISSUES
@@ -197,6 +265,5 @@ redirected with an option or the shell.
 Clang warnings may be generated during translation. This does not mean
 that there is necessarilly something wrong with the code in question.
 
-Clang errors are fatal to the tool. Translation will not occur.
 
 

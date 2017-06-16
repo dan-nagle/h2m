@@ -166,3 +166,11 @@ foreach(llvm_lib ${LLVM_include_libs})
 endforeach()
 
 target_link_libraries(h2m ${clang_libs} ${llvm_libs})
+
+if((EXISTS "${INSTALL_PATH}"))  # An installation of h2m has been requested
+  message(STATUS "Installation requested to ${INSTALL_PATH}")
+  install(TARGETS h2m RUNTIME DESTINATION "${INSTALL_PATH}")
+else()
+  message(STATUS "Valid installation path not found.")
+  message(STATUS "No installation target will be created.")
+endif()

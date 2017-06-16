@@ -23,11 +23,11 @@ print_help ()
   echo "-CLANG_LIB_PATH gives the path to existing Clang library files"
   echo "-CLANG_BUILD_PATH gives the path to an existing Clang build directory"
   echo "-CLANG_INCLUDE_PATH gives the path to existing Clang header files"
-  echo "-tools requests the download of additional clang tools."
   echo "-install requests attempted installation of the software llvm and clang"
+  echo "-install-h2m requests attempted installation of the h2m software"
+  echo "-INSTALL-H2M-DIR gives the path to the h2m installation location"
   echo "-LLVM_URL gives an alternate URL from which to download LLVM"
   echo "-CLANG_URL gives an alternate URL from which to download Clang"
-  echo "-TOOLS_URL gives an alternate URL from which to download Clang tools"
   echo "See README.txt for additional details."
   exit "$1"
 }
@@ -59,9 +59,11 @@ interactive=
 LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
 CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
 TOOLS_URL="http://releases.llvm.org/4.0.0/clang-tools-extra-4.0.0.src.tar.xz"
+install_h2m=
+INSTALL_H2M_DIR="/usr/local/bin"
 
 # Testing for features used within this script. Failures are fatal.
-which cmake || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
+which cmake>&/dev/null || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
 
 
 # Process command line args via shift in a while loop
@@ -84,13 +86,14 @@ do
     -LLVM_URL) LLVM_URL="$2"; shift;;  # The overriding address of the LLVM source
     -CLANG_URL) CLANG_URL="$2"; shift;;  # The overriding address of the Clang source
     -TOOLS_URL) TOOLS_URL="$2"; shift;;  # The overriding address of the Tools source
+    -install_h2m) install_h2m="yes";;
+    -INSTALL_H2M_DIR) INSTALL_H2M_DIR="$2"; shift;;  # Alternate installation directory
     *) echo "Invalid option, $1."; print_help 1;;  # Print help. Exit with error.
   esac
   shift
 done
 
-echo "$PWD/h2m.cpp"
-if [ ! -f "$PWD/h2m.cpp" ]
+if [ ! -f "$PWD/h2m.cpp" ]  # If there is no h2m.cpp in this directory...
 then
   echo "Please run this script from the directory where h2m.cpp,"
   echo "h2m.h, CMakeLists.txt, and h2mbuild.sh are located."
@@ -295,7 +298,14 @@ then
       echo "y/n required"
       read use_clang_config
     done
-  fi  # End aquisition of information about what paths to obtain
+  fi
+  echo "Do you want to install h2m?"
+  while [ "$h2m_install_temp" != "y" ] && [ "$h2m_install_temp" != "n" ]
+  do
+    echo "y/n required"
+    read h2m_install_temp
+  done   # End aquisition of information about what paths to obtain
+
   if [ "$use_llvm_config" == "y" ]  # Obtain directory path to LLVMConfig.cmake file
   then
     echo "Specify path to LLVM configuration file"
@@ -317,6 +327,13 @@ then
     read CLANG_INCLUDE_PATH
     echo "Specify path to Clang build files. See README.txt for details."
     read CLANG_BUILD_PATH
+  fi
+  if [ "$h2m_install_temp" == "y" ]  # Obtain directory path for installation
+  then
+    install_h2m="yes" 
+    echo "Please specify path to the installation directory for the h2m binary."
+    echo "The recommended default is /usr/local/bin."
+    read INSTALL_H2M_DIR
   fi
 fi  # End interactive section
 
@@ -389,11 +406,23 @@ then
   echo "Clang's include and library path information manually">&2
 fi
 
+# Append on the installation directory if it was passed in
+if [ "$install_h2m" ] 
+then
+  cmake_command="$cmake_command -DINSTALL_PATH=$INSTALL_H2M_DIR" 
+fi
+
 # Attempt to execute the cmake commands to create h2m
-echo "cmake command is $cmake_command"  # Debugging line
+# echo "cmake command is $cmake_command"  # Debugging line
 
 # The echo use is necessary to keep cmake from interpretting everything as the source directory
 cmake . `echo "$cmake_command" ` || exit 1
 make || exit 1
+
+# Install h2m if the request has been made
+if [ "$install_h2m" ]
+then
+  make install || exit 1
+fi
 
 exit 0
