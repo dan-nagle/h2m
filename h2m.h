@@ -35,6 +35,7 @@
 #include <set>
 #include <deque>
 #include <stack>
+#include <map>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -48,10 +49,12 @@ using namespace std;
 // in the future.
 class Arguments {
 public:
-  Arguments(bool q, bool s, llvm::tool_output_file &out) : quiet(q), silent(s), output(out) {}
+  Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders) : quiet(q), silent(s),
+      output(out), no_system_headers(sysheaders) {}
   llvm::tool_output_file &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
   bool getSilent() { return silent; }
+  bool getNoSystemHeaders() { return no_system_headers; }
   
 private:
   // Where to send translated Fortran code
@@ -60,6 +63,8 @@ private:
   bool quiet;
   // Should we report illegal identifiers and more serious issues?
   bool silent;
+  // Should we recursively translate system header files?
+  bool no_system_headers;
 };
 
 
@@ -239,12 +244,17 @@ private:
 // using a set to keep track of files already seen
 class TraceFiles : public PPCallbacks {
 public:
-  TraceFiles(CompilerInstance &ci, std::set<string>& filesseen, std::stack<string>& filesstack) :
-  ci(ci), seenfiles(filesseen), stackfiles(filesstack) { }
+  TraceFiles(CompilerInstance &ci, std::set<string>& filesseen, std::stack<string>& filesstack, Arguments& arg) :
+  ci(ci), seenfiles(filesseen), stackfiles(filesstack), args(arg) { }
 
   // Writes into the stack if a new file is entered by the preprocessor
   void FileChanged(clang::SourceLocation loc, clang::PPCallbacks::FileChangeReason reason,
         clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) override {
+
+    // We have found a system header and have been instructured to skip it, so we move along
+    if (ci.getSourceManager().isInSystemHeader(loc) == true && args.getNoSystemHeaders() == true) {
+      return;
+    }
     clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
     string filename = ploc.getFilename();
     if (seenfiles.find(filename) != seenfiles.end()) {
@@ -259,6 +269,7 @@ private:
   // Recording data structures to keep track of files the preprocessor sees
   std::set<string>& seenfiles;
   std::stack<string>& stackfiles;
+  Arguments &args;
 };
 
 // This is a dummy class. See the explanation for the existence of
@@ -276,14 +287,14 @@ public:
 // of USE statements.
 class CreateHeaderStackAction : public clang::ASTFrontendAction {
 public:
-  CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack) :
-     seenfiles(filesseen), stackfiles(filesstack) {}
+  CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack, Arguments &arg) :
+     seenfiles(filesseen), stackfiles(filesstack), args(arg) {} 
 
   // When a source file begins, the callback to trace filechanges is registered
   // so that all changes are recorded.
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
     Preprocessor &pp = ci.getPreprocessor();
-    pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles));
+    pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles, args));
     return true;
    }
 
@@ -298,6 +309,7 @@ public:
 private:
   std::set<string>& seenfiles;
   std::stack<string>& stackfiles; 
+  Arguments &args;
 };
 
 // Factory to run the preliminary preprocessor file tracing;
@@ -305,13 +317,13 @@ private:
 // when writing modules recursively
 class CHSFrontendActionFactory : public FrontendActionFactory {
 public:
-  CHSFrontendActionFactory(std::set<string>& seenfiles, std::stack<string>& stackfiles) :
-     seenfiles(seenfiles), stackfiles(stackfiles) {} 
+  CHSFrontendActionFactory(std::set<string>& seenfiles, std::stack<string>& stackfiles, Arguments &arg) :
+     seenfiles(seenfiles), stackfiles(stackfiles), args(arg) {} 
 
   // Creates a new action which only attends to file changes in the preprocessor.
   // This allows tracing the files included.
   CreateHeaderStackAction *create() override {
-    return new CreateHeaderStackAction(seenfiles, stackfiles);
+    return new CreateHeaderStackAction(seenfiles, stackfiles, args);
   }
 
 private:
@@ -319,6 +331,8 @@ private:
   std::set<string>& seenfiles;
   // Stack to keep track of the order for translation of files
   std::stack<string>& stackfiles;
+  // Additional arguments
+  Arguments &args;
 };
   
 // Classes, specifications, etc for the main translation program!

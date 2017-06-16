@@ -13,14 +13,19 @@ static void LineError(PresumedLoc sloc) {
 }
 
 // Fetches the fortran module name from a given filepath
-static string GetModuleName(string Filename) {
+static string GetModuleName(string Filename, Arguments& args) {
   size_t slashes = Filename.find_last_of("/\\");
   string filename = Filename.substr(slashes+1);
   size_t dot = filename.find('.');
   filename = filename.substr(0, dot);
-  // While there is still length and the first character is an underscore, erase it.
-  while (filename.size() != 0 && filename.substr(0,1).compare("_") == 0) {
-    filename.erase(0, 1);  // Erase the underscore 
+  // if the class is led by an underscore, we must prepend to the name
+  if (filename.size() != 0 && filename.substr(0,1).compare("_") == 0) {
+    if (args.getSilent() == false) {  // Warn about the renaming
+      errs() << "Warning: 'h2m' prepended to module " << filename;
+      errs() << ". Fortran names may not being with an underscore.\n";
+      errs() << " Translation of file: " << Filename << "\n";
+    }
+    filename = "h2m" + filename;
   }
   if (filename.size() == 0) {  // If the name was all underscores
     // TOOD: Warning messages 
@@ -56,6 +61,8 @@ static cl::opt<bool> Quiet("q", cl::desc("Silence warnings about lines which hav
 static cl::opt<bool> Silent("s", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
 
 static cl::opt<bool> Optimistic("optimist", cl::desc("Continue processing and keep output in spite of errors"));
+
+static cl::opt<bool> NoHeaders("no-system-headers", cl::desc("Do not recursively translate system header files."));
 
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
@@ -1162,7 +1169,7 @@ string MacroFormatter::getFortranMacroASString() {
         fortranMacro = "! underscore is invalid character name.\n";
         fortranMacro += "!INTERFACE\n";
         if (args.getSilent() == false) {
-          errs() << "Warning: fortran names may not begin with an underscore";
+          errs() << "Warning: fortran names may not start with an underscore ";
           errs() << macroName << " is invalid.\n";
           LineError(sloc);
         }
@@ -1331,7 +1338,7 @@ void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
 bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef Filename)
 {
   fullPathFileName = Filename;
-  string moduleName = GetModuleName(Filename);
+  string moduleName = GetModuleName(Filename, args);
 
   // initalize Module and imports
   string beginSourceModule;
@@ -1351,7 +1358,7 @@ void TraverseNodeAction::EndSourceFileAction() {
     //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(args.getOutput().os());
 
     string endSourceModle;
-    endSourceModle = "END MODULE " + GetModuleName(fullPathFileName) + "\n";
+    endSourceModle = "END MODULE " + GetModuleName(fullPathFileName, args) + "\n";
     args.getOutput().os() << endSourceModle;
   }
 
@@ -1380,7 +1387,7 @@ int main(int argc, const char **argv) {
     if (Optimistic == true) {  // Keep all output inspite of errors
       OutputFile.keep();
     }
-    Arguments args(Quiet, Silent, OutputFile);
+    Arguments args(Quiet, Silent, OutputFile, NoHeaders);
 
 
     ClangTool Tool(*Compilations, SourcePaths);
@@ -1391,7 +1398,7 @@ int main(int argc, const char **argv) {
     if (Recursive) {
       std::set<string> seenfiles;
       std::stack<string> stackfiles;
-      CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles);
+      CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles, args);
       int initerrs = Tool.run(&CHSFactory);  // Run the first action to follow inclusions
       // If the attempt to find the needed order to translate the headers fails,
       // this effort is probably doomed.
@@ -1399,6 +1406,7 @@ int main(int argc, const char **argv) {
         errs() << "Error during preprocessor-tracing tool run, errno ." << initerrs << "\n";
         if (Optimistic == false) {  // Exit unless told to keep going
           errs() << "A non-recursive run may succeed.\n";
+          errs() << "Alternately, enable optimistic mode (-optimist) to continue despite errors.\n";
           return(initerrs);
         } else {
           errs() << "Optimistic run continuing.\n";
@@ -1422,10 +1430,10 @@ int main(int argc, const char **argv) {
             errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
           }
           // Comment out the use statement becuase the module may be corrupt.
-          modules_list += "!USE " + GetModuleName(headerfile) + "\n";
+          modules_list += "!USE " + GetModuleName(headerfile, args) + "\n";
         } else {  // Successful run, no errors
           // Add USE statement to be included in future modules
-          modules_list += "USE " + GetModuleName(headerfile) + "\n";
+          modules_list += "USE " + GetModuleName(headerfile, args) + "\n";
           if (Silent == false) {  // Don't clutter the screen if the run is silent
             errs() << "Successfully processed " << headerfile << "\n";
             errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
