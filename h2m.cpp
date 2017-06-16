@@ -12,12 +12,29 @@ static void LineError(PresumedLoc sloc) {
   }
 }
 
-// Fetches the fortran module name from a given filepath
+// Fetches the fortran module name from a given filepath Filename
+// IMPORTANT: ONLY call this ONCE for each file! The static 
+// structure requires this, otherwise you will have all sorts of
+// bizarre problems.
 static string GetModuleName(string Filename, Arguments& args) {
+  static std::map<string, int> repeats;
   size_t slashes = Filename.find_last_of("/\\");
   string filename = Filename.substr(slashes+1);
   size_t dot = filename.find('.');
   filename = filename.substr(0, dot);
+  if (repeats.count(filename) > 0) {  // We have found a repeated module name
+    int append = repeats[filename];
+    repeats[filename] = repeats[filename] + 1;  // Record the new repeat in the map
+    string oldfilename = filename;  // Used to report the error, no other purpose
+    filename = filename + "_" + std::to_string(append);  // Add _# to the end of the name
+    if (args.getSilent() == false) {
+      errs() << "Warning: repeated module name " << oldfilename << " found, source is " << Filename;
+      errs() << ". Name changed to " << filename << "\n";
+    }
+  } else {  // Record the first appearance of this module name
+    repeats[filename] = 2;
+  }
+
   // if the class is led by an underscore, we must prepend to the name
   if (filename.size() != 0 && filename.substr(0,1).compare("_") == 0) {
     if (args.getSilent() == false) {  // Warn about the renaming
@@ -26,10 +43,6 @@ static string GetModuleName(string Filename, Arguments& args) {
       errs() << " Translation of file: " << Filename << "\n";
     }
     filename = "h2m" + filename;
-  }
-  if (filename.size() == 0) {  // If the name was all underscores
-    // TOOD: Warning messages 
-    return("!Filename");
   }
   return filename;
 }
@@ -1338,11 +1351,12 @@ void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
 bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef Filename)
 {
   fullPathFileName = Filename;
-  string moduleName = GetModuleName(Filename, args);
+  // We have to pass this back out to keep track of repeated module names
+  args.setModuleName(GetModuleName(Filename, args));
 
   // initalize Module and imports
   string beginSourceModule;
-  beginSourceModule = "MODULE " + moduleName + "\n";
+  beginSourceModule = "MODULE " + args.getModuleName() + "\n";
   beginSourceModule += "USE, INTRINSIC :: iso_c_binding\n";
   beginSourceModule += use_modules;
   beginSourceModule += "implicit none\n";
@@ -1358,7 +1372,7 @@ void TraverseNodeAction::EndSourceFileAction() {
     //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(args.getOutput().os());
 
     string endSourceModle;
-    endSourceModle = "END MODULE " + GetModuleName(fullPathFileName, args) + "\n";
+    endSourceModle = "END MODULE " + args.getModuleName() + "\n";
     args.getOutput().os() << endSourceModle;
   }
 
@@ -1430,15 +1444,16 @@ int main(int argc, const char **argv) {
             errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
           }
           // Comment out the use statement becuase the module may be corrupt.
-          modules_list += "!USE " + GetModuleName(headerfile, args) + "\n";
+          modules_list += "!USE " + args.getModuleName() + "\n";
         } else {  // Successful run, no errors
           // Add USE statement to be included in future modules
-          modules_list += "USE " + GetModuleName(headerfile, args) + "\n";
+          modules_list += "USE " + args.getModuleName() + "\n";
           if (Silent == false) {  // Don't clutter the screen if the run is silent
             errs() << "Successfully processed " << headerfile << "\n";
             errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
           }
         }
+        args.setModuleName("");  // For safety, unset the module name passed out of Arguments
 
         args.getOutput().os() << "\n\n";  // Put two lines inbetween modules, even on a trans. failure
       }  // End looking through the stack and processing all headers (including the original).

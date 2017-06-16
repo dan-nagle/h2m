@@ -50,11 +50,13 @@ using namespace std;
 class Arguments {
 public:
   Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders) : quiet(q), silent(s),
-      output(out), no_system_headers(sysheaders) {}
+      output(out), no_system_headers(sysheaders) { module_name = ""; }
   llvm::tool_output_file &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
   bool getSilent() { return silent; }
   bool getNoSystemHeaders() { return no_system_headers; }
+  string getModuleName() { return module_name; }
+  void setModuleName(string newstr) { module_name = newstr; }
   
 private:
   // Where to send translated Fortran code
@@ -65,6 +67,9 @@ private:
   bool silent;
   // Should we recursively translate system header files?
   bool no_system_headers;
+  // The module name may be altered during processing by the action
+  // by default this is an empty string. It is used to pass values out, not in.
+  string module_name;
 };
 
 
