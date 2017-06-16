@@ -17,7 +17,16 @@ static string GetModuleName(string Filename) {
   size_t slashes = Filename.find_last_of("/\\");
   string filename = Filename.substr(slashes+1);
   size_t dot = filename.find('.');
-  return filename.substr(0, dot);
+  filename = filename.substr(0, dot);
+  // While there is still length and the first character is an underscore, erase it.
+  while (filename.size() != 0 && filename.substr(0,1).compare("_") == 0) {
+    filename.erase(0, 1);  // Erase the underscore 
+  }
+  if (filename.size() == 0) {  // If the name was all underscores
+    // TOOD: Warning messages 
+    return("!Filename");
+  }
+  return filename;
 }
 
 // Command line options:
@@ -45,6 +54,8 @@ static cl::opt<bool> Recursive("r", cl::desc("Include other header files recursi
 static cl::opt<bool> Quiet("q", cl::desc("Silence warnings about lines which have been commented out."));
 
 static cl::opt<bool> Silent("s", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
+
+static cl::opt<bool> Optimistic("optimist", cl::desc("Continue processing and keep output in spite of errors"));
 
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
@@ -1073,8 +1084,8 @@ string MacroFormatter::getFortranMacroASString() {
         } else if (CToFTypeFormatter::isChar(macroVal)) {
           if (macroName[0] == '_') {
             if (args.getQuiet() == false && args.getSilent() == false) {
-              errs() << "Warning: Fortran names may not start with an underscore.";
-              errs() << macroName << "Is invalid.\n";
+              errs() << "Warning: Fortran names may not start with an underscore. ";
+              errs() << macroName << " Is invalid.\n";
               LineError(sloc);
             }
             fortranMacro = "! underscore is invalid character name\n";
@@ -1105,8 +1116,8 @@ string MacroFormatter::getFortranMacroASString() {
         } else if (CToFTypeFormatter::isDoubleLike(macroVal)) {
           if (macroVal.find_first_of("FUL") != std::string::npos or macroName[0] == '_') {
             if (args.getQuiet() == false && args.getSilent() == false) {
-              errs() << "Warning: Fortran names may not start with an underscore.";
-              errs() << macroName << "Is invalid.\n";
+              errs() << "Warning: Fortran names may not start with an underscore. ";
+              errs() << macroName << " Is invalid.\n";
               LineError(sloc);
             }
             fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
@@ -1131,8 +1142,8 @@ string MacroFormatter::getFortranMacroASString() {
     } else { // macroVal.empty(), make the object a bool positive
       if (macroName[0] == '_') {
         if (args.getSilent() == false) {
-          errs() << "Warning: Fortran names may not start with an underscore.";
-          errs() << macroName << "Is invalid.\n";
+          errs() << "Warning: Fortran names may not start with an underscore. ";
+          errs() << macroName << " Is invalid.\n";
           LineError(sloc);
         }
         fortranMacro = "! underscore is invalid character name\n";
@@ -1170,7 +1181,7 @@ string MacroFormatter::getFortranMacroASString() {
         if (!functionBody.empty()) {
           std::istringstream in(functionBody);
           for (std::string line; std::getline(in, line);) {
-            if (args.getSilent() == false && args.getSilent() == false) {
+            if (args.getSilent() == false && args.getQuiet() == false) {
               errs() << "Warning: line " << line << " commented out.\n";
               LineError(sloc);
             }
@@ -1338,14 +1349,9 @@ bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef F
 void TraverseNodeAction::EndSourceFileAction() {
     //Now emit the rewritten buffer.
     //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(args.getOutput().os());
-    
-    size_t slashes = fullPathFileName.find_last_of("/\\");
-    string filename = fullPathFileName.substr(slashes+1);
-    size_t dot = filename.find('.');
-    string moduleName = filename.substr(0, dot);
 
     string endSourceModle;
-    endSourceModle = "END MODULE " + moduleName + "\n";
+    endSourceModle = "END MODULE " + GetModuleName(fullPathFileName) + "\n";
     args.getOutput().os() << endSourceModle;
   }
 
@@ -1371,6 +1377,9 @@ int main(int argc, const char **argv) {
     if (error) {  // Error opening file
       errs() << "Error opening args.getOutput() file: " << filename << error.message() << "\n";
     }
+    if (Optimistic == true) {  // Keep all output inspite of errors
+      OutputFile.keep();
+    }
     Arguments args(Quiet, Silent, OutputFile);
 
 
@@ -1385,11 +1394,15 @@ int main(int argc, const char **argv) {
       CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles);
       int initerrs = Tool.run(&CHSFactory);  // Run the first action to follow inclusions
       // If the attempt to find the needed order to translate the headers fails,
-      // this effort is doomed.
-      if (initerrs) {
-        errs() << "Error during preprocessor-tracing tool run.\n";
-        errs() << "A non-recursive run may succeed.\n";
-        return(initerrs);
+      // this effort is probably doomed.
+      if (initerrs != 0) {
+        errs() << "Error during preprocessor-tracing tool run, errno ." << initerrs << "\n";
+        if (Optimistic == false) {  // Exit unless told to keep going
+          errs() << "A non-recursive run may succeed.\n";
+          return(initerrs);
+        } else {
+          errs() << "Optimistic run continuing.\n";
+        }
       }
 
       // Dig through the created stack of header files we have seen, as prepared by
@@ -1397,7 +1410,6 @@ int main(int argc, const char **argv) {
       string modules_list;
       while (stackfiles.empty() == false) {
         string headerfile = stackfiles.top();
-        errs() << headerfile << "\n";  // Debugging help.
         stackfiles.pop(); 
         ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on this file
         TNAFrontendActionFactory factory(modules_list, args);
@@ -1407,15 +1419,20 @@ int main(int argc, const char **argv) {
           if (Silent == false) {  // Do not report the error if the run is silent.
             errs() << "Translation error occured on " << headerfile;
             errs() <<  ". Output may be corrupted or missing.\n";
+            errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
           }
           // Comment out the use statement becuase the module may be corrupt.
           modules_list += "!USE " + GetModuleName(headerfile) + "\n";
         } else {  // Successful run, no errors
           // Add USE statement to be included in future modules
           modules_list += "USE " + GetModuleName(headerfile) + "\n";
+          if (Silent == false) {  // Don't clutter the screen if the run is silent
+            errs() << "Successfully processed " << headerfile << "\n";
+            errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
+          }
         }
 
-        args.getOutput().os() << "\n\n";
+        args.getOutput().os() << "\n\n";  // Put two lines inbetween modules, even on a trans. failure
       }  // End looking through the stack and processing all headers (including the original).
 
     } else {  // No recursion, just run the tool on the first input file.
