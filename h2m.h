@@ -28,6 +28,7 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string>
 #include <sstream>

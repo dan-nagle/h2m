@@ -67,15 +67,23 @@ static cl::opt<string> SourcePaths(cl::Positional, cl::desc("source to translate
 // Output file, option is out
 static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
 
+// Boolean option to recursively process includes
 static cl::opt<bool> Recursive("r", cl::desc("Include other header files recursively via USE statements"));
 
+// Boolean option to silence less critical warnings
 static cl::opt<bool> Quiet("q", cl::desc("Silence warnings about lines which have been commented out."));
 
+// Boolean option to silence all warnings save those that are absolutely imperative (ie output failure)
 static cl::opt<bool> Silent("s", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
 
+// Boolean option to ignore critical clang errors that would otherwise cause termination
 static cl::opt<bool> Optimistic("optimist", cl::desc("Continue processing and keep output in spite of errors"));
 
+// Boolean option to ignore system header files when processing recursive includes
 static cl::opt<bool> NoHeaders("no-system-headers", cl::desc("Do not recursively translate system header files."));
+
+// Option to specify the compiler to use to test the output. No specification means no compilation.
+static cl::opt<string> Compiler("c", cl::desc("Program to be used to attempt to compile the output file."));
 
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
@@ -440,6 +448,7 @@ VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : re
 
 string VarDeclFormatter::getInitValueASString() {
   string valString;
+
   if (varDecl->hasInit() and !isInSystemHeader) {
     if (varDecl->getType().getTypePtr()->isStructureType()) {
         // structure type skip
@@ -680,6 +689,14 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
         CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc, args);
         string identifier = typedefDecl->getNameAsString();
+        if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining!
+          string old_identifier = identifier;
+          identifier = "h2m" + identifier;  // Prepend h2m to fix the problem
+          if (args.getQuiet() == false && args.getSilent() == false) {  // Warn unless silenced
+            errs() << "Warning: illegal identifier " << old_identifier << " renamed " << identifier << "\n";
+            LineError(sloc);
+          }
+        }
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
         typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
         typdedef_buffer += "END TYPE " + identifier + "\n";
@@ -704,6 +721,15 @@ string EnumDeclFormatter::getFortranEnumASString() {
     enum_buffer += "    enumerator :: ";
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end (); it++) {
       string constName = (*it)->getNameAsString ();
+      if (constName.front() == '_') {  // The name begins with an illegal underscore.
+        string old_constName = constName;
+        constName = "h2m" + constName;
+        if (args.getQuiet() == false && args.getSilent() == false) {
+          errs() << "Warning: illegal enumeration idetnfier " << old_constName << " renamed ";
+          errs() << constName << "\n";
+          LineError(sloc);
+        }
+      }
       int constVal = (*it)->getInitVal ().getExtValue ();
       enum_buffer += constName + "=" + to_string(constVal) + ", ";
     }
@@ -711,8 +737,16 @@ string EnumDeclFormatter::getFortranEnumASString() {
       enum_buffer.erase(enum_buffer.size()-2);
       enum_buffer += "\n";
       if (!enumName.empty()) {
+        if (enumName.front() == '_') {  // Illegal underscore beginning the name!
+          string old_enumName = enumName;
+          enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
+          if (args.getSilent() == false && args.getQuiet() == false) {  // Warn unless silenced
+            errs() << "Warning: illegal enumeration identifier " << old_enumName << " renamed " << enumName << "\n";
+            LineError(sloc); 
+          } 
+        }
         enum_buffer += "    enumerator " + enumName+"\n";
-      } else {
+      } else {  // I don't think this is actually a problem for potential illegal underscores.
         string identifier = enumDecl-> getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
         if (identifier.find("anonymous at") == string::npos) {
           enum_buffer += "    enumerator " + identifier+"\n";
@@ -931,8 +965,17 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     if (pname.empty()) {
       pname = "arg_" + to_string(index);
     }
+    if (pname.front() == '_') {  // Illegal character. Append a prefix.
+      string old_pname = pname;
+      pname = "h2m" + pname;
+      if (args.getSilent() == false && args.getQuiet() == false) {
+        errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
+        errs() << pname << "\n";
+        LineError(sloc);
+      }
+    }
     
-    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(),sloc, args);
+    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
     // in some cases parameter doesn't have a name
     paramsDecl += "    " + tf.getFortranTypeASString(true) + ", value" + " :: " + pname + "\n"; // need to handle the attribute later
     index ++;
@@ -946,19 +989,37 @@ string FunctionDeclFormatter::getParamsNamesASString() {
   int index = 1;
   for (auto it = params.begin(); it != params.end(); it++) {
     if (it == params.begin()) {
-    // if the param name is empty, rename it to arg_index
+      // if the param name is empty, rename it to arg_index
       //uint64_t  getTypeSize (QualType T) const for array!!!
-    string pname = (*it)->getNameAsString();
-    if (pname.empty()) {
-      pname = "arg_" + to_string(index);
-    }
+      string pname = (*it)->getNameAsString();
+      if (pname.empty()) {
+        pname = "arg_" + to_string(index);
+      }
+      if (pname.front() == '_') {  // Illegal character. Append a prefix.
+        string old_pname = pname;
+        pname = "h2m" + pname;
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
+          errs() << pname << "\n";
+          LineError(sloc);
+        }
+      }
       paramsNames += pname;
     } else { // parameters in between
-    // if the param name is empty, rename it to arg_index
-    string pname = (*it)->getNameAsString();
-    if (pname.empty()) {
-      pname = "arg_" + to_string(index);
-    }
+      // if the param name is empty, rename it to arg_index
+      string pname = (*it)->getNameAsString();
+      if (pname.empty()) {
+        pname = "arg_" + to_string(index);
+      }
+      if (pname.front() == '_') {  // Illegal character. Append a prefix.
+        string old_pname = pname;
+        pname = "h2m" + pname;
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: Illegal parameter name " << old_pname << " renamed ";
+          errs() << pname << "\n";
+          LineError(sloc);
+        }
+      }
       paramsNames += ", " + pname; 
     }
     index ++;
@@ -999,11 +1060,16 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       CToFTypeFormatter tf(returnQType, funcDecl->getASTContext(), sloc, args);
       funcType = tf.getFortranTypeASString(true) + " FUNCTION";
     }
-    // if (funcDecl->getNameAsString()[0] == '_') {
-    //   fortanFunctDecl = funcType + " f" + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
-    // } else {
-    fortanFunctDecl = funcType + " " + funcDecl->getNameAsString() + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
-    // }
+    string funcname = funcDecl->getNameAsString();
+    if (funcname.front() == '_') {  // We have an illegal character in the identifier
+      string oldfuncname = funcname;
+      funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
+      if (args.getQuiet() == false && args.getSilent() == false) {
+        errs() << "Warning: invalid function name " << oldfuncname << " renamed " << funcname << "\n";
+        LineError(sloc);
+      }
+    }
+    fortanFunctDecl = funcType + " " + funcname + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
     
     fortanFunctDecl += imports;
     fortanFunctDecl += getParamsDeclASString();
@@ -1026,9 +1092,9 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
 
     }
     if (returnQType.getTypePtr()->isVoidType()) {
-      fortanFunctDecl += "END SUBROUTINE " + funcDecl->getNameAsString() + "\n\n";   
+      fortanFunctDecl += "END SUBROUTINE " + funcname + "\n\n";   
     } else {
-      fortanFunctDecl += "END FUNCTION " + funcDecl->getNameAsString() + "\n\n";
+      fortanFunctDecl += "END FUNCTION " + funcname + "\n\n";
     }
     
   }
@@ -1118,8 +1184,8 @@ string MacroFormatter::getFortranMacroASString() {
           // invalid chars
           if (macroVal.find_first_of("UL") != std::string::npos or macroName[0] == '_') {
             if (args.getQuiet() == false && args.getSilent() == false) {
-              errs() << "Warning: Fortran name with invalid characters detected.";
-              errs() << macroName << "Is invalid.\n";
+              errs() << "Warning: Fortran name with invalid characters detected. ";
+              errs() << macroName << " Is invalid.\n";
               LineError(sloc);
             }
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
@@ -1422,6 +1488,9 @@ int main(int argc, const char **argv) {
           errs() << "A non-recursive run may succeed.\n";
           errs() << "Alternately, enable optimistic mode (-optimist) to continue despite errors.\n";
           return(initerrs);
+        } else if (stackfiles.empty() == true) {  // Whatever happend is not recoverable.
+          errs() << "Unrecoverable initialization error.\n";
+          return(initerrs);
         } else {
           errs() << "Optimistic run continuing.\n";
         }
@@ -1445,6 +1514,7 @@ int main(int argc, const char **argv) {
           }
           // Comment out the use statement becuase the module may be corrupt.
           modules_list += "!USE " + args.getModuleName() + "\n";
+          OutputFile.os()  << "! Warning: Translation Error Occurred on this module\n";
         } else {  // Successful run, no errors
           // Add USE statement to be included in future modules
           modules_list += "USE " + args.getModuleName() + "\n";
@@ -1458,15 +1528,30 @@ int main(int argc, const char **argv) {
         args.getOutput().os() << "\n\n";  // Put two lines inbetween modules, even on a trans. failure
       }  // End looking through the stack and processing all headers (including the original).
 
-    } else {  // No recursion, just run the tool on the first input file.
+    } else {  // No recursion, just run the tool on the first input file. No moudle list string is needed.
       TNAFrontendActionFactory factory("", args);
       tool_errors = Tool.run(&factory);
     }  // End processing for the -r option
 
-    if (!tool_errors) {  // If the last run of the tool was not successful, the output is likely garbage
+    // Note that the output has already been kept if this is an optimistic run.
+    if (!tool_errors) {  // If the last run of the tool was not successful, the output may be garbage
       OutputFile.keep();
     }
-     return(tool_errors);
+
+    // A compiler post-process has been specified and there is an actual output file,
+    // prepare and run the compiler.
+    if (Compiler.size() && filename.compare("-") != 0) {
+      if (system(NULL) == true) {  // A command interpreter is available
+        string command = Compiler + " " + filename;
+        int success = system(command.c_str());
+      } else {  // Cannot run using system (fork might succeed...)
+        errs() << "Error: No command interpreter available to run system process " << Compiler << "\n";
+      }
+    }
+    return(tool_errors);
   }
-  return(1);
+
+  errs() << "At least one argument (header to process) must be provided.\n";
+  errs() << "Run 'h2m -help' for usage details.";
+  return(1);  // Someone did not give any arguments!
 };
