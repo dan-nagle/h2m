@@ -13,7 +13,7 @@ static void LineError(PresumedLoc sloc) {
 }
 
 // Fetches the fortran module name from a given filepath Filename
-// IMPORTANT: ONLY call this ONCE for each file! The static 
+// IMPORTANT: ONLY call this ONCE for ANY FILE. The static 
 // structure requires this, otherwise you will have all sorts of
 // bizarre problems.
 static string GetModuleName(string Filename, Arguments& args) {
@@ -258,7 +258,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
     f_type = c_qualType.getAsString();
     // replace space with underscore 
     size_t found = f_type.find_first_of(" ");
-    while (found!=string::npos) {
+    while (found != string::npos) {
       f_type[found]='_';
       found=f_type.find_first_of(" ",found+1);
     }
@@ -294,7 +294,7 @@ bool CToFTypeFormatter::isIntLike(const string input) {
   } else {
     string temp = input;
     size_t doubleF = temp.find_first_of(".eF");
-    if (doubleF!=std::string::npos) {
+    if (doubleF != std::string::npos) {
       return false;
     }    
     
@@ -303,7 +303,7 @@ bool CToFTypeFormatter::isIntLike(const string input) {
       return false;
     }
 
-    while (found!=std::string::npos)
+    while (found != std::string::npos)
     {
       temp.erase(found, found+1);
       found=temp.find_first_of("01234567890");
@@ -311,7 +311,7 @@ bool CToFTypeFormatter::isIntLike(const string input) {
     
     if (!temp.empty()) {
       found = temp.find_first_of("xUL()- ");
-      while (found!=std::string::npos)
+      while (found != std::string::npos)
       {
         temp.erase(found, found+1);
         found=temp.find_first_of("xUL()- ");
@@ -330,7 +330,7 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
   if (found==std::string::npos) {
     return false;
   }
-  while (found!=std::string::npos)
+  while (found != std::string::npos)
   {
     temp.erase(found, found+1);
     found=temp.find_first_of("01234567890");
@@ -338,7 +338,7 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
   // no digit anymore
   if (!temp.empty()) {
     size_t doubleF = temp.find_first_of(".eFUL()+- ");
-    while (doubleF!=std::string::npos)
+    while (doubleF != std::string::npos)
     {
       temp.erase(doubleF, doubleF+1);
       doubleF=temp.find_first_of(".eFUL()+- ");
@@ -350,7 +350,7 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
   
   if (!temp.empty()) {
     found = temp.find_first_of(".eFL()- ");
-    while (found!=std::string::npos)
+    while (found != std::string::npos)
     {
       temp.erase(found, found+1);
       found=temp.find_first_of("xUL()- ");
@@ -400,7 +400,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   string type_id = "typeID_" + macroName ;
   // replace space with underscore 
   size_t found = type_id.find_first_of(" ");
-  while (found!=string::npos) {
+  while (found != string::npos) {
     type_id[found]='_';
     found=type_id.find_first_of(" ",found+1);
   }
@@ -408,21 +408,20 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   if (macroName[0] == '_') {
     if (args.getSilent() == false) {
       errs() << "Warning: Fortran names may not start with '_' ";
-      errs() << macroName << " is invalid \n";
+      errs() << macroName << " renamed h2m" << macroName << "\n";
       LineError(loc);
     }
-    ft_buffer = "! underscore is invalid character name\n";
-    ft_buffer += "!TYPE, BIND(C) :: " + macroName+ "\n";
+    ft_buffer += "TYPE, BIND(C) :: h2m" + macroName+ "\n";
     if (macroVal.find("char") != std::string::npos) {
-      ft_buffer += "!    CHARACTER(C_CHAR) :: " + type_id + "\n";
+      ft_buffer += "    CHARACTER(C_CHAR) :: " + type_id + "\n";
     } else if (macroVal.find("long") != std::string::npos) {
-      ft_buffer += "!    INTEGER(C_LONG) :: " + type_id + "\n";
+      ft_buffer += "    INTEGER(C_LONG) :: " + type_id + "\n";
     } else if (macroVal.find("short") != std::string::npos) {
-      ft_buffer += "!    INTEGER(C_SHORT) :: " + type_id + "\n";
+      ft_buffer += "    INTEGER(C_SHORT) :: " + type_id + "\n";
     } else {
-      ft_buffer += "!    INTEGER(C_INT) :: " + type_id + "\n";
+      ft_buffer += "    INTEGER(C_INT) :: " + type_id + "\n";
     }
-    ft_buffer += "!END TYPE " + macroName+ "\n";
+    ft_buffer += "END TYPE h2m" + macroName+ "\n";
   } else {
     ft_buffer = "TYPE, BIND(C) :: " + macroName+ "\n";
     if (macroVal.find("char") != std::string::npos) {
@@ -629,12 +628,13 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
 string VarDeclFormatter::getFortranVarDeclASString() {
   string vd_buffer;
+  
   if (!isInSystemHeader) {
     if (varDecl->getType().getTypePtr()->isStructureType()) {
       // structure type
       RecordDecl *rd = varDecl->getType().getTypePtr()->getAsStructureType()->getDecl();
       RecordDeclFormatter rdf(rd, rewriter, args);
-      rdf.setTagName(varDecl->getNameAsString());
+      rdf.setTagName(varDecl->getNameAsString());  // TODO: Experiment with this line
       vd_buffer = rdf.getFortranStructASString();
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
         // handle initialized numeric array specifically
@@ -644,22 +644,40 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // string declaration
       string value = getInitValueASString();
       CToFTypeFormatter tf(varDecl->getType().getTypePtr()->getPointeeType(), varDecl->getASTContext(), sloc, args);
+      string identifier = tf.getFortranIdASString(varDecl->getNameAsString());
+      if (identifier.front() == '_') {
+         if (args.getSilent() == false && args.getQuiet() == false) {
+            errs() << "Warning: fortran names may not begin with an underscore. ";
+            errs() << identifier << " renamed h2m" << identifier << "\n";
+            LineError(sloc);
+         }
+         identifier = "h2m" + identifier;
+      }
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + "\n";
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + " " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + " " + value + "\n";
       } else {
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
     } else {
       string value = getInitValueASString();
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
+      string identifier = tf.getFortranIdASString(varDecl->getNameAsString());
+      if (identifier.front() == '_') {
+         if (args.getSilent() == false && args.getQuiet() == false) {
+            errs() << "Warning: fortran names may not begin with an underscore. ";
+            errs() << identifier << " renamed h2m" << identifier << "\n";
+            LineError(sloc);
+         }
+         identifier = "h2m" + identifier;
+      } 
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + "\n";
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + " " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + " " + value + "\n";
       } else {
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
     }
   }
@@ -803,14 +821,14 @@ string RecordDeclFormatter::getFortranStructASString() {
     string fieldsInFortran = getFortranFields();
     if (fieldsInFortran.empty()) {
       rd_buffer = "! struct without fields may cause warning\n";
-      if (args.getSilent() == false) {
+      if (args.getSilent() == false && args.getQuiet() == false) {
         errs() << "Warning: struct without fields may cause warnings: \n";
         LineError(sloc);
       }
     }
 
     if (mode == ID_ONLY) {
-      string identifier = "struct_" + recordDecl->getNameAsString();
+      string identifier = "h2m_" + recordDecl->getNameAsString();
       
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       
@@ -1158,37 +1176,41 @@ string MacroFormatter::getFortranMacroASString() {
           if (macroName[0] == '_') {
             if (args.getQuiet() == false && args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
-              errs() << macroName << " Is invalid.";
+              errs() << macroName << " renamed " << "h2m" << macroName << "\n";
               LineError(sloc);
             }
-            fortranMacro = "! underscore is invalid character name\n";
-            fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
+            fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: h2m "+ macroName + " = " + macroVal + "\n";
           } else {
-            fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
+            fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: " + macroName + " = " + macroVal + "\n";
           }
         
         } else if (CToFTypeFormatter::isChar(macroVal)) {
           if (macroName[0] == '_') {
             if (args.getQuiet() == false && args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
-              errs() << macroName << " Is invalid.\n";
+              errs() << macroName << " renamed " << "h2m" << macroName << "\n";
               LineError(sloc);
             }
-            fortranMacro = "! underscore is invalid character name\n";
-            fortranMacro += "!CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
+            fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else {
             fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           }
         
         } else if (CToFTypeFormatter::isIntLike(macroVal)) {
           // invalid chars
-          if (macroVal.find_first_of("UL") != std::string::npos or macroName[0] == '_') {
+          if (macroVal.find_first_of("UL") != std::string::npos) {
             if (args.getQuiet() == false && args.getSilent() == false) {
-              errs() << "Warning: Fortran name with invalid characters detected. ";
+              errs() << "Warning: Macro with value including UL detected. ";
               errs() << macroName << " Is invalid.\n";
               LineError(sloc);
             }
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
+            } else if (macroName.front() == '_') {
+              if (args.getQuiet() == false && args.getSilent() == false) {
+                errs() << "Warning: Fortran name with invalid characters detected. ";
+                errs() << macroName << " renamed h2m" << macroName << "\n"; 
+              }
+              fortranMacro = "INTEGER(C_INT), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else if (macroVal.find("x") != std::string::npos) {
             size_t x = macroVal.find_last_of("x");
             string val = macroVal.substr(x+1);
@@ -1200,13 +1222,20 @@ string MacroFormatter::getFortranMacroASString() {
           }
 
         } else if (CToFTypeFormatter::isDoubleLike(macroVal)) {
-          if (macroVal.find_first_of("FUL") != std::string::npos or macroName[0] == '_') {
+          if (macroVal.find_first_of("FUL") != std::string::npos) {
             if (args.getQuiet() == false && args.getSilent() == false) {
-              errs() << "Warning: Fortran names may not start with an underscore. ";
+              errs() << "Warning: macro with value including FUL detected. ";
               errs() << macroName << " Is invalid.\n";
               LineError(sloc);
             }
             fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
+          } else if (macroName.front() == '_') {
+             if (args.getQuiet() == false && args.getSilent() == false) {
+              errs() << "Warning: Fortran names may not start with an underscore. ";
+              errs() << macroName << " renamed h2m" << macroName << ".\n";
+              LineError(sloc);
+            }
+            fortranMacro = "REAL(C_DOUBLE), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else {
             fortranMacro = "REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           }
@@ -1229,11 +1258,10 @@ string MacroFormatter::getFortranMacroASString() {
       if (macroName[0] == '_') {
         if (args.getSilent() == false) {
           errs() << "Warning: Fortran names may not start with an underscore. ";
-          errs() << macroName << " Is invalid.\n";
+          errs() << macroName << " renamed h2m" << macroName << ".\n";
           LineError(sloc);
         }
-        fortranMacro = "! underscore is invalid character name\n";
-        fortranMacro += "!INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
+        fortranMacro += "INTEGER(C_INT), parameter, public :: h2m" + macroName  + " = 1 \n";
       } else {
         fortranMacro = "INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
       }
@@ -1245,17 +1273,16 @@ string MacroFormatter::getFortranMacroASString() {
       size_t rParen = macroDef.find(')');
       string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
       if (macroName[0] == '_') {
-        fortranMacro = "! underscore is invalid character name.\n";
-        fortranMacro += "!INTERFACE\n";
+        fortranMacro += "INTERFACE\n";
         if (args.getSilent() == false) {
           errs() << "Warning: fortran names may not start with an underscore ";
-          errs() << macroName << " is invalid.\n";
+          errs() << macroName << " renamed h2m" << macroName << "\n";
           LineError(sloc);
         }
         if (md->getMacroInfo()->arg_empty()) {
-          fortranMacro += "!SUBROUTINE "+ macroName + "() bind (C)\n";
+          fortranMacro += "SUBROUTINE h2m" + macroName + "() bind (C)\n";
         } else {
-          fortranMacro += "!SUBROUTINE "+ macroName + "(";
+          fortranMacro += "SUBROUTINE h2m"+ macroName + "(";
           for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
             fortranMacro += (*it)->getName();
             fortranMacro += ", ";
@@ -1274,8 +1301,8 @@ string MacroFormatter::getFortranMacroASString() {
             fortranMacro += "! " + line + "\n";
           }
         }
-        fortranMacro += "!END SUBROUTINE " + macroName + "\n";
-        fortranMacro += "!END INTERFACE\n";
+        fortranMacro += "END SUBROUTINE h2m" + macroName + "\n";
+        fortranMacro += "END INTERFACE\n";
       } else {
         fortranMacro = "INTERFACE\n";
         if (md->getMacroInfo()->arg_empty()) {
@@ -1471,7 +1498,7 @@ int main(int argc, const char **argv) {
 
 
     ClangTool Tool(*Compilations, SourcePaths);
-    int tool_errors = 0;  // No errors have occurred running the tool yet!
+    int tool_errors = 0;  // No errors have occurred running the tool yet
 
     // Follow the preprocessor's inclusions to generate a recursive 
     // order of hearders to be translated and linked by "USE" statements
@@ -1552,6 +1579,6 @@ int main(int argc, const char **argv) {
   }
 
   errs() << "At least one argument (header to process) must be provided.\n";
-  errs() << "Run 'h2m -help' for usage details.";
-  return(1);  // Someone did not give any arguments!
+  errs() << "Run 'h2m -help' for usage details.\n";
+  return(1);  // Someone did not give any arguments
 };

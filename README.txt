@@ -215,15 +215,24 @@ a translation attempt may fail. In this case, the line will be commented out
 and a warning will be printed to standard error. These warnings can be silenced
 with the -q or -s option.
 
-Duplicate module names: If multiple header files are found during recursive inclusion,
+Duplicate Module Names: If multiple header files are found during recursive inclusion,
 a suffix of _[number of repetition] will be appended to create a unique module name.
+
+Other Conflicting Names: The h2m tool is not capable of finding all name conflicts.
+There is no such thing as file-wide scope in Fortran, and name conflifts will have
+to be fixed by hand, either by modifying a name or by modifying a USE statement to
+a USE ONLY statement to exclude conflicting symbols.
 
 File Names Begining With "_": Because _ is not a legal character at the begining of 
 a fortran name, the prefix h2m will be prepended to create a unique module name.
 
+Other Names Begining With "_": Other names will also be prepended with h2m in 
+order to create a legal identifier.
+
 Unrecognized Types: When h2m does not recognize a type in a header, it will print a
 warning about the problem and surround the questionably translated text with 
 unrecognized_type(...) in the output.
+
 
 OPTIONS:
 
