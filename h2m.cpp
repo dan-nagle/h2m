@@ -66,24 +66,31 @@ static cl::opt<string> SourcePaths(cl::Positional, cl::desc("source to translate
 
 // Output file, option is out
 static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
+static cl::alias OutputFile2("o", cl::desc("Alias for the output file"), cl::aliasopt(OutputFile));
 
 // Boolean option to recursively process includes
-static cl::opt<bool> Recursive("r", cl::desc("Include other header files recursively via USE statements"));
+static cl::opt<bool> Recursive("recursive", cl::desc("Include other header files recursively via USE statements"));
+static cl::alias Recrusive2("r", cl::desc("Alias for recursive"), cl::aliasopt(Recursive));
 
 // Boolean option to silence less critical warnings
-static cl::opt<bool> Quiet("q", cl::desc("Silence warnings about lines which have been commented out."));
+static cl::opt<bool> Quiet("quiet", cl::desc("Silence warnings about lines which have been commented out."));
+static cl::alias Quiet2("q", cl::desc("Alias for quiet"), cl::aliasopt(Quiet));
 
 // Boolean option to silence all warnings save those that are absolutely imperative (ie output failure)
-static cl::opt<bool> Silent("s", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
+static cl::opt<bool> Silent("silent", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
+static cl::alias Silent2("s", cl::desc("Alias for silent"), cl::aliasopt(Silent));
 
 // Boolean option to ignore critical clang errors that would otherwise cause termination
 static cl::opt<bool> Optimistic("optimist", cl::desc("Continue processing and keep output in spite of errors"));
+static cl::alias Optimistic2("k", cl::desc("Alias for optimist"), cl::aliasopt(Optimistic));
 
 // Boolean option to ignore system header files when processing recursive includes
 static cl::opt<bool> NoHeaders("no-system-headers", cl::desc("Do not recursively translate system header files."));
+static cl::alias NoHeaders2("n", cl::desc("Alias for no-system-headers"), cl::aliasopt(NoHeaders));
 
 // Option to specify the compiler to use to test the output. No specification means no compilation.
-static cl::opt<string> Compiler("c", cl::desc("Program to be used to attempt to compile the output file."));
+static cl::opt<string> Compiler("compile", cl::desc("Program to be used to attempt to compile the output file."));
+static cl::alias Compiler2("c", cl::desc("Alias for compile"), cl::aliasopt(Compiler));
 
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
@@ -743,7 +750,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
         string old_constName = constName;
         constName = "h2m" + constName;
         if (args.getQuiet() == false && args.getSilent() == false) {
-          errs() << "Warning: illegal enumeration idetnfier " << old_constName << " renamed ";
+          errs() << "Warning: illegal enumeration identfier " << old_constName << " renamed ";
           errs() << constName << "\n";
           LineError(sloc);
         }
@@ -986,11 +993,12 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     if (pname.front() == '_') {  // Illegal character. Append a prefix.
       string old_pname = pname;
       pname = "h2m" + pname;
-      if (args.getSilent() == false && args.getQuiet() == false) {
-        errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
-        errs() << pname << "\n";
-        LineError(sloc);
-      }
+      // This would be a duplicate warning
+      // if (args.getSilent() == false && args.getQuiet() == false) {
+      //  errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
+      //  errs() << pname << "\n";
+      //  LineError(sloc);
+      // }
     }
     
     CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);

@@ -18,7 +18,7 @@ Always run ./h2mbuild.sh. Do not run the script from a different working
 directory. 
 
 To build h2m if you do not have Clang or LLVM installed, run:
-./h2mbuild.sh -download -install_dir [path to desired Clang/LLVM download]
+./h2mbuild.sh -download -download_dir [path to desired Clang/LLVM download]
 or run ./h2mbuild.sh -i for interactive mode.
 
 To build h2m if you have Clang and LLVM installed, run:
@@ -81,7 +81,7 @@ ie "~/Documents", in interactively specified paths.
 
 -download	Requests that LLVM and Clang be downloaded and built.
 
--install_dir [path]	Option to specify the directory where 
+-download_dir [path]	Option to specify the directory where 
 Clang and LLVM will be downloaded and built if -download is specified.	
 This option will be ignored if -download was not specified.
 

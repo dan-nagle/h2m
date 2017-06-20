@@ -15,7 +15,7 @@ print_help ()
   echo "h2mbuild options:"
   echo "-i interactive. All variables specified interactively."
   echo "-download downloads and installs llvm and clang"
-  echo "-install_dir gives the path to a download location"
+  echo "-download_dir gives the path to a download location"
   echo "-LLVM_DIR gives the path to an existing LLVM cmake config file"
   echo "-CLANG_DIR gives the path to an existing Clang cmake config file"
   echo "-LLVM_LIB_PATH gives the path to existing LLVM library files"
@@ -24,8 +24,8 @@ print_help ()
   echo "-CLANG_BUILD_PATH gives the path to an existing Clang build directory"
   echo "-CLANG_INCLUDE_PATH gives the path to existing Clang header files"
   echo "-install requests attempted installation of the software llvm and clang"
-  echo "-install-h2m requests attempted installation of the h2m software"
-  echo "-INSTALL-H2M-DIR gives the path to the h2m installation location"
+  echo "-install_h2m requests attempted installation of the h2m software"
+  echo "-INSTALL_H2M_DIR gives the path to the h2m installation location"
   echo "-LLVM_URL gives an alternate URL from which to download LLVM"
   echo "-CLANG_URL gives an alternate URL from which to download Clang"
   echo "See README.txt for additional details."
@@ -45,7 +45,7 @@ is_absolute()
 
 # Default values of variables which may appear on command line
 download=no  # Default is no installation of clang/llvm
-install_dir="./clang-llvm"  # Default installation directory is ./clang-llvm
+download_dir="./clang-llvm"  # Default installation directory is ./clang-llvm
 LLVM_DIR=
 CLANG_DIR=
 LLVM_LIB_PATH=
@@ -73,7 +73,7 @@ do
     -help) print_help 0;;  # Print help information and exit
     -i) interactive="yes";;  # Obtain options interactively.
     -download) download=yes;;  # A download is requested
-    -install_dir) install_dir="$2"; shift;;  # Location to write clang/llvm
+    -download_dir) download_dir="$2"; shift;;  # Location to write clang/llvm
     -LLVM_DIR) LLVM_DIR="$2"; shift;;  # Location of existing llvm information
     -CLANG_DIR) CLANG_DIR="$2"; shift;;  # Location of existing clang information
     -LLVM_LIB_PATH) LLVM_LIB_PATH="$2"; shift;;  # Path to LLVM library in existence
@@ -119,14 +119,14 @@ then
 
     # Obtain the download directory
     echo "Download directory for clang and llvm?"
-    read install_dir
+    read download_dir
 
-    echo "Install additional clang tools? (y/n)"
-    while [ "$extra" != "y" ] && [ "$extra" != "n" ]
-    do
-      echo "y or n required"
-      read extra
-    done
+    # echo "Install additional clang tools? (y/n)"
+    # while [ "$extra" != "y" ] && [ "$extra" != "n" ]
+    # do
+    #  echo "y or n required"
+    #  read extra
+    # done
 
     # Attempts at installation for LLVM and Clang are made upon request.
     echo "Attempt installation of software (run "make install")? (y/n)"
@@ -153,16 +153,31 @@ then
       read TOOLS_URL
     fi
 
+    echo "Do you want to install h2m?"
+      while [ "$h2m_install_temp" != "y" ] && [ "$h2m_install_temp" != "n" ]
+    do
+      echo "y/n required"
+      read h2m_install_temp
+    done   # End aquisition of information about what paths to obtain
 
     # Sort the obtained input into usable options for installation
     # including the download tool, download directory, and installation
     # preference.
-    install_dir="$install_dir"  # The given download directory
-    if [ "$extra" == "y" ]
+    download_dir="$download_dir"  # The given download directory
+    if [ "$h2m_install_temp" == "y" ] 
     then
-      extra="yes"
-    fi
-    if [ "$install_attempt" == "y" ]  # Whether to run make install or not
+      install_h2m="yes"  # We will attempt to install h2m as requested
+      echo "Where would you like to install h2m?"
+      echo "Recommended default is /usr/local/bin."
+      read INSTALL_H2M_DIR
+    fi 
+
+    #if [ "$extra" == "y" ] # Unsupported option, currently. This never worked.
+    #then
+    #  extra="yes"
+    #fi
+
+    if [ "$install_attempt" == "y" ]  # Whether to run LLVM's make install or not
     then
        install="yes"
     fi
@@ -175,7 +190,7 @@ start_dir="$PWD"
 # If there is a requested download, commence!
 if [ "$download"  == "yes" ]
 then
-  echo "Beginning download to $install_dir of clang and llvm"
+  echo "Beginning download to $download_dir of clang and llvm"
   # Autodetect download tool
   which which || error_report "Command 'which' not found. Autodetection of curl/wget failed."
   if [ `which curl` ] 
@@ -190,12 +205,12 @@ then
   fi
 
   # Obtain source code from the internet with Wget or Curl
-  if [ ! -d "$install_dir" ]  # Checks to make sure the directory doesn't exit before creating it.
+  if [ ! -d "$download_dir" ]  # Checks to make sure the directory doesn't exit before creating it.
   then
-    mkdir "$install_dir" || mkdir -p "$install_dir" || error_report "Can't create $install_dir"
+    mkdir "$download_dir" || mkdir -p "$download_dir" || error_report "Can't create $download_dir"
   fi
-  cd "$install_dir" || error_report "Can't change to $install_dir"
-  echo "Downloading LLVM from $LLVM_URL to $install_dir/llvm.tar.xz"
+  cd "$download_dir" || error_report "Can't change to $download_dir"
+  echo "Downloading LLVM from $LLVM_URL to $download_dir/llvm.tar.xz"
   # Download from the given URL, following redirections with wget or curl as requested
   if [ "$curl" == "yes" ]
   then 
@@ -209,7 +224,7 @@ then
   mv "$temp_llvm_name" llvm || error_report "Can't rename $temp_llvm_name to llvm"
   cd llvm/tools || error_report "Can't change to llvm/tools"
   # Download Clang using Curl or Wget
-  echo "Downloading Clang from $CLANG_URL to $install_dir/llvm/tools/clang.tar"
+  echo "Downloading Clang from $CLANG_URL to $download_dir/llvm/tools/clang.tar"
   if [ "$curl" == "yes" ] 
   then
     curl -L "$CLANG_URL" > clang.tar.xz || error_report "Unable to curl at clang at $CLANG_URL"
@@ -222,23 +237,24 @@ then
   mv "$temp_clang_name" clang  || error_report "Unable to rename $temp_clang_name to clang"
 
   # If requested, the download for the clang/tools/extra directory is carried out
-  if [ "$tools" == "yes" ] # Download additional clang tools as requested
-  then
-    echo "Very sorry to disappoint you, but this is broken (just really, really broken)"
-    echo "so you cannot have any cool extra clang tools today. Sorry."
-    #cd clang/tools || error_report "Unable to change to clang/tools directory"
-    #curl -L "$CLANG_URL"> extra.tar.xz || error_report "Unable to curl at $CLANG_URL"
-    #temp_extra_name=`tar -tf extra.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find extra.tar.xz subdir name"
-    #tar -xf extra.tar.xz || error_report "Unable to untar extra.tar.xz"
-    #mv "$temp_extra_name" extra || error_report "Unable to rename $temp_extra_name extra"
-  fi
+  # This never worked and is currently not to be supported
+  # if [ "$tools" == "yes" ] # Download additional clang tools as requested
+  # then
+  #  echo "Very sorry to disappoint you, but this is broken (just really, really broken)"
+  #  echo "so you cannot have any cool extra clang tools today. Sorry."
+  #  #cd clang/tools || error_report "Unable to change to clang/tools directory"
+  #  #curl -L "$CLANG_URL"> extra.tar.xz || error_report "Unable to curl at $CLANG_URL"
+  #  #temp_extra_name=`tar -tf extra.tar.xz | head -1 | cut -f1 -d "/"` || error_report "Can't find extra.tar.xz subdir name"
+  #  #tar -xf extra.tar.xz || error_report "Unable to untar extra.tar.xz"
+  #  #mv "$temp_extra_name" extra || error_report "Unable to rename $temp_extra_name extra"
+  # fi
   cd "$start_dir" || error_report "Can't change to $start_dir"
-  # We clone the software and return to our initial working directory
+  # We download the software and return to our initial working directory
 
   # Build clang and llvm.
   echo "Building clang and llvm"
-  mkdir "$install_dir"/build || error_report "Can't create $install_dir/clang-llvm/build"
-  cd "$install_dir"/build || error_report "Can't change to build directory"
+  mkdir "$download_dir"/build || error_report "Can't create $download_dir/clang-llvm/build"
+  cd "$download_dir"/build || error_report "Can't change to build directory"
   cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError building clang/llvm."
   make || error_report "Make error"
   if [ "$install" == "yes" ]  # Attempted installation requested. Run make install.
@@ -255,13 +271,23 @@ then
   # so that the cmake config files are no longer in the directories specified here.
   echo "Attempting to build h2m using default cmake configuration file locations"
   # This variable keeps track of whether the build directory reference is relative
-  absolute=`is_absolute "$install_dir"`
+  absolute=`is_absolute "$download_dir"`
   if [ ! "$absolute" ]  # If we built in a relative direcotry, we have a relative path.
   then
-    install_dir="$start_dir"/"$install_dir"  # Now we have an absolute path which Cmake needs!
+    download_dir="$start_dir"/"$download_dir"  # Now we have an absolute path which Cmake needs!
   fi
-  cmake . -DClang_DIR="$install_dir"/build/lib/cmake/clang -DLLVM_DIR="$install_dir"/build/lib/cmake/llvm
-  make  || exit 1
+
+  if [ "$install_h2m" ]  # If installation is requested, we must follow a different command 
+  then
+    cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR"
+  else 
+    cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm 
+  fi
+  make  || exit 1  # Either create the software or die trying
+  if [ "$install_h2m" == "yes" ]   # If requested, attempt to install h2m
+  then
+    make install "$INSTALL_H2M_DIR"
+  fi
   exit 0
 fi
 # Installation and configuration are finished if a download was requested... otherwise...
