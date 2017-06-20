@@ -1199,18 +1199,18 @@ string MacroFormatter::getFortranMacroASString() {
         } else if (CToFTypeFormatter::isIntLike(macroVal)) {
           // invalid chars
           if (macroVal.find_first_of("UL") != std::string::npos) {
-            if (args.getQuiet() == false && args.getSilent() == false) {
+            if (args.getSilent() == false) {
               errs() << "Warning: Macro with value including UL detected. ";
               errs() << macroName << " Is invalid.\n";
               LineError(sloc);
             }
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
-            } else if (macroName.front() == '_') {
-              if (args.getQuiet() == false && args.getSilent() == false) {
-                errs() << "Warning: Fortran name with invalid characters detected. ";
-                errs() << macroName << " renamed h2m" << macroName << "\n"; 
-              }
-              fortranMacro = "INTEGER(C_INT), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
+          } else if (macroName.front() == '_') {  // Invalid underscore as first character
+            if (args.getQuiet() == false && args.getSilent() == false) {
+              errs() << "Warning: Fortran name with invalid characters detected. ";
+              errs() << macroName << " renamed h2m" << macroName << "\n"; 
+            }
+            fortranMacro = "INTEGER(C_INT), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else if (macroVal.find("x") != std::string::npos) {
             size_t x = macroVal.find_last_of("x");
             string val = macroVal.substr(x+1);
@@ -1284,14 +1284,23 @@ string MacroFormatter::getFortranMacroASString() {
         } else {
           fortranMacro += "SUBROUTINE h2m"+ macroName + "(";
           for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
-            fortranMacro += (*it)->getName();
+            string argname = (*it)->getName();
+            if (argname.front() == '_') {  // Illegal character in argument name
+              if (args.getSilent() == false && args.getQuiet() == false) {
+                errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
+                errs() << argname << " renamed h2m" << argname << "\n";
+                LineError(sloc);
+              }
+              argname = "h2m" + argname;  // Fix the problem by prepending h2m
+            }
+            fortranMacro += argname;
             fortranMacro += ", ";
           }
           // erase the redundant colon
           fortranMacro.erase(fortranMacro.size()-2);
           fortranMacro += ") bind (C)\n";
         }
-        if (!functionBody.empty()) {
+        if (!functionBody.empty()) {  // Comment out the body of the function-like macro 
           std::istringstream in(functionBody);
           for (std::string line; std::getline(in, line);) {
             if (args.getSilent() == false && args.getQuiet() == false) {
@@ -1310,16 +1319,16 @@ string MacroFormatter::getFortranMacroASString() {
         } else {
           fortranMacro += "SUBROUTINE "+ macroName + "(";
           for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
-            string arg = (*it)->getName();
-            // remove underscore
-            arg.erase(std::remove(arg.begin(), arg.end(), '_'), arg.end());
-            // size_t found = arg.find_first_of("_");
-            // while (found!=std::string::npos)
-            // {
-            //   arg.erase(found, found+1);
-            //   found=arg.find_first_of("_");
-            // }
-            fortranMacro += arg;
+            string argname = (*it)->getName();
+            if (argname.front() == '_') {
+              if (args.getSilent() == false && args.getQuiet() == false) { 
+                errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
+                errs() << argname << " renamed h2m" << argname << "\n";
+                LineError(sloc);
+              }
+              argname = "h2m" + argname;  // Fix the problem by prepending h2m
+            }
+            fortranMacro += argname;
             fortranMacro += ", ";
           }
           // erase the redundant colon
