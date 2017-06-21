@@ -102,6 +102,8 @@ CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc lo
   // sloc = ac.getSourceManager().getPresumedLoc(TypeLoc(qt, qt.getAsOpaquePtr()).getEndLoc()); // # TODO: WHY DOESN'T THIS WORK?
 };
 
+// Determines whether the qualified type offered is identical to that it is called on.
+// Pointer types are only distinguished in terms of function vs data pointers. 
 bool CToFTypeFormatter::isSameType(QualType qt2) {
   // for pointer type, only distinguish between the function pointer from other pointers
   if (c_qualType.getTypePtr()->isPointerType() and qt2.getTypePtr()->isPointerType()) {
@@ -117,6 +119,9 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
   }
 };
 
+// Typically this returns the raw id, but in the case of an array, it must 
+// determine an array suffix by determining the type of the array, the element
+// size, and the length in order to provide a declaration.
 string CToFTypeFormatter::getFortranIdASString(string raw_id) {
   // Determine if it needs to be substituted out
   if (c_qualType.getTypePtr()->isArrayType()) {
@@ -131,6 +136,11 @@ string CToFTypeFormatter::getFortranIdASString(string raw_id) {
   return raw_id;
 };
 
+// The type in C is found in the c_qualType variable. The type is 
+// determined over a series of if statements and a suitable Fortran 
+// equivalent is returned as a string. The boolean typeWrapper dictates
+// whether or not the return should be of the form FORTRANTYPE(C_QUALIFIER)
+// or just of the form C_QUALIFIER.
 string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
   string f_type;
 
@@ -263,11 +273,20 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
   } else if (c_qualType.getTypePtr()->isStructureType()) {
     // struct type
     f_type = c_qualType.getAsString();
-    // replace space with underscore 
+    // We cannot have a space in a fortran type. Erase up
+    // to the space.
     size_t found = f_type.find_first_of(" ");
     while (found != string::npos) {
-      f_type[found]='_';
+      f_type.erase(0, found);  // Erase up to the final space
       found=f_type.find_first_of(" ",found+1);
+    }
+    if (f_type.front() == '_') {
+      if (args.getQuiet() == false && args.getSilent() == false) {
+        errs() << "Warning: fortran names may not begin with an underscore.";
+        errs() << f_type << " renamed " << "h2m" << f_type << "\n";
+        LineError(sloc);
+      }
+      f_type = "h2m" + f_type;  // Prepend h2m to fix the naming problem
     }
     if (typeWrapper) {
       f_type = "TYPE(" + f_type + ")";
@@ -294,6 +313,8 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
 };
 
 
+// Determines whether or not an input string resembles an integer.
+// Useful in determining how to translate a C macro.
 bool CToFTypeFormatter::isIntLike(const string input) {
   // "123L" "18446744073709551615ULL" "18446744073709551615UL" 
   if (std::all_of(input.begin(), input.end(), ::isdigit)) {
@@ -330,6 +351,8 @@ bool CToFTypeFormatter::isIntLike(const string input) {
   }
 };
 
+// Determines whether or not the string input resembles a
+// double. Useful for determining how to translate a C macro.
 bool CToFTypeFormatter::isDoubleLike(const string input) {
   // "1.23", 1.18973149535723176502e+4932L
   string temp = input;
@@ -368,6 +391,9 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
   }
 };
 
+// Determines whether or not an input string can be
+// treated as a string constant ("abc"). Useful 
+// for determining how to translate a C macro.
 bool CToFTypeFormatter::isString(const string input) {
   string s = input;
   while (s[0] == ' ') {
@@ -379,6 +405,9 @@ bool CToFTypeFormatter::isString(const string input) {
   return false;
 };
 
+// Determines whether or not an input string can be
+// treated as a a C character ('a'). Useful for determining
+// how to translate a C macro.
 bool CToFTypeFormatter::isChar(const string input) {
   string s = input;
   while (s[0] == ' ') {
@@ -390,6 +419,9 @@ bool CToFTypeFormatter::isChar(const string input) {
   return false;
 };
 
+// Returns true if the string input provided contains the
+// word short, int, long, or char. Otherwise it returns false.
+// Useful for determining how to translate a C macro etc.
 bool CToFTypeFormatter::isType(const string input) {
   // only support int short long char for now
   if (input == "short" or input == "long" or input == "char" or input == "int" or
@@ -402,14 +434,25 @@ bool CToFTypeFormatter::isType(const string input) {
   return false;
 };
 
+// Retrurns a string buffer containing the Fortran equivalent of a C macro resembling a typedef.
+// The argumnets and PresumedLoc are used to give information about the location of any
+// errors that might occur during an attempted translation. The macro is translated into 
+// a Fortran TYPE.
 string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args) {
   string ft_buffer;
   string type_id = "typeID_" + macroName ;
+  
+  // Create a new name for the transalated type.
   // replace space with underscore 
   size_t found = type_id.find_first_of(" ");
   while (found != string::npos) {
-    type_id[found]='_';
+    type_id[found] = '_';
     found=type_id.find_first_of(" ",found+1);
+  }
+  if (args.getQuiet() == false && args.getSilent() == false) {
+    errs() << "Warning: Translation of typedef like macro requires renaming ";
+    errs() << macroName << type_id << "\n";
+    LineError(loc);
   }
 
   if (macroName[0] == '_') {
@@ -452,6 +495,10 @@ VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : re
   sloc = rewriter.getSourceMgr().getPresumedLoc(varDecl->getSourceRange().getBegin());
 };
 
+// In the event that a variable declaration has an initial value, this function
+// attempts to find that initialization value and return it as a string. It handles
+// poitners, reals, complexes, characters, ints. Arrays are defined here but actually
+// handled elsewhere (I think). Typedefs and structs are not handled here.
 string VarDeclFormatter::getInitValueASString() {
   string valString;
 
@@ -502,6 +549,11 @@ string VarDeclFormatter::getInitValueASString() {
 
       } else {
         valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Variable declaration initialization commented out:\n";
+          errs() << valString << "\n";
+          LineError(sloc); 
+        }
       }
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
       // ARRAY --- won't be used here bc it's handled by getFortranArrayDeclASString()
@@ -513,13 +565,13 @@ string VarDeclFormatter::getInitValueASString() {
         if (args.getQuiet() == false && args.getSilent() == false) {
           errs() << "Warning: array contents " << line << " commented out \n";
           LineError(sloc);
-          valString += "! " + line + "\n";
         }
+        valString += "! " + line + "\n";
       }
     } else {
       valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
       if (args.getSilent() == false) {
-        errs() << "Invalid declaration: " << valString << " \n";
+        errs() << "Variable declaration initialization commented out:\n" << valString << " \n";
         LineError(sloc);
       }
     }
@@ -528,6 +580,8 @@ string VarDeclFormatter::getInitValueASString() {
 
 };
 
+// This function fetches the type and name of an array element through the 
+// ast context.
 void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arrayValues, string arrayShapes, bool &evaluatable, bool firstEle) {
   ArrayRef<Expr *> innerElements = ile->inits ();
   if (firstEle) {
@@ -554,6 +608,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
   }
 };
 
+// Much more complicated function used to generate an array declaraion. 
 string VarDeclFormatter::getFortranArrayDeclASString() {
   string arrayDecl;
   if (varDecl->getType().getTypePtr()->isArrayType() and !isInSystemHeader) {
@@ -633,6 +688,10 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
 
 
+// Hanldes various variable declarations and returns them as fortran strings. Helper
+// functions are called for arrays which are difficult to format. The type is 
+// fetched with the hlper function getFortranTypeASString. Any illegal identifiers (ie _thing)
+// prepended with "h2m" to become legal fortran identifiers.
 string VarDeclFormatter::getFortranVarDeclASString() {
   string vd_buffer;
   
@@ -703,6 +762,11 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments 
   
 };
 
+// From a C typedef, a string representing a Fortran typedef is created. The fortran equivalent
+// is a type with only one field. The name of this field is name_C_INT or name_C_PTR, depending
+// on the type. Note that this function will be called for Structs and Enums as well, but that they
+// will be skipped and handled elsewhere (in recordDeclFormatter). A typedef with an illegal 
+// name will be prepended with "h2m" to become legal fortran.
 string TypedefDeclFormater::getFortranTypedefDeclASString() {
   string typdedef_buffer;
   if (isLocValid and !isInSystemHeader) {
@@ -723,6 +787,13 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
           }
         }
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
+        // TODO: DECIDE IF THIS IS WHAT YOU ACTUALLY WANT
+        // Because names in structs may collide with the struct name, suffixes are appended
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: due to name collisions during typdef translation, " << identifier;
+          errs() <<  "\nrenamed " << identifier << tf.getFortranTypeASString(false) << "\n";
+          LineError(sloc);
+        }
         typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
         typdedef_buffer += "END TYPE " + identifier + "\n";
       }
@@ -731,13 +802,16 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
 };
 
 // -----------initializer EnumDeclFormatter--------------------
-//# SAME FOR ENUM DECL FORMATTER
 EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   enumDecl = e;
   isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(enumDecl->getSourceRange().getBegin());
   sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
 };
 
+// From a C enumerated type, a fotran ENUM is created. The names are prepended
+// with h2m if they begin with an underscore. The function loops through all 
+// the members in the enumerator and adds them into place. Note that this can
+// resut in serious problems if the enumeration is too large.
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
   if (!isInSystemHeader) {
@@ -778,10 +852,8 @@ string EnumDeclFormatter::getFortranEnumASString() {
         }
       }
 
-
       enum_buffer += "END ENUM\n";
   }
-  
 
   return enum_buffer;
 };
@@ -806,12 +878,23 @@ void RecordDeclFormatter::setTagName(string name) {
   tag_name = name;
 }
 
+// A struct or union obtains its fields from this function
+// which creates and uses a type formatter for each field in turn and adds
+// each onto the buffer as it iterates through all the fields.
 string RecordDeclFormatter::getFortranFields() {
   string fieldsInFortran = "";
   if (!recordDecl->field_empty()) {
     for (auto it = recordDecl->field_begin(); it != recordDecl->field_end(); it++) {
       CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext(), sloc, args);
       string identifier = tf.getFortranIdASString((*it)->getNameAsString());
+      if (identifier.front() == '_') {
+        if (args.getQuiet() == false && args.getSilent() == false) {
+          errs() << "Warning: invalid struct field name " << identifier;
+          errs() << " renamed h2m" << identifier << "\n";
+          LineError(sloc);
+        }
+        identifier = "h2m" + identifier;
+      }
 
       fieldsInFortran += "    " + tf.getFortranTypeASString(true) + " :: " + identifier + "\n";
     }
@@ -819,6 +902,11 @@ string RecordDeclFormatter::getFortranFields() {
   return fieldsInFortran;
 }
 
+// The procedure for any of the four sorts of structs/typedefs is fairly
+// similar, but anonymous structs need to be handled specially. This 
+// function puts together the name of the struct as well as the fields fetched
+// from the getFortranFields() function above. All illegal names are prepended
+// with h2m.
 string RecordDeclFormatter::getFortranStructASString() {
   // initalize mode here
   setMode();
@@ -835,28 +923,61 @@ string RecordDeclFormatter::getFortranStructASString() {
     }
 
     if (mode == ID_ONLY) {
-      string identifier = "h2m_" + recordDecl->getNameAsString();
-      
+      string identifier = recordDecl->getNameAsString();
+      if (identifier.front() == '_') {  // Illegal underscore detected
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          LineError(sloc);
+        }
+        identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
+      }
+
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       
     } else if (mode == TAG_ONLY) {
       string identifier = tag_name;
-
+      if (identifier.front() == '_') {  // Illegal underscore detected
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          LineError(sloc);
+        }
+        identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
+      }
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
       string identifier = tag_name;
-
+      if (identifier.front() == '_') {  // Illegal underscore detected
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          LineError(sloc);
+        }
+        identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
+      }
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
     } else if (mode == TYPEDEF) {
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      if (identifier.front() == '_') {  // Illegal underscore detected
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: invalid typedef name " << identifier << " renamed h2m" << identifier;
+          LineError(sloc);
+        }
+        identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
+      }
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
-      // replace space with underscore 
+      // Erase past all the spaces so that only the name remains (ie get rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
       while (found!=string::npos) {
-        identifier[found]='_';
+        identifier.erase(0, found);
         found=identifier.find_first_of(" ",found+1);
+      }
+      if (identifier.front() == '_') {  // Illegal underscore detected
+        if (args.getSilent() == false && args.getQuiet() == false) {
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          LineError(sloc);
+        }
+        identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
       string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
@@ -874,6 +995,9 @@ string RecordDeclFormatter::getFortranStructASString() {
   return rd_buffer;    
 };
 
+// Determines what sort of struct we are dealing with. I'm still
+// not entirely sure what the differences is because the only kind
+// I've ever run into is an ID_ONLY struct. I don't know what tag_name is.
 void RecordDeclFormatter::setMode() {
   // int ANONYMOUS = 0;
   // int ID_ONLY = 1;
@@ -911,6 +1035,9 @@ FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Argum
 };
 
 // for inserting types to "USE iso_c_binding, only: <<< c_ptr, c_int>>>""
+// This function determines the types which are passed into a function so that
+// the above demonstrated syntax can be used to establish proper fortran binding.
+// Each type present will only be mentioned once.
 string FunctionDeclFormatter::getParamsTypesASString() {
   string paramsType;
   QualType prev_qt;
@@ -981,6 +1108,11 @@ string FunctionDeclFormatter::getParamsTypesASString() {
 };
 
 // for inserting variable decls "<<<type(c_ptr), value :: arg_1>>>"
+// This function gives the parameters passed to the function in 
+// the form needed after the initial function declaration to 
+// specify their types, intents, etc.
+// A CToFTypeFormatter is created for each as the function loops
+// through all the parameters.
 string FunctionDeclFormatter::getParamsDeclASString() { 
   string paramsDecl;
   int index = 1;
@@ -1010,6 +1142,10 @@ string FunctionDeclFormatter::getParamsDeclASString() {
 }
 
 // for inserting variable decls "getline(<<<arg_1, arg_2, arg_3>>>)"
+// This function loops through variables in a function declaration and
+// returns them in a form suitable to be used in the initial line of that
+// declaration. It only needs to list their names interspersed with 
+// commas and knows nothing about their types.
 string FunctionDeclFormatter::getParamsNamesASString() { 
   string paramsNames;
   int index = 1;
@@ -1066,6 +1202,12 @@ bool FunctionDeclFormatter::argLocValid() {
 
 
 // return the entire function decl in fortran
+// Using helpers to fetch the names of the parameters and their 
+// full declarations and attributes, this function translates
+// an entire C function into either a Fotran function or subroutine
+// depending on the return value (void return means subroutine). It
+// must also decide what sorts of iso_c_binding to use and relies
+// on an earlier defined function.
 string FunctionDeclFormatter::getFortranFunctDeclASString() {
   string fortanFunctDecl;
   if (!isInSystemHeader and argLocValid()) {
@@ -1129,6 +1271,8 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
 };
 
 // -----------initializer MacroFormatter--------------------
+// The preprocessor is used to find the macro names in the source files. The macro is 
+// more difficult to process. Both its name and definition are fetched using the lexer.
 MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci,
      Arguments &arg) : md(md), args(arg) { //, ci(ci) {
     const MacroInfo *mi = md->getMacroInfo();
@@ -1170,6 +1314,10 @@ bool MacroFormatter::isFunctionLike() {
 };
 
 // return the entire macro in fortran
+// Macros which are object like, meaning similar to Chars, Strings, integers, doubles, etc
+// can be translated. Macros which are empty are defined as positive bools. Function-like
+// macros can be translated as functions or subroutines. However, it is not always possible
+// to translate a macro, in which case the line must be commented out.
 string MacroFormatter::getFortranMacroASString() {
   string fortranMacro;
   if (!isInSystemHeader) {
@@ -1217,6 +1365,7 @@ string MacroFormatter::getFortranMacroASString() {
             if (args.getQuiet() == false && args.getSilent() == false) {
               errs() << "Warning: Fortran name with invalid characters detected. ";
               errs() << macroName << " renamed h2m" << macroName << "\n"; 
+              LineError(sloc);
             }
             fortranMacro = "INTEGER(C_INT), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else if (macroVal.find("x") != std::string::npos) {
@@ -1365,6 +1514,8 @@ string MacroFormatter::getFortranMacroASString() {
 
 //-----------AST visit functions----------------------------------------------------------------------------------------------------
 
+// This function does the work of determining what the node currently under traversal
+// is and creating the proper object-translation object to handle it.
 bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
   if (isa<TranslationUnitDecl> (d)) {
     // tranlastion unit decl is the top node of all AST, ignore the inner structure of tud for now
@@ -1410,6 +1561,9 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 };
 
 
+// Currently, there are no attempts made to traverse and translate statements into 
+// Fortran. This method simply comments out statements and warns about them if
+// necessary.
 bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
   string stmtText;
   string stmtSrc = Lexer::getSourceText(CharSourceRange::getTokenRange(x->getLocStart(), x->getLocEnd()), TheRewriter.getSourceMgr(), LangOptions(), 0);
@@ -1428,13 +1582,15 @@ bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseStmt(x);
   return true;
 };
+// Currently, there are no attempts made to traverse and translate types 
+// into Fotran. This method simply comments out the declaration.
 bool TraverseNodeVisitor::TraverseType(QualType x) {
-  string qt_string = "!" + x.getAsString ();
+  string qt_string = "!" + x.getAsString();
   args.getOutput().os() << qt_string;
   if (args.getQuiet() == false && args.getSilent() == false) { 
     errs() << "Warning: type " << qt_string << " commented out.\n";
-    RecursiveASTVisitor<TraverseNodeVisitor>::TraverseType(x);
   }
+  RecursiveASTVisitor<TraverseNodeVisitor>::TraverseType(x);
   return true;
 };
 
@@ -1444,6 +1600,8 @@ void TraverseMacros::MacroDefined (const Token &MacroNameTok, const MacroDirecti
     args.getOutput().os() << mf.getFortranMacroASString();
 }
 
+// HandlTranslationUnit is the overarching entry into the clang ast which is
+// called to begin the traversal.
 void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
 // Traversing the translation unit decl via a RecursiveASTVisitor
 // will visit all nodes in the AST.
@@ -1458,6 +1616,8 @@ void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
   }
 }
 
+// Executed when each source begins. This allows the boiler plate required for each
+// module to be added to the file.
 bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef Filename)
 {
   fullPathFileName = Filename;
@@ -1477,6 +1637,8 @@ bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef F
   return true;
 }
 
+// Executed when a source file is finished. This allows the boiler plate required for the end of
+// a fotran module to be added to the file.
 void TraverseNodeAction::EndSourceFileAction() {
     //Now emit the rewritten buffer.
     //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(args.getOutput().os());
@@ -1488,32 +1650,35 @@ void TraverseNodeAction::EndSourceFileAction() {
 
 int main(int argc, const char **argv) {
   if (argc > 1) {
+    // Parse the command line options and create a new database to hold the Clang compilation
+    // options.
     cl::ParseCommandLineOptions(argc, argv, "h2m\n");
     std::unique_ptr<CompilationDatabase> Compilations;
     SmallString<256> PathBuf;
     sys::fs::current_path(PathBuf);
     Compilations.reset(new FixedCompilationDatabase(Twine(PathBuf), other));
 
-    // Determine file to open and initialize it
+    // Determine file to open and initialize it. Wrtie to stdout if no file is given.
     string filename;
+    std::error_code error;
     if (OutputFile.size()) {
       filename = OutputFile;
     } else {
       filename = "-";
     }
-
-    std::error_code error;
     // The file is opened in text mode
     llvm::tool_output_file OutputFile(filename, error, llvm::sys::fs::F_Text);
     if (error) {  // Error opening file
       errs() << "Error opening args.getOutput() file: " << filename << error.message() << "\n";
+      return(1);  // We can't possibly keep going if the file can't be opened.
     }
     if (Optimistic == true) {  // Keep all output inspite of errors
       OutputFile.keep();
     }
-    Arguments args(Quiet, Silent, OutputFile, NoHeaders);
+    Arguments args(Quiet, Silent, OutputFile, NoHeaders);  // Create an object to pass around arguments
 
 
+    // Create a new clang tool to be used to run the frontend actions
     ClangTool Tool(*Compilations, SourcePaths);
     int tool_errors = 0;  // No errors have occurred running the tool yet
 
@@ -1522,6 +1687,8 @@ int main(int argc, const char **argv) {
     if (Recursive) {
       std::set<string> seenfiles;
       std::stack<string> stackfiles;
+      // CHS means "CreateHeaderStack." The seenfiles is a set used to keep track of what 
+      // has been seen, and the stackfiles is used to keep track of the order to include them.
       CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles, args);
       int initerrs = Tool.run(&CHSFactory);  // Run the first action to follow inclusions
       // If the attempt to find the needed order to translate the headers fails,
@@ -1530,10 +1697,10 @@ int main(int argc, const char **argv) {
         errs() << "Error during preprocessor-tracing tool run, errno ." << initerrs << "\n";
         if (Optimistic == false) {  // Exit unless told to keep going
           errs() << "A non-recursive run may succeed.\n";
-          errs() << "Alternately, enable optimistic mode (-optimist) to continue despite errors.\n";
+          errs() << "Alternately, enable optimistic mode (-optimist or -k) to continue despite errors.\n";
           return(initerrs);
         } else if (stackfiles.empty() == true) {  // Whatever happend is not recoverable.
-          errs() << "Unrecoverable initialization error.\n";
+          errs() << "Unrecoverable initialization error. No files recorded to translate.\n";
           return(initerrs);
         } else {
           errs() << "Optimistic run continuing.\n";
@@ -1546,8 +1713,9 @@ int main(int argc, const char **argv) {
       while (stackfiles.empty() == false) {
         string headerfile = stackfiles.top();
         stackfiles.pop(); 
-        ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on this file
+        ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on each file in turn
         TNAFrontendActionFactory factory(modules_list, args);
+        // modules_list is the growing string of previously translated modules this one may depend on
         tool_errors = stacktool.run(&factory);
 
         if (tool_errors != 0) {  // Tool error occurred
