@@ -814,10 +814,11 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) :
 // resut in serious problems if the enumeration is too large.
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
-  if (!isInSystemHeader) {
+  if (!isInSystemHeader) {  // I have no idea why this is here. It doesn't seem to be doing anything.
     string enumName = enumDecl->getNameAsString();
     enum_buffer = "ENUM, BIND( C )\n";
-    enum_buffer += "    enumerator :: ";
+    // enum_buffer += "    enumerator :: ";  // Removed when changes were made to allow unlimited enum length
+    // Cycle through the pieces of the enum and translate them into fortran
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end (); it++) {
       string constName = (*it)->getNameAsString ();
       if (constName.front() == '_') {  // The name begins with an illegal underscore.
@@ -829,28 +830,29 @@ string EnumDeclFormatter::getFortranEnumASString() {
           LineError(sloc);
         }
       }
-      int constVal = (*it)->getInitVal ().getExtValue ();
-      enum_buffer += constName + "=" + to_string(constVal) + ", ";
+      int constVal = (*it)->getInitVal ().getExtValue ();  // Get the initialization value
+      enum_buffer += "    enumerator :: " + constName + "=" + to_string(constVal) + "\n";
     }
-      // erase the redundant colon
-      enum_buffer.erase(enum_buffer.size()-2);
-      enum_buffer += "\n";
-      if (!enumName.empty()) {
-        if (enumName.front() == '_') {  // Illegal underscore beginning the name!
-          string old_enumName = enumName;
-          enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
-          if (args.getSilent() == false && args.getQuiet() == false) {  // Warn unless silenced
-            errs() << "Warning: illegal enumeration identifier " << old_enumName << " renamed " << enumName << "\n";
-            LineError(sloc); 
-          } 
-        }
-        enum_buffer += "    enumerator " + enumName+"\n";
-      } else {  // I don't think this is actually a problem for potential illegal underscores.
-        string identifier = enumDecl-> getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
-        if (identifier.find("anonymous at") == string::npos) {
-          enum_buffer += "    enumerator " + identifier+"\n";
-        }
+    // erase the redundant colon  // This erasing and adding back in of a newline is obsolete with the new format
+    // enum_buffer.erase(enum_buffer.size()-2);
+    // enum_buffer += "\n";
+    // Put the actual name of the enumerator as an uninitialized member of the enumerated type
+    if (!enumName.empty()) {
+      if (enumName.front() == '_') {  // Illegal underscore beginning the name!
+        string old_enumName = enumName;
+        enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
+        if (args.getSilent() == false && args.getQuiet() == false) {  // Warn unless silenced
+          errs() << "Warning: illegal enumeration identifier " << old_enumName << " renamed " << enumName << "\n";
+          LineError(sloc); 
+        } 
       }
+      enum_buffer += "    enumerator " + enumName+"\n";
+    } else {  // I don't think this is actually a problem for potential illegal underscores.
+      string identifier = enumDecl-> getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      if (identifier.find("anonymous at") == string::npos) {
+        enum_buffer += "    enumerator " + identifier+"\n";
+      }
+    }
 
       enum_buffer += "END ENUM\n";
   }
@@ -926,7 +928,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       string identifier = recordDecl->getNameAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false && args.getQuiet() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
@@ -938,7 +940,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false && args.getQuiet() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
@@ -948,7 +950,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false && args.getQuiet() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
@@ -958,7 +960,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false && args.getQuiet() == false) {
-          errs() << "Warning: invalid typedef name " << identifier << " renamed h2m" << identifier;
+          errs() << "Warning: invalid typedef name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
@@ -974,7 +976,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false && args.getQuiet() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier;
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m

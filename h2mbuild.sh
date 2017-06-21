@@ -13,9 +13,11 @@ error_report ()
 print_help ()
 {
   echo "h2mbuild options:"
-  echo "-i interactive. All variables specified interactively."
-  echo "-download downloads and installs llvm and clang"
-  echo "-download_dir gives the path to a download location"
+  echo "-i interactive. All variables specified interactively"
+  echo "-download_cmake downloads and installs cmake"
+  echo "-download_cmake_dir gives the path to the cmakd download directory"
+  echo "-download downloads llvm and clang"
+  echo "-download_dir gives the path to a download location for llvm and clang"
   echo "-LLVM_DIR gives the path to an existing LLVM cmake config file"
   echo "-CLANG_DIR gives the path to an existing Clang cmake config file"
   echo "-LLVM_LIB_PATH gives the path to existing LLVM library files"
@@ -28,6 +30,7 @@ print_help ()
   echo "-INSTALL_H2M_DIR gives the path to the h2m installation location"
   echo "-LLVM_URL gives an alternate URL from which to download LLVM"
   echo "-CLANG_URL gives an alternate URL from which to download Clang"
+  echo "-CMAKE_URL gives an alternate URL from which to download CMake"
   echo "See README.txt for additional details."
   exit "$1"
 }
@@ -46,6 +49,10 @@ is_absolute()
 # Default values of variables which may appear on command line
 download=no  # Default is no installation of clang/llvm
 download_dir="./clang-llvm"  # Default installation directory is ./clang-llvm
+download_cmake="no"
+download_cmake_dir="./cmake_dir"
+install_cmake_dir="/usr/local/bin"
+CMAKE_URL="https://cmake.org/files/v3.8/cmake-3.8.2.tar.gz"  # Default cmake url
 LLVM_DIR=
 CLANG_DIR=
 LLVM_LIB_PATH=
@@ -53,13 +60,12 @@ LLVM_INCLUDE_PATH=
 CLANG_LIB_PATH=
 CLANG_BUILD_PATH=
 CLANG_INCLUDE_PATH=
-tools=
-install=
-interactive=
+install="no"
+interactive="no"
 LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
 CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
 TOOLS_URL="http://releases.llvm.org/4.0.0/clang-tools-extra-4.0.0.src.tar.xz"
-install_h2m=
+install_h2m="no"
 INSTALL_H2M_DIR="/usr/local/bin"
 
 # Testing for features used within this script. Failures are fatal.
@@ -81,13 +87,14 @@ do
     -CLANG_LIB_PATH) CLANG_LIB_PATH="$2"; shift;;  # Path to existing Clang library
     -CLANG_BUILD_PATH) CLANG_BUILD_PATH="$2"; shift;;  # Path to existing Clang build files
     -CLANG_INCLUDE_PATH) CLANG_INCLUDE_PATH="$2"; shift;;  # Path to existing Clang include files
-    -tools) tools=yes;;  # Download optional clang tools
-    -install) install=yes;;
+    -install) install=yes;;  # Attempts an installation of Clang/LLVM
     -LLVM_URL) LLVM_URL="$2"; shift;;  # The overriding address of the LLVM source
     -CLANG_URL) CLANG_URL="$2"; shift;;  # The overriding address of the Clang source
-    -TOOLS_URL) TOOLS_URL="$2"; shift;;  # The overriding address of the Tools source
-    -install_h2m) install_h2m="yes";;
+    -CMAKE_URL) CMAKE_URL="$2"; shift;;   # The overriding CMake download URL
+    -install_h2m) install_h2m="yes";;   # An h2m download is requested
     -INSTALL_H2M_DIR) INSTALL_H2M_DIR="$2"; shift;;  # Alternate installation directory
+    -download_cmake) download_cmake="yes";;  # A CMake download is requested
+    -download_cmake_dir) download_cmake_dir="$2"; shift;;  # The overriding cmake download directory
     *) echo "Invalid option, $1."; print_help 1;;  # Print help. Exit with error.
   esac
   shift
@@ -107,29 +114,50 @@ fi
 if [ "$interactive" == "yes" ]
 then
   echo "Interactive configuration in progress."
-  echo "Download and install llvm and clang?"
+  echo "Do you need to download and install Cmake?"
+  while [ "$download_cmake_temp" != "y" ] && [ "$download_cmake_temp" != "n" ]
+  do
+    echo "y or n required"
+    read download_cmake_temp
+  done
+  echo "Do you need to download and install llvm and clang?"
   while [ "$download_install_temp" != "y" ] && [ "$download_install_temp" != "n" ]
   do
     echo "y or n required"
     read download_install_temp
   done
+  # Acquire the needed information to download CMake and install it
+  if [ "$download_cmake_temp" == "y" ]
+  then
+    download_cmake="yes";
+    echo "Download directory for cmake?"
+    read download_cmake_dir
+    echo "Do you need to specify a non-standard URL for a the CMake download?"
+    echo "Unless you know for a fact that Unix CMake 3.8.2 does not work"
+    echo "on your system, you probably do not."
+    while [ "$need_url" != "y" ] && [ "$need_url" != "n" ]
+    do
+      echo "y or n required"
+      read need_url
+    done
+    if [ "$need_url" == "y" ]  # CMake is to be downloaded from a non-standard URL
+    then
+      echo "URL from which to download a CMake tar file?"
+      read CMAKE_URL
+    fi
+  fi
+  # Obtain information about downloading and/or installinc LLVM and Clang
   if [ "$download_install_temp" == "y" ]  # Obtain extra installation options
   then
     download=yes  # An actual download has been requested
 
     # Obtain the download directory
-    echo "Download directory for clang and llvm?"
+    echo "Where would you like to download clang and llvm?"
+    echo "This makes little difference. ./clang-llvm is the default."
     read download_dir
 
-    # echo "Install additional clang tools? (y/n)"
-    # while [ "$extra" != "y" ] && [ "$extra" != "n" ]
-    # do
-    #  echo "y or n required"
-    #  read extra
-    # done
-
     # Attempts at installation for LLVM and Clang are made upon request.
-    echo "Attempt installation of software (run "make install")? (y/n)"
+    echo "Would you like to attempt installation of Clang and LLVM (run "make install")?"
     while [ "$install_attempt" != "y" ] && [ "$install_attempt" != "n" ]
     do
       echo "y or n required"
@@ -138,6 +166,7 @@ then
 
     # Get URL information. Do we download from default sites or not?
     echo "Do you need to specify non-default download URLs?"
+    echo "Unless you know Unix LLVM 4.0 will not work for you, you probably do not."
     while [ "$specify_urls" != "y" ] && [ "$specify_urls" != "n" ]
     do
       echo "y or n required"
@@ -145,16 +174,14 @@ then
     done
     if [ "$specify_urls" == "y" ]  # Obtain the special URLs as needed
     then
-      echo "Provide the URL from which to download LLVM"
+      echo "Please provide the URL from which to download the LLVM tar file."
       read LLVM_URL
-      echo "Provide the URL from which to download Clang"
+      echo "Please provide the URL from which to download the Clang tar file."
       read CLANG_URL
-      echo "Provide the URL from which to download Clang tools"
-      read TOOLS_URL
     fi
 
-    echo "Do you want to install h2m?"
-      while [ "$h2m_install_temp" != "y" ] && [ "$h2m_install_temp" != "n" ]
+    echo "Would you like to install h2m?"
+    while [ "$h2m_install_temp" != "y" ] && [ "$h2m_install_temp" != "n" ]
     do
       echo "y/n required"
       read h2m_install_temp
@@ -172,11 +199,6 @@ then
       read INSTALL_H2M_DIR
     fi 
 
-    #if [ "$extra" == "y" ] # Unsupported option, currently. This never worked.
-    #then
-    #  extra="yes"
-    #fi
-
     if [ "$install_attempt" == "y" ]  # Whether to run LLVM's make install or not
     then
        install="yes"
@@ -187,12 +209,55 @@ fi  # End interactive processing
 # We start in this directory. We keep track of it for future reference.
 start_dir="$PWD"
 
+if [ "$download_cmake" == "yes" ]  # Commence with the download of CMake
+then
+  echo "Begining download of CMake to $download_cmake_dir"
+  # Autodetect download tool
+  which which>&/dev/null || error_report "Command 'which' not found. Autodetection of curl/wget failed."
+  if [ `which curl` ] 
+  then
+    echo "Curl found." 
+    curl="yes"
+  elif [ `which wget` ] 
+  then
+    echo "Wget found."
+  else
+    error_report "Unable to locate wget or curl to commplete download."
+  fi
+  
+  if [ ! -d "$download_dir" ] # Check for existence of the download directory, create if needed
+  then
+    # Don't rely on the -p option unless you have to because it may not be available.
+    mkdir "$download_cmake_dir" >&/dev/null || mkdir -p "$download_cmake_dir" || error_report "Can't create $download_cmake_dir"
+  fi 
+  cd "$download_cmake_dir"
+
+  # Obtain CMake source code form the internet with Wget or Curl as found
+  if [ "$curl" == "yes" ]
+  then
+    curl -L "$CMAKE_URL" > cmake.tar.gz || error_report "Unable to curl at CMake at $CMAKE_URL"
+  else
+    wget -O cmake.tar.gz "$CMAKE_URL" || error_report "Unable to wget at CMake at $CMAKE_URL" 
+  fi
+  
+  # Filter out the name of the main folder inside the tar directory
+  temp_cmake_name=`tar -tf cmake.tar.gz | head -1 | cut -f1 -d "/"` || error_report "Can't find cmake.tar.gz subdir name"
+  tar -xf cmake.tar.gz || error_report "Unable to untar cmake.tar.gz"
+  mv "$temp_cmake_name" cmake || error_report "Cant rename $temp_cmake_name to cmake"
+  cd cmake || error_report "Can't change to cmake directory"
+  ./bootstrap || error_report "Unable to run bootstrap script in cmake directory."
+  make || exit 1  # Make will provide enough error reporting. A failure here should be fatal.
+  make install || exit 1 
+  cd "$start_dir" || error_report "Unable to change back to $start_dir"
+fi
+
+
 # If there is a requested download, commence!
 if [ "$download"  == "yes" ]
 then
   echo "Beginning download to $download_dir of clang and llvm"
   # Autodetect download tool
-  which which || error_report "Command 'which' not found. Autodetection of curl/wget failed."
+  which which>&/dev/null || error_report "Command 'which' not found. Autodetection of curl/wget failed."
   if [ `which curl` ] 
   then
     echo "Curl found." 
@@ -207,7 +272,7 @@ then
   # Obtain source code from the internet with Wget or Curl
   if [ ! -d "$download_dir" ]  # Checks to make sure the directory doesn't exit before creating it.
   then
-    mkdir "$download_dir" || mkdir -p "$download_dir" || error_report "Can't create $download_dir"
+    mkdir "$download_dir">&/dev/null || mkdir -p "$download_dir" || error_report "Can't create $download_dir"
   fi
   cd "$download_dir" || error_report "Can't change to $download_dir"
   echo "Downloading LLVM from $LLVM_URL to $download_dir/llvm.tar.xz"
@@ -277,7 +342,7 @@ then
     download_dir="$start_dir"/"$download_dir"  # Now we have an absolute path which Cmake needs!
   fi
 
-  if [ "$install_h2m" ]  # If installation is requested, we must follow a different command 
+  if [ "$install_h2m" == "yes" ]  # If installation is requested, we must follow a different command 
   then
     cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR"
   else 
@@ -286,7 +351,7 @@ then
   make  || exit 1  # Either create the software or die trying
   if [ "$install_h2m" == "yes" ]   # If requested, attempt to install h2m
   then
-    make install "$INSTALL_H2M_DIR"
+    make install
   fi
   exit 0
 fi
@@ -366,7 +431,7 @@ fi  # End interactive section
 # The cmake_command will be built up piece by piece according to requested options
 cmake_command=
 # The User can specify the path to the LLVMConfig.cmake file and
-# this provides CMake all informaiton necessary to include LLVM headers
+# this provides CMake all information necessary to include LLVM headers
 # and link to LLVM library files.
 if [ "$LLVM_DIR" ]  # Include LLVM location specs in the command
 then
@@ -433,7 +498,7 @@ then
 fi
 
 # Append on the installation directory if it was passed in
-if [ "$install_h2m" ] 
+if [ "$install_h2m" == "yes" ] 
 then
   cmake_command="$cmake_command -DINSTALL_PATH=$INSTALL_H2M_DIR" 
 fi
@@ -446,7 +511,7 @@ cmake . `echo "$cmake_command" ` || exit 1
 make || exit 1
 
 # Install h2m if the request has been made
-if [ "$install_h2m" ]
+if [ "$install_h2m" == "yes" ]
 then
   make install || exit 1
 fi
