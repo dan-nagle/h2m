@@ -21,6 +21,10 @@ To build h2m if you do not have Clang or LLVM installed, run:
 ./h2mbuild.sh -download -download_dir [path to desired Clang/LLVM download]
 or run ./h2mbuild.sh -i for interactive mode.
 
+To build h2m if you are also missing CMake as well as Clang and LLVM, run:
+./h2mbuild.sh -download -download_dir [path to desired Clang/LLVM download]
+-download_cmake -download_cmake_dir [path to desired CMake download]
+
 To build h2m if you have Clang and LLVM installed, run:
 ./h2mbuild.sh -CLANG_DIR [path to directory containing ClangConfig.cmake]
 -LLVM_DIR [path to directory containing LLVMConfig.cmake]
@@ -45,7 +49,8 @@ The h2m Autofortran tool is built into Clang, the LLVM C compiler.
 During translation, the Clang abstract syntax tree is used to 
 assemble information about the header file. Clang is a very strict
 compiler and will often generate warnings about the C code during
-this phase. Standard Clang options can be specified.
+this phase. Standard Clang options can be specified to control the
+compilation process and silence warnings.
 
 The h2m Autofortran tool was envisioned by Dan Nagle and completed
 at NCAR by Sisi Liu and revised by Michelle Anderson and 
@@ -57,8 +62,14 @@ LLVM license for additional details.
 2)   BUILD AND INSTALLATION
 
 General Information:
+The utilities required to build and run h2m are: CMake (preferably
+the most recent version), LLVM, Clang, curl or wget, bash,
+and standard unix utilities incliuding which, cut, mkdir, mv, and cd.
 LLVM and Clang are absolutely required to run h2m. The h2mbuild.sh
 script can handle the installation of this software if necessary.
+If CMake is not installed, (ie the command 'which cmake' fails) CMake
+will need to be installed. The build script can perform a "bare-bones"
+installation if requested.
 If LLVM and Clang are already installed, CMake will need information
 about where their header and library files are installed.
 The easiest way to provide this information is to provide the 
@@ -79,7 +90,19 @@ Options:
 interactively. Other options will be ignored. Do not use tilde expansion,
 ie "~/Documents", in interactively specified paths.
 
+-download_cmake		Requests that CMake be downloaded and installed.
+This will likely require administrator privledges. Alternately, CMake 
+can be downloaded from https://cmake.org/download/ as a binary release
+(not automated by this script.) The default directory if none is specified
+is ./cmake_dir.
+
+-download_cmake_dir	Option to specify the absolute or relative path
+to the desired download location for CMake. CMake files will be extracted
+into the CMake subdirectory of this directory.  This option will be ignored
+if -download_cmake is not specified.
+
 -download	Requests that LLVM and Clang be downloaded and built.
+The default directory if none is specified is ./clang-llvm
 
 -download_dir [path]	Option to specify the directory where 
 Clang and LLVM will be downloaded and built if -download is specified.	
@@ -143,18 +166,24 @@ installation locations are necessary, run make install seperately after
 the build is complete. This option will be ignored if -download is 
 not specified.
 
--LLVM_URL [url]		Option to specify an alternative path to the
+-LLVM_URL [url]		Option to specify an alternative to the default
 download location for LLVM. The default URL is:
-https://github.com/llvm-mirror/llvm/archive/master.zip.
+http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz
 This option will be ignored if -download is not specified.
 
--CLANG_URL [url]	Option to specify an alternative path to
-the download location for Clang. The default URL is:
+-CLANG_URL [url]	Option to specify an alternative to the default
+download location for Clang. The default URL is:
 http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz
 This option will be ignored if -download is not specified.
 
+-CMAKE_URL [url]	Option to specify an alternative to the default
+download location for CMake. The default URL is:
+https://cmake.org/files/v3.8/cmake-3.8.2.tar.gz.
+This option will be ignored if -download_cmake is not specified.
+
 -install_h2m		Option to request an installation of the
-h2m binary to a specified directory. The default is /usr/local/bin.
+h2m binary to a specified directory. The default destination is
+/usr/local/bin if none is specified.
 
 -INSTALL_H2M_DIR [path]		Option to specify a different directory
 to install the h2m binary. A path relative to the current directory
@@ -196,18 +225,20 @@ redirected with an option or the shell redirection operators.
 BEHAVIOR
 
 The h2m autofortran tool will attempt to translate struct, function, macros, enum,
-and variable declarations. It is not designed to translate program code. For
+and variable declarations. It is not designed to translate complex program code. For
 example, if a function definition is provided, it will be commented out in
-the translated fortran.
-Generally, any feature that cannot be translated due to an invalid name or limitations
-with the -q option. Warnings about invalid names or commented out lines will be
-printed to standard error unless supressed.
-Each file is translated into exactly one fortran module. If necessary, USE statements
-will link them based on dependencies in the header files.
+Untranslatable features will be commented out. Invalid names begining with an underscore
+will be prefixed with 'h2m' to create a valid name.
+Warnings about invalid names or commented out lines will be printed to standard error
+unless supressed with the -q or -s option. 
+Each file is translated into exactly one fortran module. During recursion, USE statements
+will link them based on dependencies in the header files. Note that this will result in
+many more USE statements than are probably necessary for any given module.
 
 Errors: In the case of some errors, the program will terminate and the output file
 will be deleted. Most, however, are expected to be minor and processing will
-continue.
+continue. For example, many errors raised by Clang as it processes header files are
+completely irrelevant to h2m.
 
 Macros: Because fortran has no equivalent to the C macro, macros are traslated
 into functions. However, because types often cannot be determined for macros,
@@ -215,13 +246,14 @@ a translation attempt may fail. In this case, the line will be commented out
 and a warning will be printed to standard error. These warnings can be silenced
 with the -q or -s option.
 
-Duplicate Module Names: If multiple header files are found during recursive inclusion,
-a suffix of _[number of repetition] will be appended to create a unique module name.
+Duplicate Module Names: If identically named header files are found during 
+recursive inclusion, a suffix of _[number of repetition] will be appended to
+create a unique module name.
 
 Other Conflicting Names: The h2m tool is not capable of finding all name conflicts.
-There is no such thing as file-wide scope in Fortran, and name conflifts will have
-to be fixed by hand, either by modifying a name or by modifying a USE statement to
-a USE ONLY statement to exclude conflicting symbols.
+Most name conflicts will have to be fixed manually by the programmer, either by
+modifying a name or by modifying a USE statement to a USE ONLY statement to exclude
+conflicting symbols.
 
 File Names Begining With "_": Because _ is not a legal character at the begining of 
 a fortran name, the prefix h2m will be prepended to create a unique module name.
@@ -236,18 +268,22 @@ unrecognized_type(...) in the output.
 
 OPTIONS:
 
--out=<string>		The output file for the tool can be specified here as either a
+-out=<string>
+-o=<string>    		The output file for the tool can be specified here as either a
 relative or absolute path.
 
+-quiet
 -q			Supress warnings related to lines which have been commented out,
 usually statements, function definitions, comments, or unsupported macros. Errors involving 
 unrecongized types, invalid names, critical errors such as failure to open the output file,
 and Clang errors will still be reported.
 
+-silent
 -s			Supress warnings related to lines which have been commented out
 as well as warnings related to unrecognized types and invalid names. Critical errors,
 such as failure to open the output file, and Clang errors will still be reported.
 
+-recursive
 -r			Recursively search through include files found in the main file. 
 Run the translation on them in reversed order and link the produced modules with USE
 statements. Any given file will be included exactly once unless it cannot be found in
@@ -257,12 +293,19 @@ by Clang, the output may be missing, corrupted, or completely usable depending o
 nature of the error. However, all following modules will have the USE statement corresponding
 to that module commented out. 
 
--optimist		Ignore errors during the information gathering phase where the tool
+-optimist
+-k			Ignore errors during the information gathering phase where the tool
 determines the identities and orders of header files to recursively process. The output file
 will also not be deleted regardless of what errors may occur. This option may potentially
 create unusable code.
 
--no-system-headers	During recursive processing, ignore all system header files.
+-no-system-headers
+-n			During recursive processing, ignore all system header files.
+
+-compile=<string>
+-c=<string>		Attempt to immediately compile the generated fortran code using the
+compiler command specified. If this command cannot be found, or if a command interpreter 
+cannot be found, this will fail.
 
 Clang Options: Following specification of the input file, options after a "--" are passed
 as arguments to the Clang compiler instance used by the tool. The Clang/LLVM manual pages
@@ -274,5 +317,9 @@ and websites should be used as a reference for these options.
 Clang warnings may be generated during translation. This does not mean
 that there is necessarilly something wrong with the code in question.
 
-
+Name conflicts occur quite frequently becaus C has different scoping rules than fortran.
+Compiler errors such as 'Error: Symbol [symbol] cannot have a type' are likely due to 
+name conflicts between function or type names and module names. Module names can be
+changed to correct this problem. These name conflicts typically lead to cascades of
+closely following but seemingly unrelated errors.
 

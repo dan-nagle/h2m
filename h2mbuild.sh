@@ -64,7 +64,6 @@ install="no"
 interactive="no"
 LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
 CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
-TOOLS_URL="http://releases.llvm.org/4.0.0/clang-tools-extra-4.0.0.src.tar.xz"
 install_h2m="no"
 INSTALL_H2M_DIR="/usr/local/bin"
 
@@ -374,7 +373,7 @@ then
   if [ "$need_specify" == "y" ]
   then
     echo "Specify paths to cmake configuration files for LLVM?"
-    echo "otherwise library and include paths are needed"
+    echo "Otherwise library and include paths are needed."
     while [ "$use_llvm_config" != "y" ] && [ "$use_llvm_config" != "n" ]
     do
       echo "y/n required"
@@ -383,14 +382,15 @@ then
     echo "Specify paths to cmake configuration files for Clang?"
     echo "Otherwise library and include paths are needed."
     echo "Note that if a cmake configuration file was not provided"
-    echo "for LLVM, this is almost certainly necessary."
+    echo "for LLVM, a cmake configuration file will not be accepted"
+    echo "for Clang because Clang depends on LLVM."
     while [ "$use_clang_config" != "y" ] && [ "$use_clang_config" != "n" ]
     do
       echo "y/n required"
       read use_clang_config
     done
   fi
-  echo "Do you want to install h2m?"
+  echo "Would you like to install h2m?"
   while [ "$h2m_install_temp" != "y" ] && [ "$h2m_install_temp" != "n" ]
   do
     echo "y/n required"
@@ -399,24 +399,24 @@ then
 
   if [ "$use_llvm_config" == "y" ]  # Obtain directory path to LLVMConfig.cmake file
   then
-    echo "Specify path to LLVM configuration file"
+    echo "Please specify the path to LLVM configuration file (llvm-config.cmake)."
     read LLVM_DIR
   else
-    echo "Specify path to LLVM include files. See README.txt for details."
+    echo "Please specify path to LLVM include files. See README.txt for details."
     read LLVM_INCLUDE_PATH
-    echo "Specify path to LLVM library files. See README.txt for details."
+    echo "Please specify path to LLVM library files. See README.txt for details."
     read LLVM_LIB_PATH
   fi
   if [ "$use_clang_config" == "y" ]  # Obtain directory path to ClangConfig.cmake
   then
-    echo "Specify path to Clang cmake configuration file"
+    echo "Please specify path to Clang cmake configuration file (clang-config.cmake)"
     read CLANG_DIR
   else  # Otherwise, obtain all the unpleasant paths we need for manual configuration.
-    echo "Specify path to Clang library files. See README.txt for details."
+    echo "Please specify path to Clang library files. See README.txt for details."
     read CLANG_LIB_PATH
-    echo "Specify path to Clang include files. See README.txt for details."
+    echo "Plese specify path to Clang include files. See README.txt for details."
     read CLANG_INCLUDE_PATH
-    echo "Specify path to Clang build files. See README.txt for details."
+    echo "Please specify path to Clang build files. See README.txt for details."
     read CLANG_BUILD_PATH
   fi
   if [ "$h2m_install_temp" == "y" ]  # Obtain directory path for installation
@@ -454,7 +454,7 @@ then
 fi
 
 # Users can manually specify paths to include and library files for LLVM which CMake
-# can pass to the compiler and linker to create the h2m tool.
+# can pass to the compiler and linker to create the h2m tool. This is a terrible idea.
 if [ "$LLVM_LIB_PATH" ] && [ "$LLVM_INCLUDE_PATH" ]  # Check for all manual LLVM specs
 then
   echo "Manually configuring llvm installation information:"
@@ -491,10 +491,10 @@ then
   error_report "Invalid options. CLANG_LIB_PATH, CLANG_INCLUDE_PATH, and CLANG_BUILD_PATH are all needed"
 elif [ "$CLANG_DIR_PATH" ] && [ ! "$LLVM_DIR_PATH" ]  # This is probably a fatal mistake.
 then
-  echo "Warning: the Clang package cannot be located without LLVM package information.">&2
+  echo "Warning: the Clang usually cannot be located without LLVM package information.">&2
   echo "If CMake is unable to find LLVM, it will not be able to find Clang.">&2
   echo "If errors occur, make sure to either specify LLVM's directory, or provide">&2
-  echo "Clang's include and library path information manually">&2
+  echo "Clang's include and library path information manually.">&2
 fi
 
 # Append on the installation directory if it was passed in
