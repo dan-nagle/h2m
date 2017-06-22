@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/bin/sh
+# Bash is the recommended shell. Ksh and zsh will also 
+# probably work, as may dash.
 # Installation script for the h2m Autofortran tool.
 # Original Author: Michelle Anderson.
 
@@ -68,7 +70,7 @@ install_h2m="no"
 INSTALL_H2M_DIR="/usr/local/bin"
 
 # Testing for features used within this script. Failures are fatal.
-which cmake>&/dev/null || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
+which cmake>/dev/null || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
 
 
 # Process command line args via shift in a while loop
@@ -153,7 +155,7 @@ then
     # Obtain the download directory
     echo "Where would you like to download clang and llvm?"
     echo "This makes little difference. ./clang-llvm is the default."
-    read download_dir
+    read download_dir_temp
 
     # Attempts at installation for LLVM and Clang are made upon request.
     echo "Would you like to attempt installation of Clang and LLVM (run "make install")?"
@@ -189,7 +191,13 @@ then
     # Sort the obtained input into usable options for installation
     # including the download tool, download directory, and installation
     # preference.
-    download_dir="$download_dir"  # The given download directory
+    if [ "$download_dir_temp" == "" ]  # The user just hit enter, so use the default
+    then
+      echo "Defaulting to ./clang-llvm for download directory"
+      download_dir="./clang-llvm"
+    else
+      download_dir="$download_dir_temp"  # The given download directory is set
+    fi
     if [ "$h2m_install_temp" == "y" ] 
     then
       install_h2m="yes"  # We will attempt to install h2m as requested
@@ -212,7 +220,7 @@ if [ "$download_cmake" == "yes" ]  # Commence with the download of CMake
 then
   echo "Begining download of CMake to $download_cmake_dir"
   # Autodetect download tool
-  which which>&/dev/null || error_report "Command 'which' not found. Autodetection of curl/wget failed."
+  which which>/dev/null || error_report "Command 'which' not found. Autodetection of curl/wget failed."
   if [ `which curl` ] 
   then
     echo "Curl found." 
@@ -227,7 +235,7 @@ then
   if [ ! -d "$download_dir" ] # Check for existence of the download directory, create if needed
   then
     # Don't rely on the -p option unless you have to because it may not be available.
-    mkdir "$download_cmake_dir" >&/dev/null || mkdir -p "$download_cmake_dir" || error_report "Can't create $download_cmake_dir"
+    mkdir "$download_cmake_dir" >/dev/null || mkdir -p "$download_cmake_dir" || error_report "Can't create $download_cmake_dir"
   fi 
   cd "$download_cmake_dir"
 
@@ -256,7 +264,7 @@ if [ "$download"  == "yes" ]
 then
   echo "Beginning download to $download_dir of clang and llvm"
   # Autodetect download tool
-  which which>&/dev/null || error_report "Command 'which' not found. Autodetection of curl/wget failed."
+  which which>/dev/null || error_report "Command 'which' not found. Autodetection of curl/wget failed."
   if [ `which curl` ] 
   then
     echo "Curl found." 
@@ -271,7 +279,7 @@ then
   # Obtain source code from the internet with Wget or Curl
   if [ ! -d "$download_dir" ]  # Checks to make sure the directory doesn't exit before creating it.
   then
-    mkdir "$download_dir">&/dev/null || mkdir -p "$download_dir" || error_report "Can't create $download_dir"
+    mkdir "$download_dir">/dev/null || mkdir -p "$download_dir" || error_report "Can't create $download_dir"
   fi
   cd "$download_dir" || error_report "Can't change to $download_dir"
   echo "Downloading LLVM from $LLVM_URL to $download_dir/llvm.tar.xz"
@@ -401,7 +409,8 @@ then
   then
     echo "Please specify the path to LLVM configuration file (llvm-config.cmake)."
     read LLVM_DIR
-  else
+  elif [ "$use_llvm_config" == "n" ]  # Obtain unpleasant directory information
+  then
     echo "Please specify path to LLVM include files. See README.txt for details."
     read LLVM_INCLUDE_PATH
     echo "Please specify path to LLVM library files. See README.txt for details."
@@ -411,7 +420,8 @@ then
   then
     echo "Please specify path to Clang cmake configuration file (clang-config.cmake)"
     read CLANG_DIR
-  else  # Otherwise, obtain all the unpleasant paths we need for manual configuration.
+  elif [ "$use_clang_config" == "n" ] # Otherwise, obtain all the unpleasant paths we need for manual configuration.
+  then
     echo "Please specify path to Clang library files. See README.txt for details."
     read CLANG_LIB_PATH
     echo "Plese specify path to Clang include files. See README.txt for details."
@@ -424,7 +434,13 @@ then
     install_h2m="yes" 
     echo "Please specify path to the installation directory for the h2m binary."
     echo "The recommended default is /usr/local/bin."
-    read INSTALL_H2M_DIR
+    read INSTALL_H2M_DIR_TEMP
+    if [ "$INSTALL_H2M_DIR_TEMP" == "" ]  # The user just hit enter, so use the default
+    then
+      INSTALL_H2M_DIR="/usr/local/bin"
+    else  # Use the specified directory
+      INSTALL_H2M_DIR="$INSTALL_H2M_DIR_TEMP"
+    fi
   fi
 fi  # End interactive section
 

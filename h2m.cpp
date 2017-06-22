@@ -28,22 +28,13 @@ static string GetModuleName(string Filename, Arguments& args) {
     string oldfilename = filename;  // Used to report the error, no other purpose
     filename = filename + "_" + std::to_string(append);  // Add _# to the end of the name
     if (args.getSilent() == false) {
-      errs() << "Warning: repeated module name " << oldfilename << " found, source is " << Filename;
-      errs() << ". Name changed to " << filename << "\n";
+      errs() << "Warning: repeated module name module_" << oldfilename << " found, source is " << Filename;
+      errs() << ". Name changed to module_" << filename << "\n";
     }
   } else {  // Record the first appearance of this module name
     repeats[filename] = 2;
   }
-
-  // if the class is led by an underscore, we must prepend to the name
-  if (filename.size() != 0 && filename.substr(0,1).compare("_") == 0) {
-    if (args.getSilent() == false) {  // Warn about the renaming
-      errs() << "Warning: 'h2m' prepended to module " << filename;
-      errs() << ". Fortran names may not being with an underscore.\n";
-      errs() << " Translation of file: " << Filename << "\n";
-    }
-    filename = "h2m" + filename;
-  }
+  filename = "module_" + filename;
   return filename;
 }
 
@@ -1717,7 +1708,7 @@ int main(int argc, const char **argv) {
         stackfiles.pop(); 
         ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on each file in turn
         TNAFrontendActionFactory factory(modules_list, args);
-        // modules_list is the growing string of previously translated modules this one may depend on
+        // modules_list is the growing string of previously translated modules this module may depend on
         tool_errors = stacktool.run(&factory);
 
         if (tool_errors != 0) {  // Tool error occurred
@@ -1742,12 +1733,12 @@ int main(int argc, const char **argv) {
         args.getOutput().os() << "\n\n";  // Put two lines inbetween modules, even on a trans. failure
       }  // End looking through the stack and processing all headers (including the original).
 
-    } else {  // No recursion, just run the tool on the first input file. No moudle list string is needed.
+    } else {  // No recursion, just run the tool on the first input file. No module list string is needed.
       TNAFrontendActionFactory factory("", args);
       tool_errors = Tool.run(&factory);
     }  // End processing for the -r option
 
-    // Note that the output has already been kept if this is an optimistic run.
+    // Note that the output has already been kept if this is an optimistic run. It doesn't hurt.
     if (!tool_errors) {  // If the last run of the tool was not successful, the output may be garbage
       OutputFile.keep();
     }

@@ -7,6 +7,7 @@ Contents:
   2) Build and Installation
      General information
      Usage of the h2mbuild.sh script
+     Building h2m without the script
      Troubleshooting
   3) Usage of h2m
      Behavior
@@ -63,15 +64,18 @@ LLVM license for additional details.
 
 General Information:
 The utilities required to build and run h2m are: CMake (preferably
-the most recent version), LLVM, Clang, curl or wget, bash,
-and standard unix utilities incliuding which, cut, mkdir, mv, and cd.
+the most recent version), LLVM, Clang, curl or wget (only if downloads
+of CMake, LLVM, and Clang are needed), bash, and standard unix utilities.
+Though it was principally designed for bash shells, h2mbuild.sh may
+run under other shells including ksh and zsh. Other posix compliant
+shells may also work, but they have not been tested.
 LLVM and Clang are absolutely required to run h2m. The h2mbuild.sh
 script can handle the installation of this software if necessary.
 If CMake is not installed, (ie the command 'which cmake' fails) CMake
 will need to be installed. The build script can perform a "bare-bones"
 installation if requested.
 If LLVM and Clang are already installed, CMake will need information
-about where their header and library files are installed.
+about where their header and library files are located.
 The easiest way to provide this information is to provide the 
 paths to the directories containing the LLVMConfig.cmake and
 ClangConfig.cmake files which will provide all the needed variables
@@ -189,6 +193,62 @@ h2m binary to a specified directory. The default destination is
 to install the h2m binary. A path relative to the current directory
 can be supplied, but an absoulte path is recommended.
 
+Building h2m Without the Script:
+
+It is absolutely necessary to have CMake installed to build h2m, but 
+the script is not necessarilly needed. To build h2m without the script,
+follow these steps.
+
+1). Download and Build Clang/LLVM
+LLVM and Clang can be downloaded fron releases.llvm.org.
+To guarantee that all the needed files are present, download and 
+build from source. A binary release is unlikely to have
+the needed header and CMake files. Clang/LLVM version 4.0.0 is the
+only version thoroughly tested. Somewhat earlier versions are likely to
+work as well. Later versions may not. 
+
+2). Find the CMake Configuration Files
+The files clang-config.cmake and llvm-config.cmake should be located
+in [path to llvm/clang build directory]/lib/cmake/llvm and 
+[path to llvm/clang build directory]/lib/cmake/clang respectively.
+In case of trouble, find, (find [directory] -name=llvm-config.cmake)
+can help locate these files. 
+If you have LLVM and Clang installed in standard locations, you may
+not need to specify paths for CMake at all.
+
+2.5). What to do Without Configuration Files
+Building h2m without LLVM and Clang configuration files is difficult
+and error prone but it can be done. In this case, locate the following
+directories:
+[a] The directory containing ./clang/Frontend/FrontendAction.h
+(in the Clang source tree)
+[b] The directory containing ./clang/AST/DeclNodes.inc (in the build tree)
+[c] The directory containing libclang.a or libclang.so (in the build tree)
+[d] The directory containing ./ADT/APFloat.h (in the LLVM source tree)
+[e] The directory containing libLLVMCore.a or libLLVMCore.so (in the build tree)
+
+3). Run CMake, Including Needed Configuration File Paths 
+In the directory including h2m.h, h2m.cpp, and CMakeLists.txt, run
+'cmake . -DLLVM_DIR=[path to directory containing llvm-config.cmake]
+-DClang_DIR=[path to directory containing clang-config.cmake]'. Use
+absolute paths (ie /Users/me/clang-llvm/build/lib/cmake/clang not
+~/clang-llvm... or ../clang-llvm).
+If you would like to install h2m, add an extra argument of the form
+'-DINSTALL_PATH=[path to desired installation location].
+
+3.5). CMake Without Configuration Files
+In the directory including h2m.h, h2m.cpp, and CMakeLists.txt, run the
+following unpleasant command, referring to the letters specified earlier
+in step 2.5 which represent the absolute paths to the directories found
+in that step:
+'cmake . -DLLVM_LIB_PATH=[e] -DLLVM_INCLUDE_PATH=[d] 
+-D_CLANG_INCLUDE_DIRS=[a] -D_CLANG_BUILD_PATH=[b] -D_CLANG_LIB_PATH=[c]'
+Add the optional installation location (as in step 3) if desired.
+
+4) Run Make
+Simply running 'make' should build h2m. If you wish to install h2m, run
+'make install' after running make.
+
 Troubleshooting
 
 1. It can cause problems if an older version of Clang or LLVM is
@@ -240,26 +300,29 @@ will be deleted. Most, however, are expected to be minor and processing will
 continue. For example, many errors raised by Clang as it processes header files are
 completely irrelevant to h2m.
 
+Module Names: The base file name is prepended with "module_" to create a name
+for the fortran module generated from each file. If identically named header 
+files are found during recursive inclusion, a suffix of _[number of repetition]
+will be appended to create a unique module name.
+
 Macros: Because fortran has no equivalent to the C macro, macros are traslated
 into functions. However, because types often cannot be determined for macros,
 a translation attempt may fail. In this case, the line will be commented out
 and a warning will be printed to standard error. These warnings can be silenced
 with the -q or -s option.
 
-Duplicate Module Names: If identically named header files are found during 
-recursive inclusion, a suffix of _[number of repetition] will be appended to
-create a unique module name.
+Enumerated Types: An enumerated type of arbitrary length can be translated. Because
+Fortran enums do not have their own scope as C enums do, the enumerator's name will
+become a member of the enumerated type with an unspecified value. 
 
 Other Conflicting Names: The h2m tool is not capable of finding all name conflicts.
 Most name conflicts will have to be fixed manually by the programmer, either by
 modifying a name or by modifying a USE statement to a USE ONLY statement to exclude
 conflicting symbols.
 
-File Names Begining With "_": Because _ is not a legal character at the begining of 
-a fortran name, the prefix h2m will be prepended to create a unique module name.
-
-Other Names Begining With "_": Other names will also be prepended with h2m in 
-order to create a legal identifier.
+Names Begining With "_": Names will be prepended with h2m in order to create
+a legal identifier. Warnings will be printed to standard error when a name is
+changed.
 
 Unrecognized Types: When h2m does not recognize a type in a header, it will print a
 warning about the problem and surround the questionably translated text with 
