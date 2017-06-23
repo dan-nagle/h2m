@@ -1,7 +1,8 @@
+# CMakeLists build file for the h2m autofortran tool.
 # If at all possible, paths to the LLVMConfig.cmake and ClangConfig.cmake
 # files should be specified. If this is not possible, or they cannot be
-# found, there is the option to specify three directories for clang and
-# llvm.
+# found, there is the option to specify three directories for clang and two for
+# llvm in order to manually locate header and include files.
 # IMPORTANT NOTE: PATH EXPANSION (~ expansion) DOES NOT OCCUR. USE FULLY
 # QUALIFIED PATHS (ie /Users/manderso/clang-llvm/llvm/tools/clang/include)
 # For Clang:
@@ -11,8 +12,8 @@
 # ./clang/AST/DeclNodes.inc (usually /build/tools/clang/include
 # specify -DCLANG_LIB_PATH on the command line to be the directory containing
 # all .a/.so files for clang. This should be in /build/lib
-#make . -DCLANG_LIB_PATH=/Users/manderso/make_vs_ninja/clang-llvm/build/lib -DCLANG_INCLUDE_PATH=/Users/manderso/make_vs_ninja/clang-llvm/build/tools/clang/include/ -DCLANG_BUILD_PATH=/Users/manderso/make_vs_ninja/clang-llvm/llvm/tools/clang/include
-#-DClang_DIR=/Users/manderso/make_vs_ninja/clang-llvm/build/lib/cmake/clang
+
+
 cmake_minimum_required(VERSION 3.2)
 project(h2m)
 
@@ -25,7 +26,7 @@ if(LLVM_FOUND) # We found the config and can use its definitions
 
   add_definitions(${LLVM_DEFINITIONS})
   include_directories(${LLVM_INCLUDE_DIRS})
-  message(STATUS "LLVM include directories are ${LLVM_INCLUDE_DIRS}")
+  #DEBUGLINE message(STATUS "LLVM include directories are ${LLVM_INCLUDE_DIRS}")
   llvm_map_components_to_libnames(llvm_libs support core irreader)
 elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all must be done by hand
   message(STATUS "Found LLVM directory information")
@@ -36,6 +37,7 @@ elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all m
 
   add_definitions(-DLLVM_BUILD_GLOBAL_ISEL -D_DEBUG -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS)
   include_directories(${LLVM_INCLUDE_PATH})
+  # These are all the libraries that could possibly be needed. Chances are only a few actually are needed
   set(LLVM_include_libs LLVMLTO LLVMPasses LLVMObjCARCOpts LLVMMIRParser LLVMSymbolize LLVMDebugInfoPDB
      LLVMDebugInfoDWARF LLVMCoverage LLVMTableGen LLVMOrcJIT LLVMXCoreDisassembler LLVMXCoreCodeGen 
      LLVMXCoreDesc LLVMXCoreInfo LLVMXCoreAsmPrinter LLVMSystemZDisassembler LLVMSystemZCodeGen 
@@ -80,23 +82,24 @@ if(Clang_FOUND) # We found the config and can use its definitions
   find_path(AUX_CLANG_DIR_H NAMES ../tools/clang/include/clang/Basic/Version.h HINTS ${LLVM_INCLUDE_DIRS})
   if(IS_DIRECTORY "${AUX_CLANG_DIR_H}") 
     include_directories("${AUX_CLANG_DIR_H}/../tools/clang/include")
-    message(STATUS "Including ${AUX_CLANG_DIR_H}/../tools/clang/include")
+    #DEBUGLINE message(STATUS "Including ${AUX_CLANG_DIR_H}/../tools/clang/include")
   endif()
   find_path(AUX_CLANG_DIR_INC NAMES ../tools/clang/include/clang/Basic/Version.inc HINTS ${LLVM_INCLUDE_DIRS})
   if(IS_DIRECTORY "${AUX_CLANG_DIR_INC}")
     include_directories("${AUX_CLANG_DIR_INC}/../tools/clang/include")
-    message(STATUS "Including ${AUX_CLANG_DIR_INC}/../tools/clang/include")
+    #DEBUGLINE message(STATUS "Including ${AUX_CLANG_DIR_INC}/../tools/clang/include")
   endif()
-  message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.h in ${LLVM_INCLUDE_DIRS}")
-  message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.inc in ${LLVM_INCLUDE_DIRS}")
+  #DEBUGLINE message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.h in ${LLVM_INCLUDE_DIRS}")
+  #DEBUGLINE message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.inc in ${LLVM_INCLUDE_DIRS}")
 
   # If the include directories are defined (as they should be!) use those.
   # Double includes are not an issue as far as I can tell. CMake doesn't care
   # if these directories are included twice.
   if(IS_DIRECTORY "${CLANG_INCLUDE_DIRS}")
     include_directories("${CLANG_INCLUDE_DIRS}")
-    message(STATUS "Including ${CLANG_INCLUDE_DIRS}")
+    #DEBUGLINE message(STATUS "Including ${CLANG_INCLUDE_DIRS}")
   endif() 
+  # The clang package will resolve these to their proper files without further intervention.
   set(clang_libs clangTooling clangBasic clangASTMatchers clangFrontend)
 elseif((EXISTS ${CLANG_LIB_PATH}) AND (EXISTS ${CLANG_INCLUDE_PATH}) AND (EXISTS ${CLANG_BUILD_PATH})) # Woe, all by hand
   message(STATUS "Found Clang directory information")
@@ -121,12 +124,13 @@ else() # This could be because paths were not given or are invalid
   message(FATAL_ERROR "Clang not found and valid paths not specified")
 endif()
 
-# All clang projects MUST be compiled with hidden visibility and no rtti
+# All Clang projects MUST be compiled with hidden visibility and no rtti, the same way Clang is compiled.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11 -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden")
 
 # get_property(included DIRECTORY PROPERTY INCLUDE_DIRECTORIES) # Debugging message
 # message(STATUS ${included})
 
+# CMake will take care of local include files
 add_executable(h2m h2m.cpp)
 
 # Find and map all the given clang libraries and link them to the executable
@@ -138,6 +142,7 @@ foreach(lib ${link_clang_libs})
   # Determine whether or not find_library was successful
   if((EXISTS ${found_${lib}}))
     message(STATUS "Including clang library ${found_${lib}}")
+    # Include the library as UNKNOWN because it may be .a or .so
     add_library(${lib} UNKNOWN IMPORTED)
     set_property(TARGET ${lib} PROPERTY IMPORTED_LOCATION ${found_${lib}})
     target_link_libraries(h2m "${lib}")
@@ -150,12 +155,13 @@ endforeach()
 # Find and map all the given LLVM libraries and link them to the executable
 # Only invoked if the cmake.config file wasn't found
 foreach(llvm_lib ${LLVM_include_libs})
-  # Find library has special chacing so this has to be done with double variables
+  # Find library has special caching so this has to be done with double variables
   find_library(found_${llvm_lib} NAMES lib${llvm_lib}.a ${llvm_lib}.a  lib${llvm_lib}.so ${llvm_lib}.so
     HINTS "${LLVM_LIB_PATH}")
-  # Detemine the find success 
+  # Detemine whether or not find_library was successful 
   if((EXISTS "${found_${llvm_lib}}"))
     message(STATUS "Including llvm library ${found_${llvm_lib}}")
+    # We do not know whether this is a .a or a .so file
     add_library(${llvm_lib} UNKNOWN IMPORTED)
     set_property(TARGET ${llvm_lib} PROPERTY IMPORTED_LOCATION ${found_${llvm_lib}})
     target_link_libraries(h2m "${llvm_lib}")
@@ -165,9 +171,11 @@ foreach(llvm_lib ${LLVM_include_libs})
   endif()
 endforeach()
 
+# Link the found libraries to the executable, clang libraries first due to dependencies
 target_link_libraries(h2m ${clang_libs} ${llvm_libs})
 
-if((EXISTS "${INSTALL_PATH}"))  # An installation of h2m has been requested
+# Create an installation target if a valid -DINSTALL_PATH was given
+if((EXISTS "${INSTALL_PATH}"))
   message(STATUS "Installation requested to ${INSTALL_PATH}")
   install(TARGETS h2m RUNTIME DESTINATION "${INSTALL_PATH}")
 else()

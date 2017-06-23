@@ -12,6 +12,7 @@ Contents:
   3) Usage of h2m
      Behavior
      Options
+     Example
   4) Known Issues
 
 0)   Quick Start
@@ -270,17 +271,13 @@ been found. This often results in incompatible versions and linker errors.
 implementation. Release 4.0 is known to work, and this is the 
 default download URL.
 
-5. If Clang suffers a fatal error during an attempted compilation (this
-may include failure to locate header files) the program will stop and
-the output file will not be produced.
-
 3)   USAGE OF H2M
 
 The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
 By default h2m sends the translated text to standard output. This can be
 redirected with an option or the shell redirection operators.
 
-./h2m -out=[path to output file] [path to header] -- [Clang options]
+./h2m [h2m options] -out=[path to output file] [path to header] -- [Clang options]
 
 BEHAVIOR
 
@@ -370,10 +367,44 @@ create unusable code.
 compiler command specified. If this command cannot be found, or if a command interpreter 
 cannot be found, this will fail.
 
+-ignore-this
+-i			Ignore the provided file. Do not translate it when performing
+recursive processing. This option is only valid with the -r/-recursive option. This
+is useful if a C source file includes headers which need to be translated, but the
+C source file should not be translated and should only be used to determine which
+other files to translate.
+
 Clang Options: Following specification of the input file, options after a "--" are passed
 as arguments to the Clang compiler instance used by the tool. The Clang/LLVM manual pages
 and websites should be used as a reference for these options.
 
+
+EXAMPLE
+
+The Example directory contains a small tutorial script which demonstrates the use of
+h2m. This section will very briefly summarize the use of h2m for mixed programming.
+
+Step 1: Translate the desired header file from C to Fortran using h2m:
+h2m -out=module_header.f90 ./header.h
+
+Step 2: Compile the C code into an object file. Any major C compiler should work, but
+GCC is used for the example:
+gcc  -c -I. -o c_source.o c_source.c
+
+Step 3: Add a proper USE statement to the Fortran program:
+PROGRAM example
+USE, INSTRINSIC :: iso_c_binding  ! Include C_DOUBLE and other interoperable KINDS
+USE module_header
+...
+
+Step 4: Call the C functions according to their translated Fortran interfaces.
+
+Step 5: Compile the Fortran program and link against the C file. Any compiler should
+work, but gfortran is used as an example.
+gfortran -o example example.f90 c_source.o
+
+Step 6: Enjoy your mixed-language executable.
+./example
 
 4)   KNOWN ISSUES
 
@@ -382,7 +413,6 @@ that there is necessarilly something wrong with the code in question.
 
 Name conflicts occur quite frequently becaus C has different scoping rules than fortran.
 Compiler errors such as 'Error: Symbol [symbol] cannot have a type' are likely due to 
-name conflicts between function or type names and module names. Module names can be
-changed to correct this problem. These name conflicts typically lead to cascades of
-closely following but seemingly unrelated errors.
+name conflicts between function or type names. These name conflicts typically lead to 
+cascades of closely following but seemingly unrelated errors.
 

@@ -1,4 +1,7 @@
-//stands for header to module
+// This is the source code of the h2m autofortran tool
+// envisioned by Dan Nagle, written by Sisi Liu and revised
+// by Michelle Anderson at NCAR.
+
 #include "h2m.h"
 //-----------formatter functions----------------------------------------------------------------------------------------------------
 
@@ -25,8 +28,9 @@ static string GetModuleName(string Filename, Arguments& args) {
   if (repeats.count(filename) > 0) {  // We have found a repeated module name
     int append = repeats[filename];
     repeats[filename] = repeats[filename] + 1;  // Record the new repeat in the map
-    string oldfilename = filename;  // Used to report the error, no other purpose
+    string oldfilename = filename;  // Used to report the duplicate, no other purpose
     filename = filename + "_" + std::to_string(append);  // Add _# to the end of the name
+    // Note that module_ will be prepended to the name prior to returning the string.
     if (args.getSilent() == false) {
       errs() << "Warning: repeated module name module_" << oldfilename << " found, source is " << Filename;
       errs() << ". Name changed to module_" << filename << "\n";
@@ -52,37 +56,44 @@ static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 // A help message for this specific tool can be added afterwards.
 static cl::extrahelp MoreHelp("\nMore help text...");
 
-// Positional parameter: the first input parameter should be the compilation files
+// Positional parameter: the first input parameter should be the compilation file. 
+// Currently, h2m is only designed to take one file at a time.
 static cl::opt<string> SourcePaths(cl::Positional, cl::desc("source to translate"));
 
-// Output file, option is out
+// Output file, option is -out or -o.
 static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
-static cl::alias OutputFile2("o", cl::desc("Alias for the output file"), cl::aliasopt(OutputFile));
+static cl::alias OutputFile2("o", cl::desc("Alias for -out"), cl::aliasopt(OutputFile));
 
-// Boolean option to recursively process includes
+// Boolean option to recursively process includes. The default is not to recursively process.
 static cl::opt<bool> Recursive("recursive", cl::desc("Include other header files recursively via USE statements"));
-static cl::alias Recrusive2("r", cl::desc("Alias for recursive"), cl::aliasopt(Recursive));
+static cl::alias Recrusive2("r", cl::desc("Alias for -recursive"), cl::aliasopt(Recursive));
 
-// Boolean option to silence less critical warnings
+// Boolean option to silence less critical warnings (ie warnings about statements commented out)
 static cl::opt<bool> Quiet("quiet", cl::desc("Silence warnings about lines which have been commented out."));
-static cl::alias Quiet2("q", cl::desc("Alias for quiet"), cl::aliasopt(Quiet));
+static cl::alias Quiet2("q", cl::desc("Alias for -quiet"), cl::aliasopt(Quiet));
 
 // Boolean option to silence all warnings save those that are absolutely imperative (ie output failure)
 static cl::opt<bool> Silent("silent", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
-static cl::alias Silent2("s", cl::desc("Alias for silent"), cl::aliasopt(Silent));
+static cl::alias Silent2("s", cl::desc("Alias for -silent"), cl::aliasopt(Silent));
 
 // Boolean option to ignore critical clang errors that would otherwise cause termination
+// during preprocessing and to keep the output file despite any other problems.
 static cl::opt<bool> Optimistic("optimist", cl::desc("Continue processing and keep output in spite of errors"));
-static cl::alias Optimistic2("k", cl::desc("Alias for optimist"), cl::aliasopt(Optimistic));
+static cl::alias Optimistic2("k", cl::desc("Alias for -optimist"), cl::aliasopt(Optimistic));
 
-// Boolean option to ignore system header files when processing recursive includes
+// Boolean option to ignore system header files when processing recursive includes. 
+// The default is to include them.
 static cl::opt<bool> NoHeaders("no-system-headers", cl::desc("Do not recursively translate system header files."));
-static cl::alias NoHeaders2("n", cl::desc("Alias for no-system-headers"), cl::aliasopt(NoHeaders));
+static cl::alias NoHeaders2("n", cl::desc("Alias for -no-system-headers"), cl::aliasopt(NoHeaders));
+
+static cl::opt<bool> IgnoreThis("ignore-this", cl::desc("Do not translate this file, only its included headers."));
+static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::aliasopt(IgnoreThis));
 
 // Option to specify the compiler to use to test the output. No specification means no compilation.
 static cl::opt<string> Compiler("compile", cl::desc("Program to be used to attempt to compile the output file."));
 static cl::alias Compiler2("c", cl::desc("Alias for compile"), cl::aliasopt(Compiler));
 
+// These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
 
@@ -90,7 +101,6 @@ static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc loc, Arguments &arg): ac(ac), args(arg) {
   c_qualType = qt;
   sloc = loc;
-  // sloc = ac.getSourceManager().getPresumedLoc(TypeLoc(qt, qt.getAsOpaquePtr()).getEndLoc()); // # TODO: WHY DOESN'T THIS WORK?
 };
 
 // Determines whether the qualified type offered is identical to that it is called on.
@@ -98,14 +108,17 @@ CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc lo
 bool CToFTypeFormatter::isSameType(QualType qt2) {
   // for pointer type, only distinguish between the function pointer from other pointers
   if (c_qualType.getTypePtr()->isPointerType() and qt2.getTypePtr()->isPointerType()) {
+    // True if both are function pointers
     if (c_qualType.getTypePtr()->isFunctionPointerType() and qt2.getTypePtr()->isFunctionPointerType()) {
       return true;
+    // True if both are not functoin pointers
     } else if ((!c_qualType.getTypePtr()->isFunctionPointerType()) and (!qt2.getTypePtr()->isFunctionPointerType())) {
       return true;
     } else {
       return false;
     }
   } else {
+    // No pointers involved. Use the overloaded operator ==
     return c_qualType == qt2;
   }
 };
@@ -131,57 +144,59 @@ string CToFTypeFormatter::getFortranIdASString(string raw_id) {
 // determined over a series of if statements and a suitable Fortran 
 // equivalent is returned as a string. The boolean typeWrapper dictates
 // whether or not the return should be of the form FORTRANTYPE(C_QUALIFIER)
-// or just of the form C_QUALIFIER.
+// or just of the form C_QUALIFIER. True means it needs the FORTRANTYPE(C_QUALIFIER)
+// format.
 string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
   string f_type;
 
-      // char
+  // Handle character types
   if (c_qualType.getTypePtr()->isCharType()) {
     if (typeWrapper) {
       f_type = "CHARACTER(C_CHAR)";
     } else {
       f_type = "C_CHAR";
     }
+  // Handle boolean types
   } else if (c_qualType.getTypePtr()->isBooleanType()) {
     if (typeWrapper) {
       f_type = "LOGICAL(C_BOOL)";
     } else {
       f_type = "C_BOOL";
     }
-    // INT
+  // Handle integer types
   } else if (c_qualType.getTypePtr()->isIntegerType()) {
-    //int typeSize = ac.getTypeSizeInChars(c_qualType).getQuantity();
-    // diff int type may have same size so use stirng matching for now
+     // Match the necessary integer type with string matching because
+     // different types may have the same size in bytes.
+     // Handle a size_t
      if (c_qualType.getAsString()== "size_t") {
-      // size_t
       if (typeWrapper) {
         f_type = "INTEGER(C_SIZE_T)";
       } else {
         f_type = "C_SIZE_T";
       }
+    // Handle integers which are 'chars'
     } else if (c_qualType.getAsString()== "unsigned char" or c_qualType.getAsString()== "signed char") {
-      // signed/unsigned char
       if (typeWrapper) {
         f_type = "INTEGER(C_SIGNED_CHAR)";
       } else {
         f_type = "C_SIGNED_CHAR";
       }        
+    // Handle a short type
     } else if (c_qualType.getAsString().find("short") != std::string::npos) {
-      // short
       if (typeWrapper) {
         f_type = "INTEGER(C_SHORT)";
       } else {
         f_type = "C_SHORT";
       }  
+    // Handle a long or a long long. Long longs are ignored here. The type is assumed to be long.
     } else if (c_qualType.getAsString().find("long") != std::string::npos) {
-      // long or long long, assume long
       if (typeWrapper) {
         f_type = "INTEGER(C_LONG)";
       } else {
         f_type = "C_LONG";
       }      
+    // There are other types of ints, but a type of INT is assumed.
     } else {
-      // other int so just assume int
       if (typeWrapper) {
         f_type = "INTEGER(C_INT)";
       } else {
@@ -189,70 +204,71 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
       }      
     }
 
-    // REAL
+  // Handle the translation of all REAL types.
   } else if (c_qualType.getTypePtr()->isRealType()) {
-
+    // Handle translation of a long double
     if (c_qualType.getAsString().find("long") != std::string::npos) {
-      // long double
       if (typeWrapper) {
         f_type = "REAL(C_LONG_DOUBLE)";
       } else {
         f_type = "C_LONG_DOUBLE";
       } 
+    // Handle translation of a float
     } else if (c_qualType.getAsString()== "float") {
-      // float
       if (typeWrapper) {
         f_type = "REAL(C_FLOAT)";
       } else {
         f_type = "C_FLOAT";
       }
+    // Handle translation of a float_128
     } else if (c_qualType.getAsString()== "__float128") {
-      // __float128
       if (typeWrapper) {
         f_type = "REAL(C_FLOAT128)";
       } else {
         f_type = "C_FLOAT128";
       }
+    // Assume that this "other" kind of real is a double
     } else {
-      // should be double
       if (typeWrapper) {
         f_type = "REAL(C_DOUBLE)";
       } else {
         f_type = "C_DOUBLE";
       }      
     }
-    // COMPLEX
+  // Handle translation of a C derived complex type
   } else if (c_qualType.getTypePtr()->isComplexType ()) {
+    // Handle translation of a complex float
     if (c_qualType.getAsString().find("float") != std::string::npos) {
-      //  float _Complex 
       if (typeWrapper) {
         f_type = "COMPLEX(C_FLOAT_COMPLEX)";
       } else {
         f_type = "C_FLOAT_COMPLEX";
       }        
+    // Handle translation of a complex long double
     } else if (c_qualType.getAsString().find("long") != std::string::npos) {
-       //  long double _Complex 
       if (typeWrapper) {
         f_type = "COMPLEX(C_LONG_DOUBLE_COMPLEX)";
       } else {
         f_type = "C_LONG_DOUBLE_COMPLEX";
       }
+    // Assume that this is a complex double type and handle it as such
     } else {
-      // assume double _Complex 
       if (typeWrapper) {
         f_type = "COMPLEX(C_DOUBLE_COMPLEX)";
       } else {
         f_type = "C_DOUBLE_COMPLEX";
       }
     }
-    // POINTER
+  // Translate a C pointer
   } else if (c_qualType.getTypePtr()->isPointerType ()) {
+    // C function pointers are translated to a special type
     if (c_qualType.getTypePtr()->isFunctionPointerType()){
       if (typeWrapper) {
         f_type = "TYPE(C_FUNPTR)";
       } else {
         f_type = "C_FUNPTR";
       }
+    // All other data pointers are translated here
     } else {
       if (typeWrapper) {
         f_type = "TYPE(C_PTR)";
@@ -261,8 +277,10 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
       }
     }
     
+  // Translate a structure declaration. We will recieve
+  // the declaration in the form "struct structname" and 
+  // will have to deal with the space between the words.
   } else if (c_qualType.getTypePtr()->isStructureType()) {
-    // struct type
     f_type = c_qualType.getAsString();
     // We cannot have a space in a fortran type. Erase up
     // to the space.
@@ -282,17 +300,19 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
     if (typeWrapper) {
       f_type = "TYPE(" + f_type + ")";
     } 
-    // ARRAY
+  // Handle an array type declaration
   } else if (c_qualType.getTypePtr()->isArrayType()) {
     const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
-    // recursively get element type
     QualType e_qualType = at->getElementType ();
+    // Call this function again on the type found inside the array
+    // declaration. This recursion will determine the correct type.
     CToFTypeFormatter etf(e_qualType, ac, sloc, args);
-
     f_type = etf.getFortranTypeASString(typeWrapper);
+  // We do not know what the type is. We print a warning and special
+  // text around the type in the output file.
   } else {
     f_type = "unrecognized_type(" + c_qualType.getAsString()+")";
-    // Avoids repetitive error messages
+    // Warning only in the case of a typewrapper avoids repetitive error messages
     if (typeWrapper) {
       if (args.getSilent() == false) {
         errs() << "Warning: unrecognized type (" << c_qualType.getAsString() << ")\n";
@@ -305,7 +325,9 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
 
 
 // Determines whether or not an input string resembles an integer.
-// Useful in determining how to translate a C macro.
+// Useful in determining how to translate a C macro because macros
+// do not have types. It looks for pure numbers and for various
+// type/format specifiers that might be present in an "int."
 bool CToFTypeFormatter::isIntLike(const string input) {
   // "123L" "18446744073709551615ULL" "18446744073709551615UL" 
   if (std::all_of(input.begin(), input.end(), ::isdigit)) {
@@ -317,6 +339,7 @@ bool CToFTypeFormatter::isIntLike(const string input) {
       return false;
     }    
     
+    // If there are no digits, it is not a number.
     size_t found = temp.find_first_of("01234567890");
     if (found==std::string::npos) {
       return false;
@@ -343,7 +366,10 @@ bool CToFTypeFormatter::isIntLike(const string input) {
 };
 
 // Determines whether or not the string input resembles a
-// double. Useful for determining how to translate a C macro.
+// double. Useful for determining how to translate a C macro
+// which doesn't have a type. It looks for a decimal place
+// and digits and also handles various letters that might
+// indicate type/format of a double-like entity.
 bool CToFTypeFormatter::isDoubleLike(const string input) {
   // "1.23", 1.18973149535723176502e+4932L
   string temp = input;
@@ -384,7 +410,8 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
 
 // Determines whether or not an input string can be
 // treated as a string constant ("abc"). Useful 
-// for determining how to translate a C macro.
+// for determining how to translate a C macro
+// which has no type.
 bool CToFTypeFormatter::isString(const string input) {
   string s = input;
   while (s[0] == ' ') {
@@ -398,7 +425,7 @@ bool CToFTypeFormatter::isString(const string input) {
 
 // Determines whether or not an input string can be
 // treated as a a C character ('a'). Useful for determining
-// how to translate a C macro.
+// how to translate a C macro which has no type.
 bool CToFTypeFormatter::isChar(const string input) {
   string s = input;
   while (s[0] == ' ') {
@@ -412,7 +439,8 @@ bool CToFTypeFormatter::isChar(const string input) {
 
 // Returns true if the string input provided contains the
 // word short, int, long, or char. Otherwise it returns false.
-// Useful for determining how to translate a C macro etc.
+// Useful for determining how to translate a C macro which 
+// does not have a type.
 bool CToFTypeFormatter::isType(const string input) {
   // only support int short long char for now
   if (input == "short" or input == "long" or input == "char" or input == "int" or
@@ -425,10 +453,12 @@ bool CToFTypeFormatter::isType(const string input) {
   return false;
 };
 
-// Retrurns a string buffer containing the Fortran equivalent of a C macro resembling a typedef.
-// The argumnets and PresumedLoc are used to give information about the location of any
+// Returns a string buffer containing the Fortran equivalent of a C macro resembling a typedef.
+// The Arguments and PresumedLoc are used to give information about the location of any
 // errors that might occur during an attempted translation. The macro is translated into 
-// a Fortran TYPE.
+// a Fortran TYPE definition. This only supports int, shorts, chars, and longs. The TYPE
+// will include one field which is [type_name]_C_CHAR/C_INT/C_LONG as appropriate given
+// the type being declared.
 string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args) {
   string ft_buffer;
   string type_id = "typeID_" + macroName ;
@@ -1645,12 +1675,19 @@ int main(int argc, const char **argv) {
   if (argc > 1) {
     // Parse the command line options and create a new database to hold the Clang compilation
     // options.
-    cl::ParseCommandLineOptions(argc, argv, "h2m\n");
+    cl::ParseCommandLineOptions(argc, argv, "h2m Autofortran tool\n");
     std::unique_ptr<CompilationDatabase> Compilations;
     SmallString<256> PathBuf;
     sys::fs::current_path(PathBuf);
     Compilations.reset(new FixedCompilationDatabase(Twine(PathBuf), other));
 
+
+    // Checks for illegal options. Give warnings, and errors.
+    if (IgnoreThis == true && Recursive == false) {  // Don't translate this, and no recursion requested
+      errs() << "Error: incompatible options, skip given file and no recursion (-i without -r)";
+      errs() << "Either specify a recursive translation or remove the option to skip the first file.";
+      return(1);
+    }
     // Determine file to open and initialize it. Wrtie to stdout if no file is given.
     string filename;
     std::error_code error;
@@ -1706,9 +1743,15 @@ int main(int argc, const char **argv) {
       while (stackfiles.empty() == false) {
         string headerfile = stackfiles.top();
         stackfiles.pop(); 
+
+        if (stackfiles.empty() && IgnoreThis == true) {  // We were directed to skip the first file
+          break;  // Leave the while loop. This is cleaner than another level of indentation.
+        }
+
         ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on each file in turn
         TNAFrontendActionFactory factory(modules_list, args);
         // modules_list is the growing string of previously translated modules this module may depend on
+        // Run the translation tool.
         tool_errors = stacktool.run(&factory);
 
         if (tool_errors != 0) {  // Tool error occurred
@@ -1736,10 +1779,10 @@ int main(int argc, const char **argv) {
     } else {  // No recursion, just run the tool on the first input file. No module list string is needed.
       TNAFrontendActionFactory factory("", args);
       tool_errors = Tool.run(&factory);
-    }  // End processing for the -r option
+    }  // End processing of the translation
 
-    // Note that the output has already been kept if this is an optimistic run. It doesn't hurt.
-    if (!tool_errors) {  // If the last run of the tool was not successful, the output may be garbage
+    // Note that the output has already been kept if this is an optimistic run. It doesn't hurt to keep twice.
+    if (!tool_errors) {  // If the last run of the tool was not successful, the output may be garbage.
       OutputFile.keep();
     }
 
@@ -1752,6 +1795,9 @@ int main(int argc, const char **argv) {
       } else {  // Cannot run using system (fork might succeed...)
         errs() << "Error: No command interpreter available to run system process " << Compiler << "\n";
       }
+    // We were asked to run the compiler, but there is no output file...
+    } else if (Compiler.size() && filename.compare("-") == 0) {
+      errs() << "Error: unable to attempt compilation on standard output.";
     }
     return(tool_errors);
   }

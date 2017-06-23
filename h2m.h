@@ -1,3 +1,7 @@
+// Header file for the h2m Autofortran tool, written by
+// Sisi Liu at NCAR, envisioned by Dan Nagle, and revised
+// by Michelle Anderson. 
+
 // Declares clang::SyntaxOnlyAction.
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
@@ -36,6 +40,7 @@
 #include <set>
 #include <deque>
 #include <stack>
+// Map is used to assign unique module names if there are duplicate file names
 #include <map>
 
 using namespace clang;
@@ -46,7 +51,7 @@ using namespace std;
 
 //------------Utility Classes for Argument parsing etc-------------------------------------------------------------------------------
 // Used to pass arguments to the tool factories and actions so I don't have to keep changing them if more are added
-// This keeps track of the queit and silent options, as well as the output file, and allows greater flexibility
+// This keeps track of the quiet and silent options, as well as the output file, and allows greater flexibility
 // in the future.
 class Arguments {
 public:
@@ -68,17 +73,21 @@ private:
   bool silent;
   // Should we recursively translate system header files?
   bool no_system_headers;
-  // The module name may be altered during processing by the action
+  // The module name may be altered during processing by the action;
   // by default this is an empty string. It is used to pass values out, not in.
   string module_name;
 };
 
 
 //------------Formatter class decl----------------------------------------------------------------------------------------------------
+// This class holds a variety of functions used to transform C syntax into Fortran.
 class CToFTypeFormatter {
 public:
+  // QualTypes contain modifiers like "static" or "volatile"
   QualType c_qualType;
+  // ASTContext contains detailed information not held in the AST node
   ASTContext &ac;
+  // Presumed location of the record being processed.
   PresumedLoc sloc;
 
   CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc, Arguments &arg);
@@ -95,8 +104,11 @@ private:
   Arguments &args;
 };
 
+// This class is used to translate structs, unions, and typedefs
+// into Fortran equivalents. 
 class RecordDeclFormatter {
 public:
+  // An anonymous struct may not have a declared name.
   const int ANONYMOUS = 0;
   const int ID_ONLY = 1;
   const int TAG_ONLY = 2;
@@ -106,11 +118,15 @@ public:
   const int UNION = 0;
   const int STRUCT = 1;
 
+  // Pointer to the AST node being inspected.
   RecordDecl *recordDecl;
+  // By default, the record is an anonymous struct
   int mode = ANONYMOUS;
   bool structOrUnion = STRUCT;
   string tag_name;
+  // This doesn't actually seem to be used
   bool isInSystemHeader;
+  // Presumed location of this node
   PresumedLoc sloc;
 
   // Member functions declarations
@@ -125,27 +141,40 @@ public:
 
 
 private:
+  // Rewriters are used, typically, to make small changes to the
+  // source code. This one, however, serves a different,
+  // mysterious purpose
   Rewriter &rewriter;
+  // Arguments passed in from the action factory. This includes
+  // quiet/silent, the module's name etc
   Arguments &args;
   
 };
 
+// This class is used to translate a C enumeration into a
+// Fortran equivalent.
 class EnumDeclFormatter {
 public:
   EnumDecl *enumDecl;
+  // This doesn't appear to be used.
   bool isInSystemHeader;
   PresumedLoc sloc;
 
   // Member functions declarations
   EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg);
+  // The main function to fetch the enumeration as a Fortran
+  // string equivalent.
   string getFortranEnumASString();
 
 private:
   Rewriter &rewriter;
+  // Arguments passed in from the action factory.
   Arguments &args;
   
 };
 
+// This class is used to translate a variable declaration into
+// a Fortran equivalent.
 class VarDeclFormatter {
 public:
   VarDecl *varDecl;
@@ -154,8 +183,12 @@ public:
 
   // Member functions declarations
   VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg);
+  // Get the initalization value of the variable.
   string getInitValueASString();
+  // Get the declaration of the variable.
   string getFortranVarDeclASString();
+  // Arrays are special and complicated. They must be
+  // handled seperately.
   string getFortranArrayDeclASString();
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues, string arrayShapes, bool &evaluatable, bool firstEle);
 
@@ -166,10 +199,13 @@ private:
   
 };
 
+// This class translates C typedefs into 
+// the closest possible fortran equivalent.
 class TypedefDeclFormater {
 public:
   TypedefDecl *typedefDecl;
   bool isInSystemHeader;
+  // The presumed location of the node
   PresumedLoc sloc;
 
   // Member functions declarations
@@ -178,11 +214,15 @@ public:
 
 private:
   Rewriter &rewriter;
+  // Whether or not the location of the node is valid according to clang
   bool isLocValid;
+  // Arguments passed in from the action factory
   Arguments &args;
   
 };
 
+// Class to translate a C function declaration into either a Fortran
+// function or subroutine as appropriate.
 class FunctionDeclFormatter {
 public:
   FunctionDecl *funcDecl;
@@ -193,18 +233,26 @@ public:
   FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg);
   string getParamsNamesASString();
   string getParamsDeclASString();
+  // Fetches the entire declaration using the other helpers seen here
   string getFortranFunctDeclASString();
   string getParamsTypesASString();
+  // Whether or not the argument locations are valid according to clang
   bool argLocValid();
 
 private:
   QualType returnQType;
+  // The parameters of the function are kept in an array
   llvm::ArrayRef<ParmVarDecl *> params;
   Rewriter &rewriter;
+  // Arguments passed in from the action factory
   Arguments &args;
 };
 
 
+// Class used to translate Macros into the closest appropriate 
+// Fortran equivalent. This may be a constant value or a subroutine
+// or function. Some macros cannot be translated and are commented
+// out instead.
 class MacroFormatter {
 public:
   const MacroDirective *md;
@@ -212,6 +260,7 @@ public:
   string macroVal;
   string macroDef;
   bool isInSystemHeader;
+  // Presumed location of the macro's start according to clang
   PresumedLoc sloc;
 
   MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci, Arguments &arg);
@@ -222,6 +271,7 @@ public:
 
 private:
   bool isObjectOrFunction;
+  // Arguments passed in from the action factory
   Arguments &args;
   //CompilerInstance &ci;
 };
@@ -230,30 +280,38 @@ private:
 //------------Visitor class decl----------------------------------------------------------------------------------------------------
 
 // Main class which works to translate the C to Fortran by calling helpers.
+// It performs actions to translate every node in the AST. It keeps track
+// of all seen functions so that it can put them together after the vars, macros 
+// and structures are translated.
 class TraverseNodeVisitor : public RecursiveASTVisitor<TraverseNodeVisitor> {
 public:
   TraverseNodeVisitor(Rewriter &R, Arguments& arg) : TheRewriter(R), args(arg) {}
 
-
+  // Traverse all declaration nodes. Note that Clang AST nodes do NOT all have
+  // a common ancestor. Decl and Stmt are essentially unrelated.
   bool TraverseDecl(Decl *d);
   bool TraverseStmt(Stmt *x);
   bool TraverseType(QualType x);
+  // All the function declarations processed so far in this AST.
   string allFunctionDecls;
 
 private:
   Rewriter &TheRewriter;
-  // Additional translation arguments (ie quiet/silent)
+  // Additional translation arguments (ie quiet/silent) from the action factory
   Arguments &args;
 };
 
 // Traces the preprocessor as it moves through files and records the inclusions in a stack
-// using a set to keep track of files already seen
+// using a set to keep track of files already seen. This allows them to be translated in
+// the reverse order of inclusions so dependencies can be maintained. This is used for the
+// recursive -r option of h2m.
 class TraceFiles : public PPCallbacks {
 public:
   TraceFiles(CompilerInstance &ci, std::set<string>& filesseen, std::stack<string>& filesstack, Arguments& arg) :
   ci(ci), seenfiles(filesseen), stackfiles(filesstack), args(arg) { }
 
-  // Writes into the stack if a new file is entered by the preprocessor
+  // Writes into the stack if a new file is entered by the preprocessor and the file does
+  // not yet exist in the set, thus creating an exclusive reverse-ordered stack.
   void FileChanged(clang::SourceLocation loc, clang::PPCallbacks::FileChangeReason reason,
         clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) override {
 
@@ -264,7 +322,9 @@ public:
     clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
     string filename = ploc.getFilename();
     if (seenfiles.find(filename) != seenfiles.end()) {
+      // Place holder: we have seen the file before so we don't add it to the stack.
      } else {
+      // New file. Add it to the stack and the set.
       seenfiles.insert(filename);
       stackfiles.push(filename);
     }
@@ -274,6 +334,7 @@ private:
   CompilerInstance &ci;
   // Recording data structures to keep track of files the preprocessor sees
   std::set<string>& seenfiles;
+  // Order data structure to keep track of the order the files were seen in
   std::stack<string>& stackfiles;
   Arguments &args;
 };
@@ -290,14 +351,15 @@ public:
 
 // Action to follow the preprocessor and create a stack of files to be dealt with
 // and translated into fortran in the order seen so as to have the proper order
-// of USE statements.
+// of USE statements in recursive processing.
 class CreateHeaderStackAction : public clang::ASTFrontendAction {
 public:
   CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack, Arguments &arg) :
      seenfiles(filesseen), stackfiles(filesstack), args(arg) {} 
 
   // When a source file begins, the callback to trace filechanges is registered
-  // so that all changes are recorded.
+  // so that all changes are recorded and the order of includes can be preserved
+  // in the stack.
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
     Preprocessor &pp = ci.getPreprocessor();
     pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles, args));
@@ -313,21 +375,24 @@ public:
   }
 
 private:
+  // Keeps track of which headers we have seen
   std::set<string>& seenfiles;
+  // Keeps track of the order the headers were seen in
   std::stack<string>& stackfiles; 
+  // Arguments passed in from the action factory
   Arguments &args;
 };
 
-// Factory to run the preliminary preprocessor file tracing;
-// determines the order to recursively translate header files
-// when writing modules recursively
+// Factory to run the preliminary preprocessor file tracing action defined above;
+// determines the order to recursively translate header files with the help
+// or a set and a stack
 class CHSFrontendActionFactory : public FrontendActionFactory {
 public:
   CHSFrontendActionFactory(std::set<string>& seenfiles, std::stack<string>& stackfiles, Arguments &arg) :
      seenfiles(seenfiles), stackfiles(stackfiles), args(arg) {} 
 
   // Creates a new action which only attends to file changes in the preprocessor.
-  // This allows tracing the files included.
+  // This allows tracing of the files included.
   CreateHeaderStackAction *create() override {
     return new CreateHeaderStackAction(seenfiles, stackfiles, args);
   }
@@ -337,13 +402,16 @@ private:
   std::set<string>& seenfiles;
   // Stack to keep track of the order for translation of files
   std::stack<string>& stackfiles;
-  // Additional arguments
+  // Additional arguments, including quiet/silent and the module name
   Arguments &args;
 };
   
 // Classes, specifications, etc for the main translation program!
 //-----------PP Callbacks functions----------------------------------------------------------------------------------------------------
-// Class used by the main TNActions to inspect and translate C macros
+// Class used by the main TNActions to inspect and translate C macros.
+// It pays no other attention to the preprocessor. This class is 
+// created by the TNActions and then follows the preprocessor throughout
+// a file and finds all macros in that file.
 class TraverseMacros : public PPCallbacks {
 public:
 
@@ -354,26 +422,34 @@ public:
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD); 
 private:
   CompilerInstance &ci;
-  // Additional arguments
+  // Additional arguments passed in from the action factory
   Arguments &args;
 };
 
   //-----------the main program----------------------------------------------------------------------------------------------------
 
+// The class which begins the translation process. HandleTranslationUnit
+// is the main entry into the Clang AST. TranslationUnit is the overarching
+// unit found in each AST.
 class TraverseNodeConsumer : public clang::ASTConsumer {
 public:
   TraverseNodeConsumer(Rewriter &R, Arguments &arg) : Visitor(R, arg), args(arg)  {}
 
+  // The entry function into the Clang AST as described above. From here,
+  // nodes are translated recursively.
   virtual void HandleTranslationUnit(clang::ASTContext &Context);
 
 private:
 // A RecursiveASTVisitor implementation.
   TraverseNodeVisitor Visitor;
-  // Additional arguments
+  // Additional arguments passed in from the action factory (quiet/silent)
   Arguments &args;
 };
 
-// Main translation action to be carried out on a C header file
+// Main translation action to be carried out on a C header file.
+// This class defines all the actions to be carried out when a
+// source file is processed, including what to put at the start and
+// the end
 class TraverseNodeAction : public clang::ASTFrontendAction {
 public:
 
@@ -383,10 +459,11 @@ public:
   // // for macros inspection
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override;
 
-  // Action at the completion of a source file traversal
+  // Action at the completion of a source file traversal, after code translation
   void EndSourceFileAction() override;
 
-  // Returns an AST consumer which does the majority of the translation work
+  // Returns an AST consumer which does the majority of the translation work.
+  // The AST consumer keeps track of how to handle the AST nodes 
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
     clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
     TheRewriter.setSourceMgr(Compiler.getSourceManager(), Compiler.getLangOpts());
@@ -395,27 +472,34 @@ public:
 
 private:
   Rewriter TheRewriter;
+  // The full, absolute path of the file under consideration
   string fullPathFileName;
   // Modules to include in USE statements in this file's module
   string use_modules;
-  // Additional arguments
+  // Additional arguments passed in from the action factory
   Arguments &args;
 };
 
 // Clang tools run FrontendActionFactories which implement
-// a method to return a new Action for each file
+// a method to return a new Action for each file. However,
+// only one file will be processed at a time by h2m. A new
+// action factory will be created for each file. Note that
+// TNA stands for "traverse node action" which is the main
+// h2m action to translate C to Fortran.
 class TNAFrontendActionFactory : public FrontendActionFactory {
 public:
   TNAFrontendActionFactory(string to_use, Arguments &arg) :
      use_modules(to_use), args(arg) {};
 
-  // Mandatory function to create a file's TNAction
+  // Mandatory function to create a file's TNAction. This method
+  // is called once for each file under consideration.
   TraverseNodeAction *create() override {
     return new TraverseNodeAction(use_modules, args);
   }
 
 private:
   // Modules previously written to be included in USE statements
+  // are kept here as a string which is prepended into the module.
   string use_modules;
   // Additional arguments (ie quiet/silent)
   Arguments &args;
