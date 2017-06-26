@@ -277,7 +277,7 @@ The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
 By default h2m sends the translated text to standard output. This can be
 redirected with an option or the shell redirection operators.
 
-./h2m [h2m options] -out=[path to output file] [path to header] -- [Clang options]
+./h2m [h2m options] -out=[path to output file] [path to header] [Clang frontend options]
 
 BEHAVIOR
 
@@ -374,7 +374,7 @@ is useful if a C source file includes headers which need to be translated, but t
 C source file should not be translated and should only be used to determine which
 other files to translate.
 
-Clang Options: Following specification of the input file, options after a "--" are passed
+Clang Options: Following specification of the input file, options after the source are passed
 as arguments to the Clang compiler instance used by the tool. The Clang/LLVM manual pages
 and websites should be used as a reference for these options.
 
@@ -387,7 +387,7 @@ h2m. This section will very briefly summarize the use of h2m for mixed programmi
 Step 1: Translate the desired header file from C to Fortran using h2m:
 h2m -out=module_header.f90 ./header.h
 
-Step 2: Compile the C code into an object file. Any major C compiler should work, but
+Step 2: Compile the C code into an object file. Any reliable C compiler should work, but
 GCC is used for the example:
 gcc  -c -I. -o c_source.o c_source.c
 
@@ -399,8 +399,9 @@ USE module_header
 
 Step 4: Call the C functions according to their translated Fortran interfaces.
 
-Step 5: Compile the Fortran program and link against the C file. Any compiler should
-work, but gfortran is used as an example.
+Step 5: Compile the Fortran program and link against the C file. Any reliable compiler should
+work, but gfortran is used as an example. The module file is compiled seperately here.
+gfortran -c module_header.f90
 gfortran -o example example.f90 c_source.o
 
 Step 6: Enjoy your mixed-language executable.

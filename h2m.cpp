@@ -18,7 +18,11 @@ static void LineError(PresumedLoc sloc) {
 // Fetches the fortran module name from a given filepath Filename
 // IMPORTANT: ONLY call this ONCE for ANY FILE. The static 
 // structure requires this, otherwise you will have all sorts of
-// bizarre problems.
+// bizarre problems because it will think it has seen various module
+// names multiple times and start appending numbers to their names.
+// It keps track of modules seen in a static map and appends a number
+// to the end of duplicates to create unique names. It also adds
+// module_ to the front.
 static string GetModuleName(string Filename, Arguments& args) {
   static std::map<string, int> repeats;
   size_t slashes = Filename.find_last_of("/\\");
@@ -45,7 +49,8 @@ static string GetModuleName(string Filename, Arguments& args) {
 // Command line options:
 
 // Apply a custom category to all command-line options so that they are the
-// only ones displayed.
+// only ones displayed. This avoids lots of clang options cluttering the
+// help output.
 static llvm::cl::OptionCategory h2mOpts("Options for the h2m translator.");
 
 // CommonOptionsParser declares HelpMessage with a description of the common
@@ -58,40 +63,40 @@ static cl::extrahelp MoreHelp("\nMore help text...");
 
 // Positional parameter: the first input parameter should be the compilation file. 
 // Currently, h2m is only designed to take one file at a time.
-static cl::opt<string> SourcePaths(cl::Positional, cl::desc("source to translate"));
+static cl::opt<string> SourcePaths(cl::Positional, cl::cat(h2mOpts), cl::desc("<source0>"));
 
 // Output file, option is -out or -o.
-static cl::opt<string> OutputFile("out", cl::init(""), cl::desc("Output file"));
-static cl::alias OutputFile2("o", cl::desc("Alias for -out"), cl::aliasopt(OutputFile));
+static cl::opt<string> OutputFile("out", cl::init(""), cl::cat(h2mOpts), cl::desc("Output file"));
+static cl::alias OutputFile2("o", cl::desc("Alias for -out"), cl::cat(h2mOpts), cl::aliasopt(OutputFile));
 
 // Boolean option to recursively process includes. The default is not to recursively process.
-static cl::opt<bool> Recursive("recursive", cl::desc("Include other header files recursively via USE statements"));
-static cl::alias Recrusive2("r", cl::desc("Alias for -recursive"), cl::aliasopt(Recursive));
+static cl::opt<bool> Recursive("recursive", cl::cat(h2mOpts), cl::desc("Include other header files recursively via USE statements"));
+static cl::alias Recrusive2("r", cl::desc("Alias for -recursive"), cl::cat(h2mOpts), cl::aliasopt(Recursive));
 
 // Boolean option to silence less critical warnings (ie warnings about statements commented out)
-static cl::opt<bool> Quiet("quiet", cl::desc("Silence warnings about lines which have been commented out."));
-static cl::alias Quiet2("q", cl::desc("Alias for -quiet"), cl::aliasopt(Quiet));
+static cl::opt<bool> Quiet("quiet", cl::cat(h2mOpts), cl::desc("Silence warnings about lines which have been commented out."));
+static cl::alias Quiet2("q", cl::desc("Alias for -quiet"), cl::cat(h2mOpts), cl::aliasopt(Quiet));
 
 // Boolean option to silence all warnings save those that are absolutely imperative (ie output failure)
-static cl::opt<bool> Silent("silent", cl::desc("Silence all tool warnings. Clang warnings will still appear."));
-static cl::alias Silent2("s", cl::desc("Alias for -silent"), cl::aliasopt(Silent));
+static cl::opt<bool> Silent("silent", cl::cat(h2mOpts), cl::desc("Silence all tool warnings. Clang warnings will still appear."));
+static cl::alias Silent2("s", cl::cat(h2mOpts), cl::desc("Alias for -silent"), cl::aliasopt(Silent));
 
 // Boolean option to ignore critical clang errors that would otherwise cause termination
 // during preprocessing and to keep the output file despite any other problems.
-static cl::opt<bool> Optimistic("optimist", cl::desc("Continue processing and keep output in spite of errors"));
-static cl::alias Optimistic2("k", cl::desc("Alias for -optimist"), cl::aliasopt(Optimistic));
+static cl::opt<bool> Optimistic("optimist", cl::cat(h2mOpts), cl::desc("Continue processing and keep output in spite of errors"));
+static cl::alias Optimistic2("k", cl::desc("Alias for -optimist"), cl::cat(h2mOpts), cl::aliasopt(Optimistic));
 
 // Boolean option to ignore system header files when processing recursive includes. 
 // The default is to include them.
-static cl::opt<bool> NoHeaders("no-system-headers", cl::desc("Do not recursively translate system header files."));
-static cl::alias NoHeaders2("n", cl::desc("Alias for -no-system-headers"), cl::aliasopt(NoHeaders));
+static cl::opt<bool> NoHeaders("no-system-headers", cl::cat(h2mOpts), cl::desc("Do not recursively translate system header files."));
+static cl::alias NoHeaders2("n", cl::desc("Alias for -no-system-headers"), cl::cat(h2mOpts), cl::aliasopt(NoHeaders));
 
-static cl::opt<bool> IgnoreThis("ignore-this", cl::desc("Do not translate this file, only its included headers."));
-static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::aliasopt(IgnoreThis));
+static cl::opt<bool> IgnoreThis("ignore-this", cl::cat(h2mOpts), cl::desc("Do not translate this file, only its included headers."));
+static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::cat(h2mOpts), cl::aliasopt(IgnoreThis));
 
 // Option to specify the compiler to use to test the output. No specification means no compilation.
-static cl::opt<string> Compiler("compile", cl::desc("Program to be used to attempt to compile the output file."));
-static cl::alias Compiler2("c", cl::desc("Alias for compile"), cl::aliasopt(Compiler));
+static cl::opt<string> Compiler("compile", cl::cat(h2mOpts), cl::desc("Program to be used to attempt to compile the output file."));
+static cl::alias Compiler2("c", cl::desc("Alias for compile"), cl::cat(h2mOpts), cl::aliasopt(Compiler));
 
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
@@ -290,7 +295,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
       found=f_type.find_first_of(" ",found+1);
     }
     if (f_type.front() == '_') {
-      if (args.getQuiet() == false && args.getSilent() == false) {
+      if (args.getSilent() == false) {
         errs() << "Warning: fortran names may not begin with an underscore.";
         errs() << f_type << " renamed " << "h2m" << f_type << "\n";
         LineError(sloc);
@@ -470,7 +475,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
     type_id[found] = '_';
     found=type_id.find_first_of(" ",found+1);
   }
-  if (args.getQuiet() == false && args.getSilent() == false) {
+  if (args.getSilent() == false) {
     errs() << "Warning: Translation of typedef like macro requires renaming ";
     errs() << macroName << type_id << "\n";
     LineError(loc);
@@ -591,7 +596,7 @@ string VarDeclFormatter::getInitValueASString() {
       }
     } else {
       valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
-      if (args.getSilent() == false) {
+      if (args.getSilent() == false && args.getQuiet() == false) {
         errs() << "Variable declaration initialization commented out:\n" << valString << " \n";
         LineError(sloc);
       }
@@ -733,7 +738,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       CToFTypeFormatter tf(varDecl->getType().getTypePtr()->getPointeeType(), varDecl->getASTContext(), sloc, args);
       string identifier = tf.getFortranIdASString(varDecl->getNameAsString());
       if (identifier.front() == '_') {
-         if (args.getSilent() == false && args.getQuiet() == false) {
+         if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
             errs() << identifier << " renamed h2m" << identifier << "\n";
             LineError(sloc);
@@ -752,7 +757,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
       string identifier = tf.getFortranIdASString(varDecl->getNameAsString());
       if (identifier.front() == '_') {
-         if (args.getSilent() == false && args.getQuiet() == false) {
+         if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
             errs() << identifier << " renamed h2m" << identifier << "\n";
             LineError(sloc);
@@ -802,7 +807,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining!
           string old_identifier = identifier;
           identifier = "h2m" + identifier;  // Prepend h2m to fix the problem
-          if (args.getQuiet() == false && args.getSilent() == false) {  // Warn unless silenced
+          if (args.getSilent() == false) {  // Warn unless silenced
             errs() << "Warning: illegal identifier " << old_identifier << " renamed " << identifier << "\n";
             LineError(sloc);
           }
@@ -810,7 +815,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
         // TODO: DECIDE IF THIS IS WHAT YOU ACTUALLY WANT
         // Because names in structs may collide with the struct name, suffixes are appended
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: due to name collisions during typdef translation, " << identifier;
           errs() <<  "\nrenamed " << identifier << tf.getFortranTypeASString(false) << "\n";
           LineError(sloc);
@@ -845,7 +850,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
       if (constName.front() == '_') {  // The name begins with an illegal underscore.
         string old_constName = constName;
         constName = "h2m" + constName;
-        if (args.getQuiet() == false && args.getSilent() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: illegal enumeration identfier " << old_constName << " renamed ";
           errs() << constName << "\n";
           LineError(sloc);
@@ -862,7 +867,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
       if (enumName.front() == '_') {  // Illegal underscore beginning the name!
         string old_enumName = enumName;
         enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
-        if (args.getSilent() == false && args.getQuiet() == false) {  // Warn unless silenced
+        if (args.getSilent() == false) {  // Warn unless silenced
           errs() << "Warning: illegal enumeration identifier " << old_enumName << " renamed " << enumName << "\n";
           LineError(sloc); 
         } 
@@ -911,7 +916,7 @@ string RecordDeclFormatter::getFortranFields() {
       CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext(), sloc, args);
       string identifier = tf.getFortranIdASString((*it)->getNameAsString());
       if (identifier.front() == '_') {
-        if (args.getQuiet() == false && args.getSilent() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: invalid struct field name " << identifier;
           errs() << " renamed h2m" << identifier << "\n";
           LineError(sloc);
@@ -948,7 +953,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     if (mode == ID_ONLY) {
       string identifier = recordDecl->getNameAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
@@ -960,7 +965,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     } else if (mode == TAG_ONLY) {
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
@@ -970,7 +975,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     } else if (mode == ID_TAG) {
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
@@ -980,7 +985,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     } else if (mode == TYPEDEF) {
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: invalid typedef name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
@@ -996,7 +1001,7 @@ string RecordDeclFormatter::getFortranStructASString() {
         found=identifier.find_first_of(" ",found+1);
       }
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
@@ -1183,7 +1188,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
       if (pname.front() == '_') {  // Illegal character. Append a prefix.
         string old_pname = pname;
         pname = "h2m" + pname;
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
           errs() << pname << "\n";
           LineError(sloc);
@@ -1199,7 +1204,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
       if (pname.front() == '_') {  // Illegal character. Append a prefix.
         string old_pname = pname;
         pname = "h2m" + pname;
-        if (args.getSilent() == false && args.getQuiet() == false) {
+        if (args.getSilent() == false) {
           errs() << "Warning: Illegal parameter name " << old_pname << " renamed ";
           errs() << pname << "\n";
           LineError(sloc);
@@ -1255,7 +1260,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     if (funcname.front() == '_') {  // We have an illegal character in the identifier
       string oldfuncname = funcname;
       funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
-      if (args.getQuiet() == false && args.getSilent() == false) {
+      if (args.getSilent() == false) {
         errs() << "Warning: invalid function name " << oldfuncname << " renamed " << funcname << "\n";
         LineError(sloc);
       }
@@ -1353,7 +1358,7 @@ string MacroFormatter::getFortranMacroASString() {
       if (!macroVal.empty()) {
         if (CToFTypeFormatter::isString(macroVal)) {
           if (macroName[0] == '_') {
-            if (args.getQuiet() == false && args.getSilent() == false) {
+            if (args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
               errs() << macroName << " renamed " << "h2m" << macroName << "\n";
               LineError(sloc);
@@ -1365,7 +1370,7 @@ string MacroFormatter::getFortranMacroASString() {
         
         } else if (CToFTypeFormatter::isChar(macroVal)) {
           if (macroName[0] == '_') {
-            if (args.getQuiet() == false && args.getSilent() == false) {
+            if (args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
               errs() << macroName << " renamed " << "h2m" << macroName << "\n";
               LineError(sloc);
@@ -1385,7 +1390,7 @@ string MacroFormatter::getFortranMacroASString() {
             }
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else if (macroName.front() == '_') {  // Invalid underscore as first character
-            if (args.getQuiet() == false && args.getSilent() == false) {
+            if (args.getSilent() == false) {
               errs() << "Warning: Fortran name with invalid characters detected. ";
               errs() << macroName << " renamed h2m" << macroName << "\n"; 
               LineError(sloc);
@@ -1403,14 +1408,14 @@ string MacroFormatter::getFortranMacroASString() {
 
         } else if (CToFTypeFormatter::isDoubleLike(macroVal)) {
           if (macroVal.find_first_of("FUL") != std::string::npos) {
-            if (args.getQuiet() == false && args.getSilent() == false) {
+            if (args.getSilent() == false) {
               errs() << "Warning: macro with value including FUL detected. ";
               errs() << macroName << " Is invalid.\n";
               LineError(sloc);
             }
             fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else if (macroName.front() == '_') {
-             if (args.getQuiet() == false && args.getSilent() == false) {
+             if (args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
               errs() << macroName << " renamed h2m" << macroName << ".\n";
               LineError(sloc);
@@ -1466,7 +1471,7 @@ string MacroFormatter::getFortranMacroASString() {
           for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
             string argname = (*it)->getName();
             if (argname.front() == '_') {  // Illegal character in argument name
-              if (args.getSilent() == false && args.getQuiet() == false) {
+              if (args.getSilent() == false) {
                 errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
                 errs() << argname << " renamed h2m" << argname << "\n";
                 LineError(sloc);
@@ -1501,7 +1506,7 @@ string MacroFormatter::getFortranMacroASString() {
           for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
             string argname = (*it)->getName();
             if (argname.front() == '_') {
-              if (args.getSilent() == false && args.getQuiet() == false) { 
+              if (args.getSilent() == false) { 
                 errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
                 errs() << argname << " renamed h2m" << argname << "\n";
                 LineError(sloc);
@@ -1675,6 +1680,7 @@ int main(int argc, const char **argv) {
   if (argc > 1) {
     // Parse the command line options and create a new database to hold the Clang compilation
     // options.
+    cl::HideUnrelatedOptions(h2mOpts); // This hides all the annoying clang options in help output
     cl::ParseCommandLineOptions(argc, argv, "h2m Autofortran tool\n");
     std::unique_ptr<CompilationDatabase> Compilations;
     SmallString<256> PathBuf;
@@ -1699,7 +1705,7 @@ int main(int argc, const char **argv) {
     // The file is opened in text mode
     llvm::tool_output_file OutputFile(filename, error, llvm::sys::fs::F_Text);
     if (error) {  // Error opening file
-      errs() << "Error opening args.getOutput() file: " << filename << error.message() << "\n";
+      errs() << "Error opening output file: " << filename << error.message() << "\n";
       return(1);  // We can't possibly keep going if the file can't be opened.
     }
     if (Optimistic == true) {  // Keep all output inspite of errors
@@ -1738,7 +1744,7 @@ int main(int argc, const char **argv) {
       }
 
       // Dig through the created stack of header files we have seen, as prepared by
-      // the first Clang tool which tracks the preprocessor.
+      // the first Clang tool which tracks the preprocessor. Translate them each in turn.
       string modules_list;
       while (stackfiles.empty() == false) {
         string headerfile = stackfiles.top();

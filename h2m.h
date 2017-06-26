@@ -463,7 +463,7 @@ public:
   void EndSourceFileAction() override;
 
   // Returns an AST consumer which does the majority of the translation work.
-  // The AST consumer keeps track of how to handle the AST nodes 
+  // The AST consumer keeps track of how to handle the AST nodes (what functions to call)
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
     clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
     TheRewriter.setSourceMgr(Compiler.getSourceManager(), Compiler.getLangOpts());
@@ -471,6 +471,7 @@ public:
   }
 
 private:
+  // As previously mentioned, I don't think this serves any real purpose anymore
   Rewriter TheRewriter;
   // The full, absolute path of the file under consideration
   string fullPathFileName;

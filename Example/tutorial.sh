@@ -184,7 +184,7 @@ echo "Fortran identifier."
 echo "Note that when h2m changes the names of functions or structs in this way, the"
 echo "C function or struct's name must be changed to allow interoperatiblity."
 echo "For example, if there is a function _calculate in C, which h2m translates to"
-echo "h2m_calculatein fortran, the processor will have no idea they are supposed to refer to"
+echo "h2m_calculate in Fortran, the processor will have no idea they are supposed to refer to"
 echo "the same function."
 echo "The translated module provides the necessary interface to use the C"
 echo "structure and call the C functions."
@@ -209,7 +209,7 @@ echo ""
 echo "Now that we have the needed pieces, we can compile the entire suite."
 echo "The command to compile the main Fortran program and link it to the C program is:"
 # Again, the output specification is the last part of the command
-echo "$fortran_compiler_driver example example_c.o"  # The module file isn't a needed argument. It's found automatically.
+echo "$fortran_compiler_driver example example.f90 example_c.o"  # The module file isn't a needed argument. It's found automatically.
 echo "Press enter to compile"
 read continue
 `echo "$fortran_compiler_driver example example.f90 example_c.o"` || error_report "Unfortunately, compilation failed."
@@ -222,6 +222,6 @@ read continue
 ./example || error_report "Unfortunately, the executable did not run correctly."
 echo "This concludes the very brief h2m tutorial."
 echo "In summary, translate your header file with h2m, compile your C file,"
-echo "compile your module file, and then compile the main fortran executable"
+echo "compile your module file, and then compile the main Fortran executable"
 echo "and link it with your C object file."
 

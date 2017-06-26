@@ -8,6 +8,7 @@ double calculate_area(struct circle shape) {
   return area;
 }
 
+// Print a short description of the circle structure.
 void describe_circle(struct circle shape) {
   printf("My circle is at x,y %d,%d and has radius %f.\n",
       shape.x, shape.y, shape.radius);
