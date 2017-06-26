@@ -51,7 +51,7 @@ static string GetModuleName(string Filename, Arguments& args) {
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed. This avoids lots of clang options cluttering the
 // help output.
-static llvm::cl::OptionCategory h2mOpts("Options for the h2m translator.");
+static llvm::cl::OptionCategory h2mOpts("Options for the h2m translator");
 
 // CommonOptionsParser declares HelpMessage with a description of the common
 // command-line options related to the compilation database and input files.
@@ -74,28 +74,28 @@ static cl::opt<bool> Recursive("recursive", cl::cat(h2mOpts), cl::desc("Include 
 static cl::alias Recrusive2("r", cl::desc("Alias for -recursive"), cl::cat(h2mOpts), cl::aliasopt(Recursive));
 
 // Boolean option to silence less critical warnings (ie warnings about statements commented out)
-static cl::opt<bool> Quiet("quiet", cl::cat(h2mOpts), cl::desc("Silence warnings about lines which have been commented out."));
+static cl::opt<bool> Quiet("quiet", cl::cat(h2mOpts), cl::desc("Silence warnings about lines which have been commented out"));
 static cl::alias Quiet2("q", cl::desc("Alias for -quiet"), cl::cat(h2mOpts), cl::aliasopt(Quiet));
 
 // Boolean option to silence all warnings save those that are absolutely imperative (ie output failure)
-static cl::opt<bool> Silent("silent", cl::cat(h2mOpts), cl::desc("Silence all tool warnings. Clang warnings will still appear."));
+static cl::opt<bool> Silent("silent", cl::cat(h2mOpts), cl::desc("Silence all tool warnings (Clang warnings will still appear)"));
 static cl::alias Silent2("s", cl::cat(h2mOpts), cl::desc("Alias for -silent"), cl::aliasopt(Silent));
 
 // Boolean option to ignore critical clang errors that would otherwise cause termination
 // during preprocessing and to keep the output file despite any other problems.
-static cl::opt<bool> Optimistic("optimist", cl::cat(h2mOpts), cl::desc("Continue processing and keep output in spite of errors"));
+static cl::opt<bool> Optimistic("keep-going", cl::cat(h2mOpts), cl::desc("Continue processing and keep output in spite of errors"));
 static cl::alias Optimistic2("k", cl::desc("Alias for -optimist"), cl::cat(h2mOpts), cl::aliasopt(Optimistic));
 
 // Boolean option to ignore system header files when processing recursive includes. 
 // The default is to include them.
-static cl::opt<bool> NoHeaders("no-system-headers", cl::cat(h2mOpts), cl::desc("Do not recursively translate system header files."));
+static cl::opt<bool> NoHeaders("no-system-headers", cl::cat(h2mOpts), cl::desc("Do not recursively translate system header files"));
 static cl::alias NoHeaders2("n", cl::desc("Alias for -no-system-headers"), cl::cat(h2mOpts), cl::aliasopt(NoHeaders));
 
-static cl::opt<bool> IgnoreThis("ignore-this", cl::cat(h2mOpts), cl::desc("Do not translate this file, only its included headers."));
+static cl::opt<bool> IgnoreThis("ignore-this", cl::cat(h2mOpts), cl::desc("Do not translate this file, only its included headers"));
 static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::cat(h2mOpts), cl::aliasopt(IgnoreThis));
 
 // Option to specify the compiler to use to test the output. No specification means no compilation.
-static cl::opt<string> Compiler("compile", cl::cat(h2mOpts), cl::desc("Program to be used to attempt to compile the output file."));
+static cl::opt<string> Compiler("compile", cl::cat(h2mOpts), cl::desc("Command to attempt compilation of the output file"));
 static cl::alias Compiler2("c", cl::desc("Alias for compile"), cl::cat(h2mOpts), cl::aliasopt(Compiler));
 
 // These are the argunents for the clang compiler driver.
@@ -902,6 +902,9 @@ bool RecordDeclFormatter::isUnion() {
   return structOrUnion == UNION;
 };
 
+// tag_name is the name used as 'struct name' which C
+// stores in a seperate symbol table. Structs are usually
+// referred to by typedef provided, simpler names
 void RecordDeclFormatter::setTagName(string name) {
   tag_name = name;
 }
@@ -940,10 +943,10 @@ string RecordDeclFormatter::getFortranStructASString() {
   setMode();
 
   string rd_buffer;
-  if (!isInSystemHeader) {
+  if (!isInSystemHeader) {  // I don't know why this is here. 
     string fieldsInFortran = getFortranFields();
     if (fieldsInFortran.empty()) {
-      rd_buffer = "! struct without fields may cause warning\n";
+      rd_buffer = "! struct without fields may cause warnings\n";
       if (args.getSilent() == false && args.getQuiet() == false) {
         errs() << "Warning: struct without fields may cause warnings: \n";
         LineError(sloc);
@@ -951,6 +954,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     }
 
     if (mode == ID_ONLY) {
+      rd_buffer += "! ID_ONLY\n";
       string identifier = recordDecl->getNameAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
@@ -963,6 +967,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       
     } else if (mode == TAG_ONLY) {
+      rd_buffer += "! TAG_ONLY\n";
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
@@ -973,6 +978,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
+      rd_buffer += "! ID_TAG\n";
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
@@ -993,6 +999,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {
+      rd_buffer += "! anonymous\n";
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // Erase past all the spaces so that only the name remains (ie get rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
@@ -1009,7 +1016,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
       string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
-      // comment out temp_buf
+      // Comment out the concents of the anonymous struct. There is no good way to guess at a name for it.
       std::istringstream in(temp_buf);
       for (std::string line; std::getline(in, line);) {
         rd_buffer += "! " + line + "\n";
@@ -1798,10 +1805,10 @@ int main(int argc, const char **argv) {
       if (system(NULL) == true) {  // A command interpreter is available
         string command = Compiler + " " + filename;
         int success = system(command.c_str());
-      } else {  // Cannot run using system (fork might succeed...)
+      } else {  // Cannot run using system (fork might succeed but is very error prone).
         errs() << "Error: No command interpreter available to run system process " << Compiler << "\n";
       }
-    // We were asked to run the compiler, but there is no output file...
+    // We were asked to run the compiler, but there is no output file, report an error.
     } else if (Compiler.size() && filename.compare("-") == 0) {
       errs() << "Error: unable to attempt compilation on standard output.";
     }

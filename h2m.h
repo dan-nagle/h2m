@@ -318,11 +318,19 @@ public:
     // We have found a system header and have been instructured to skip it, so we move along
     if (ci.getSourceManager().isInSystemHeader(loc) == true && args.getNoSystemHeaders() == true) {
       return;
+    } else if (loc.isValid() == false) {
+      return;  // We are not in a valid file. Don't include it. It's probably an error.
     }
     clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
     string filename = ploc.getFilename();
     if (seenfiles.find(filename) != seenfiles.end()) {
       // Place holder: we have seen the file before so we don't add it to the stack.
+      return;
+     } else if (filename.compare("<built-in>") == 0 || filename.compare("<command line>") == 0) {
+       // These are not real files. They may be called something else on other platforms, but
+       // this was the best way I could think to try to get rid of them. They should not be
+       // translated in a recursive run. They do not actually exist.
+       return;
      } else {
       // New file. Add it to the stack and the set.
       seenfiles.insert(filename);
@@ -449,7 +457,7 @@ private:
 // Main translation action to be carried out on a C header file.
 // This class defines all the actions to be carried out when a
 // source file is processed, including what to put at the start and
-// the end
+// the end (the MODULE... END MODULE boilerplate).
 class TraverseNodeAction : public clang::ASTFrontendAction {
 public:
 
@@ -471,7 +479,9 @@ public:
   }
 
 private:
-  // As previously mentioned, I don't think this serves any real purpose anymore
+  // As previously mentioned, I don't think this serves any real purpose anymore.
+  // It is used to fetch compiler instances, but not to actually rewrite source
+  // code anymore. 
   Rewriter TheRewriter;
   // The full, absolute path of the file under consideration
   string fullPathFileName;

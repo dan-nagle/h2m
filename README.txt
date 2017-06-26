@@ -353,7 +353,7 @@ by Clang, the output may be missing, corrupted, or completely usable depending o
 nature of the error. However, all following modules will have the USE statement corresponding
 to that module commented out. 
 
--optimist
+-keep-going
 -k			Ignore errors during the information gathering phase where the tool
 determines the identities and orders of header files to recursively process. The output file
 will also not be deleted regardless of what errors may occur. This option may potentially
