@@ -84,7 +84,7 @@ static cl::alias Silent2("s", cl::cat(h2mOpts), cl::desc("Alias for -silent"), c
 // Boolean option to ignore critical clang errors that would otherwise cause termination
 // during preprocessing and to keep the output file despite any other problems.
 static cl::opt<bool> Optimistic("keep-going", cl::cat(h2mOpts), cl::desc("Continue processing and keep output in spite of errors"));
-static cl::alias Optimistic2("k", cl::desc("Alias for -optimist"), cl::cat(h2mOpts), cl::aliasopt(Optimistic));
+static cl::alias Optimistic2("k", cl::desc("Alias for -keep-going"), cl::cat(h2mOpts), cl::aliasopt(Optimistic));
 
 // Boolean option to ignore system header files when processing recursive includes. 
 // The default is to include them.
@@ -281,18 +281,20 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
         f_type = "C_PTR";
       }
     }
-    
   // Translate a structure declaration. We will recieve
   // the declaration in the form "struct structname" and 
   // will have to deal with the space between the words.
-  } else if (c_qualType.getTypePtr()->isStructureType()) {
+  // Unions have no interoperable Fortran incranation but they
+  // are translated as TYPE's and are handled here as well.
+  } else if (c_qualType.getTypePtr()->isStructureType() ||
+	     c_qualType.getTypePtr()->isUnionType()) {
     f_type = c_qualType.getAsString();
     // We cannot have a space in a fortran type. Erase up
     // to the space.
     size_t found = f_type.find_first_of(" ");
     while (found != string::npos) {
-      f_type.erase(0, found);  // Erase up to the final space
-      found=f_type.find_first_of(" ",found+1);
+      f_type.erase(0, found + 1);  // Erase up to the space
+      found=f_type.find_first_of(" ");
     }
     if (f_type.front() == '_') {
       if (args.getSilent() == false) {
@@ -469,11 +471,11 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   string type_id = "typeID_" + macroName ;
   
   // Create a new name for the transalated type.
-  // replace space with underscore 
+  // The name may not include spaces. Erase them if they are there.
   size_t found = type_id.find_first_of(" ");
   while (found != string::npos) {
-    type_id[found] = '_';
-    found=type_id.find_first_of(" ",found+1);
+    type_id.erase(0, found + 1);  // Erase up to the space
+    found=type_id.find_first_of(" ");
   }
   if (args.getSilent() == false) {
     errs() << "Warning: Translation of typedef like macro requires renaming ";
@@ -517,8 +519,13 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
 // -----------initializer VarDeclFormatter--------------------
 VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   varDecl = v;
-  isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(varDecl->getSourceRange().getBegin());
-  sloc = rewriter.getSourceMgr().getPresumedLoc(varDecl->getSourceRange().getBegin());
+  // Because sloc is checked for validity prior to use, this should handle invalid locations
+  if (varDecl->getSourceRange().getBegin().isValid()) {
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(varDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(varDecl->getSourceRange().getBegin());
+  } else {
+    isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header.
+  }
 };
 
 // In the event that a variable declaration has an initial value, this function
@@ -615,6 +622,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
     arrayShapes += ", " + to_string(numOfInnerEle);
     arrayShapes_fin = arrayShapes;
   }
+  // Finds AST context for each array element
   for (auto it = innerElements.begin (); it != innerElements.end(); it++) {
     Expr *innerelement = (*it);
     if (innerelement->isEvaluatable (varDecl->getASTContext())) {
@@ -635,6 +643,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 };
 
 // Much more complicated function used to generate an array declaraion. 
+// Syntax for C and Fortran arrays are completely different.
 string VarDeclFormatter::getFortranArrayDeclASString() {
   string arrayDecl;
   if (varDecl->getType().getTypePtr()->isArrayType() and !isInSystemHeader) {
@@ -665,21 +674,21 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
           size_t numOfEle = elements.size();
           arrayShapes = to_string(numOfEle);
           arrayShapes_fin = arrayShapes;
-          for (auto it = elements.begin (); it != elements.end(); it++) {
+          for (auto it = elements.begin(); it != elements.end(); it++) {
             Expr *element = (*it);
             if (isa<InitListExpr> (element)) {
-                  // multidimensional array
+              // multidimensional array
               InitListExpr *innerIle = cast<InitListExpr> (element);
               getFortranArrayEleASString(innerIle, arrayValues, arrayShapes, evaluatable, it == elements.begin());
             } else {
               if (element->isEvaluatable (varDecl->getASTContext())) {
-                    // one dimensional array
+                // one dimensional array
                 clang::Expr::EvalResult r;
                 element->EvaluateAsRValue(r, varDecl->getASTContext());
                 string eleVal = r.Val.getAsString(varDecl->getASTContext(), e_qualType);
 
                 if (it == elements.begin()) {
-                      // first element
+                  // first element
                   evaluatable = true;
                   arrayValues = eleVal;
                 } else {
@@ -688,7 +697,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
               }
             }
-          } //<--end iteration
+          } //<--end iteration (one pass through the array elements)
           if (!evaluatable) {
             string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(varDecl->getSourceRange()), rewriter.getSourceMgr(), LangOptions(), 0);
                 // comment out arrayText
@@ -716,18 +725,31 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
 // Hanldes various variable declarations and returns them as fortran strings. Helper
 // functions are called for arrays which are difficult to format. The type is 
-// fetched with the hlper function getFortranTypeASString. Any illegal identifiers (ie _thing)
+// fetched with the helper function getFortranTypeASString. Any illegal identifiers (ie _thing)
 // prepended with "h2m" to become legal fortran identifiers.
 string VarDeclFormatter::getFortranVarDeclASString() {
   string vd_buffer;
   
-  if (!isInSystemHeader) {
+   if (!isInSystemHeader) {  // This appears to protect local headers from having system
+   // headers leak into the definitions
+    // This is a declaration of a TYPE(stuctured_type) variable
     if (varDecl->getType().getTypePtr()->isStructureType()) {
       // structure type
       RecordDecl *rd = varDecl->getType().getTypePtr()->getAsStructureType()->getDecl();
-      RecordDeclFormatter rdf(rd, rewriter, args);
-      rdf.setTagName(varDecl->getNameAsString());  // TODO: Experiment with this line
-      vd_buffer = rdf.getFortranStructASString();
+      // RecordDeclFormatter rdf(rd, rewriter, args);
+      // rdf.setTagName(varDecl->getNameAsString());  // TODO: Experiment with this line
+      // vd_buffer = rdf.getFortranStructASString();  // TODO: This line is wrong. Fix.
+      // Create a structure defined in the module file.
+      CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
+      vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+
+      // The following are checks for potentially illegal characters which might be
+      // at the begining of the anonymous types. These types must be commented out.
+      string f_type = tf.getFortranTypeASString(false);
+      if (f_type.front() == '/' || f_type.front() == '_' || f_type.front() == '\\') {
+        vd_buffer = "! " + vd_buffer;
+      }
+
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
         // handle initialized numeric array specifically
         vd_buffer = getFortranArrayDeclASString();
@@ -745,6 +767,8 @@ string VarDeclFormatter::getFortranVarDeclASString() {
          }
          identifier = "h2m" + identifier;
       }
+      // Detrmine the state of the declaration. Is there something declared? Is it commented out?
+      // Create the declaration in correspondence with this.
       if (value.empty()) {
         vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + "\n";
       } else if (value[0] == '!') {
@@ -752,6 +776,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } else {
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
+      // If it is not a structure, pointer, or array, proceed simply
     } else {
       string value = getInitValueASString();
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
@@ -781,10 +806,12 @@ string VarDeclFormatter::getFortranVarDeclASString() {
 TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   typedefDecl = t;
   isLocValid = typedefDecl->getSourceRange().getBegin().isValid();
+  // sloc, if uninitialized, should be an invalid location. Because it is always passed to a function
+  // which checks validity, this shoudl be fine.
   if (isLocValid) {
     isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(typedefDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(typedefDecl->getSourceRange().getBegin());
   }  
-  sloc = rewriter.getSourceMgr().getPresumedLoc(typedefDecl->getSourceRange().getBegin());
   
 };
 
@@ -813,8 +840,8 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
           }
         }
         typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
-        // TODO: DECIDE IF THIS IS WHAT YOU ACTUALLY WANT
-        // Because names in structs may collide with the struct name, suffixes are appended
+        // Because names in typedefs may collide with the typedef name, 
+	// suffixes are appended
         if (args.getSilent() == false) {
           errs() << "Warning: due to name collisions during typdef translation, " << identifier;
           errs() <<  "\nrenamed " << identifier << tf.getFortranTypeASString(false) << "\n";
@@ -830,8 +857,14 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
 // -----------initializer EnumDeclFormatter--------------------
 EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   enumDecl = e;
-  isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(enumDecl->getSourceRange().getBegin());
-  sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
+  // Becasue sloc is only ever passed to a function which checks its validity, this should be a fine
+  // way to deal with an invalid location.
+  if (enumDecl->getSourceRange().getBegin().isValid()) {
+    sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(enumDecl->getSourceRange().getBegin());
+  } else {
+    isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
+  }
 };
 
 // From a C enumerated type, a fotran ENUM is created. The names are prepended
@@ -890,8 +923,14 @@ string EnumDeclFormatter::getFortranEnumASString() {
 
 RecordDeclFormatter::RecordDeclFormatter(RecordDecl* rd, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   recordDecl = rd;
-  isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(recordDecl->getSourceRange().getBegin());
-  sloc = rewriter.getSourceMgr().getPresumedLoc(recordDecl->getSourceRange().getBegin());
+  // Because sloc is checked for validity prior to use, this should be a fine way to deal with
+  // an invalid source location
+  if (recordDecl->getSourceRange().getBegin().isValid()) {
+    sloc = rewriter.getSourceMgr().getPresumedLoc(recordDecl->getSourceRange().getBegin());
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(recordDecl->getSourceRange().getBegin());
+  } else {
+    isInSystemHeader = false;  // If it's not anywhere, it isn't in a system header
+  }
 };
 
 bool RecordDeclFormatter::isStruct() {
@@ -954,7 +993,6 @@ string RecordDeclFormatter::getFortranStructASString() {
     }
 
     if (mode == ID_ONLY) {
-      rd_buffer += "! ID_ONLY\n";
       string identifier = recordDecl->getNameAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
@@ -964,10 +1002,10 @@ string RecordDeclFormatter::getFortranStructASString() {
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
 
+      rd_buffer += "! ID_ONLY\n";
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       
     } else if (mode == TAG_ONLY) {
-      rd_buffer += "! TAG_ONLY\n";
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
@@ -976,9 +1014,9 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+      rd_buffer += "! TAG_ONLY\n";
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
-      rd_buffer += "! ID_TAG\n";
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
@@ -987,6 +1025,7 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+      rd_buffer += "! ID_TAG \n";
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
     } else if (mode == TYPEDEF) {
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
@@ -1004,8 +1043,8 @@ string RecordDeclFormatter::getFortranStructASString() {
       // Erase past all the spaces so that only the name remains (ie get rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
       while (found!=string::npos) {
-        identifier.erase(0, found);
-        found=identifier.find_first_of(" ",found+1);
+        identifier.erase(0, found + 1);
+        found=identifier.find_first_of(" ");
       }
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
@@ -1014,6 +1053,7 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+      rd_buffer += "! ANONYMOUS\n";
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
       string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       // Comment out the concents of the anonymous struct. There is no good way to guess at a name for it.
@@ -1065,8 +1105,14 @@ FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Argum
   funcDecl = f;
   returnQType = funcDecl->getReturnType();
   params = funcDecl->parameters();
-  isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(funcDecl->getSourceRange().getBegin());
-  sloc = rewriter.getSourceMgr().getPresumedLoc(funcDecl->getSourceRange().getBegin());
+  // Because sloc is checked for validity prior to use, this should be a fine way to deal with
+  // invalid locations
+  if (funcDecl->getSourceRange().getBegin().isValid()) {
+    sloc = rewriter.getSourceMgr().getPresumedLoc(funcDecl->getSourceRange().getBegin());
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(funcDecl->getSourceRange().getBegin());
+  } else {
+    isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
+  }
 };
 
 // for inserting types to "USE iso_c_binding, only: <<< c_ptr, c_int>>>""
@@ -1309,15 +1355,21 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
 // The preprocessor is used to find the macro names in the source files. The macro is 
 // more difficult to process. Both its name and definition are fetched using the lexer.
 MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci,
-     Arguments &arg) : md(md), args(arg) { //, ci(ci) {
+    Arguments &arg) : md(md), args(arg), ci(ci) {
     const MacroInfo *mi = md->getMacroInfo();
     SourceManager& SM = ci.getSourceManager();
 
     // define macro properties
     isObjectOrFunction = mi->isObjectLike();
-    isInSystemHeader = SM.isInSystemHeader(mi->getDefinitionLoc());
    
-    sloc = SM.getPresumedLoc(mi->getDefinitionLoc());
+    // This should be a fine way to deal with invalid locations because sloc is checked for validity
+    // before it is used.
+    if (mi->getDefinitionLoc().isValid()) {
+      sloc = SM.getPresumedLoc(mi->getDefinitionLoc());
+      isInSystemHeader = SM.isInSystemHeader(mi->getDefinitionLoc());
+    } else {
+      isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
+    }
 
     // source text
     macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(), MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
@@ -1355,6 +1407,11 @@ bool MacroFormatter::isFunctionLike() {
 // to translate a macro, in which case the line must be commented out.
 string MacroFormatter::getFortranMacroASString() {
   string fortranMacro;
+  // If we are not in the main file, don't include this. Just
+  // return an empty string.
+  if (ci.getSourceManager().isInMainFile(md->getMacroInfo()->getDefinitionLoc()) == false) {
+    return "";
+  } 
   if (!isInSystemHeader) {
     // remove all tabs
     macroVal.erase(std::remove(macroVal.begin(), macroVal.end(), '\t'), macroVal.end());
@@ -1370,7 +1427,7 @@ string MacroFormatter::getFortranMacroASString() {
               errs() << macroName << " renamed " << "h2m" << macroName << "\n";
               LineError(sloc);
             }
-            fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: h2m "+ macroName + " = " + macroVal + "\n";
+            fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else {
             fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: " + macroName + " = " + macroVal + "\n";
           }
@@ -1557,36 +1614,56 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
 
   } else if (isa<FunctionDecl> (d)) {
-    FunctionDeclFormatter fdf(cast<FunctionDecl> (d), TheRewriter, args);
-    allFunctionDecls += fdf.getFortranFunctDeclASString();
+    // Keep included header files out of the mix by checking the location
+    // Includes become part of the AST. However, there shouldn't be any
+    // problem with potentially invalid locations during the check. The
+    // Function checks for that.
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+      FunctionDeclFormatter fdf(cast<FunctionDecl> (d), TheRewriter, args);
+      allFunctionDecls += fdf.getFortranFunctDeclASString();
+    }
     
     // args.getOutput().os() << "INTERFACE\n" 
     // << fdf.getFortranFunctDeclASString()
     // << "END INTERFACE\n";      
   } else if (isa<TypedefDecl> (d)) {
-    TypedefDecl *tdd = cast<TypedefDecl> (d);
-    TypedefDeclFormater tdf(tdd, TheRewriter, args);
-    args.getOutput().os() << tdf.getFortranTypedefDeclASString();
+    // Keep included header files out of the mix by checking the location
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+      TypedefDecl *tdd = cast<TypedefDecl> (d);
+      TypedefDeclFormater tdf(tdd, TheRewriter, args);
+      args.getOutput().os() << tdf.getFortranTypedefDeclASString();
+    }
 
   } else if (isa<RecordDecl> (d)) {
-    RecordDecl *rd = cast<RecordDecl> (d);
-    RecordDeclFormatter rdf(rd, TheRewriter, args);
-    args.getOutput().os() << rdf.getFortranStructASString();
-
+    // Keep included header files out of the mix by checking the location
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+      RecordDecl *rd = cast<RecordDecl> (d);
+      RecordDeclFormatter rdf(rd, TheRewriter, args);
+      args.getOutput().os() << rdf.getFortranStructASString();
+    }
 
   } else if (isa<VarDecl> (d)) {
-    VarDecl *varDecl = cast<VarDecl> (d);
-    VarDeclFormatter vdf(varDecl, TheRewriter, args);
-    args.getOutput().os() << vdf.getFortranVarDeclASString();
+    // Keep included header files out of the mix by checking the location
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+      VarDecl *varDecl = cast<VarDecl> (d);
+      VarDeclFormatter vdf(varDecl, TheRewriter, args);
+      args.getOutput().os() << vdf.getFortranVarDeclASString();
+    } 
 
   } else if (isa<EnumDecl> (d)) {
-    EnumDeclFormatter edf(cast<EnumDecl> (d), TheRewriter, args);
-    args.getOutput().os() << edf.getFortranEnumASString();
+    // Keep included header files out of the mix by checking the location
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+      EnumDeclFormatter edf(cast<EnumDecl> (d), TheRewriter, args);
+      args.getOutput().os() << edf.getFortranEnumASString();
+    }
   } else {
 
-    args.getOutput().os() << "!found other type of declaration \n";
-    d->dump();
-    RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
+    // Keep included header files out of the mix by checking the location
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+      args.getOutput().os() << "!found other type of declaration \n";
+      d->dump();
+      RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
+    }
   }
     // comment out because function declaration doesn't need to be traversed.
     // RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d); // Forward to base class
@@ -1740,7 +1817,7 @@ int main(int argc, const char **argv) {
         errs() << "Error during preprocessor-tracing tool run, errno ." << initerrs << "\n";
         if (Optimistic == false) {  // Exit unless told to keep going
           errs() << "A non-recursive run may succeed.\n";
-          errs() << "Alternately, enable optimistic mode (-optimist or -k) to continue despite errors.\n";
+          errs() << "Alternately, enable optimistic mode (-keep-going or -k) to continue despite errors.\n";
           return(initerrs);
         } else if (stackfiles.empty() == true) {  // Whatever happend is not recoverable.
           errs() << "Unrecoverable initialization error. No files recorded to translate.\n";
@@ -1802,15 +1879,24 @@ int main(int argc, const char **argv) {
     // A compiler post-process has been specified and there is an actual output file,
     // prepare and run the compiler.
     if (Compiler.size() && filename.compare("-") != 0) {
+      OutputFile.os().flush();  // Attempt to flush the stream to avoid a partial read by the compiler
       if (system(NULL) == true) {  // A command interpreter is available
         string command = Compiler + " " + filename;
         int success = system(command.c_str());
+	if (Silent == false) {  // Notify if the run is noisy
+	  if (success == 0) {  // Successful compilation.
+	    errs() << "Successful compilation of " << filename << " with " << Compiler << "\n";
+	  } else {  // Inform of the error and give the error number
+	    errs() << "Unsuccessful compilation of " << filename << " with ";
+	    errs() << Compiler << ". Error: " << success << "\n";
+	  } 
+        }
       } else {  // Cannot run using system (fork might succeed but is very error prone).
         errs() << "Error: No command interpreter available to run system process " << Compiler << "\n";
       }
     // We were asked to run the compiler, but there is no output file, report an error.
     } else if (Compiler.size() && filename.compare("-") == 0) {
-      errs() << "Error: unable to attempt compilation on standard output.";
+      errs() << "Error: unable to attempt compilation on standard output.\n";
     }
     return(tool_errors);
   }

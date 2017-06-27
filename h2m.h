@@ -273,7 +273,7 @@ private:
   bool isObjectOrFunction;
   // Arguments passed in from the action factory
   Arguments &args;
-  //CompilerInstance &ci;
+  CompilerInstance &ci;
 };
 
 
@@ -285,7 +285,8 @@ private:
 // and structures are translated.
 class TraverseNodeVisitor : public RecursiveASTVisitor<TraverseNodeVisitor> {
 public:
-  TraverseNodeVisitor(Rewriter &R, Arguments& arg) : TheRewriter(R), args(arg) {}
+  TraverseNodeVisitor(Rewriter &R, Arguments& arg) :
+	  TheRewriter(R), args(arg) {}
 
   // Traverse all declaration nodes. Note that Clang AST nodes do NOT all have
   // a common ancestor. Decl and Stmt are essentially unrelated.
@@ -316,11 +317,12 @@ public:
         clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) override {
 
     // We have found a system header and have been instructured to skip it, so we move along
-    if (ci.getSourceManager().isInSystemHeader(loc) == true && args.getNoSystemHeaders() == true) {
+    if (loc.isValid() == false) {
+      return;  // We are not in a valid file. Don't include it. It's probably an error.    
+    } else if (ci.getSourceManager().isInSystemHeader(loc) == true && args.getNoSystemHeaders() == true) {
       return;
-    } else if (loc.isValid() == false) {
-      return;  // We are not in a valid file. Don't include it. It's probably an error.
     }
+    // This is already guarded by the loc.isValid() above so we know that loc is valid when we ask this
     clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
     string filename = ploc.getFilename();
     if (seenfiles.find(filename) != seenfiles.end()) {
