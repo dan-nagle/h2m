@@ -55,14 +55,16 @@ using namespace std;
 // in the future.
 class Arguments {
 public:
-  Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders) : quiet(q), silent(s),
-      output(out), no_system_headers(sysheaders) { module_name = ""; }
+  Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders, bool t) :
+     quiet(q), silent(s), output(out), no_system_headers(sysheaders) ,
+     together(t) { module_name = ""; }
   llvm::tool_output_file &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
   bool getSilent() { return silent; }
   bool getNoSystemHeaders() { return no_system_headers; }
   string getModuleName() { return module_name; }
   void setModuleName(string newstr) { module_name = newstr; }
+  bool getTogether() { return together; }
   
 private:
   // Where to send translated Fortran code
@@ -73,6 +75,8 @@ private:
   bool silent;
   // Should we recursively translate system header files?
   bool no_system_headers;
+  // Should all non-system header info. be sent to a single module?
+  bool together;
   // The module name may be altered during processing by the action;
   // by default this is an empty string. It is used to pass values out, not in.
   string module_name;
@@ -138,7 +142,11 @@ public:
   string getFortranStructASString();
   string getFortranFields();
 
-
+  // This function exists to make sure that a type is not
+  // declared twice. This frequently happens with typedefs
+  // renaming structs. If the identifier provided already
+  // exists, "false" is returned. Otherwise "true" is returned.
+  static bool StructAndTypedefGuard(string name);
 
 private:
   // Rewriters are used, typically, to make small changes to the
@@ -328,10 +336,10 @@ public:
     if (seenfiles.find(filename) != seenfiles.end()) {
       // Place holder: we have seen the file before so we don't add it to the stack.
       return;
-     } else if (filename.compare("<built-in>") == 0 || filename.compare("<command line>") == 0) {
+     } else if (filename.find("<built-in>") != string::npos || filename.find("<command line>") != string::npos) {
        // These are not real files. They may be called something else on other platforms, but
        // this was the best way I could think to try to get rid of them. They should not be
-       // translated in a recursive run. They do not actually exist.
+       // translated in a recursive run. They do not actually exist. This doesn't actually fix the problem.
        return;
      } else {
       // New file. Add it to the stack and the set.

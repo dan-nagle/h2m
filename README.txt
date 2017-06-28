@@ -48,30 +48,37 @@ which maintain interoperability with C. Features for which there
 are no Fortran equivalents will not be translated and warnings 
 will be written to standard error.
 The h2m Autofortran tool is built into Clang, the LLVM C compiler.
-During translation, the Clang abstract syntax tree is used to 
+During translation, the Clang abstract syntax tree (AST) is used to 
 assemble information about the header file. Clang is a very strict
 compiler and will often generate warnings about the C code during
 this phase. Standard Clang options can be specified to control the
 compilation process and silence warnings.
 
 The h2m Autofortran tool was envisioned by Dan Nagle and completed
-at NCAR by Sisi Liu and revised by Michelle Anderson and 
-*** VARIOUS ACKNOWLEDGMENTS ***
+at NCAR by Sisi (Garnet) Liu and revised by Michelle Anderson. Special
+thanks to Davide Del Vento.
 LLVM and Clang are released under the University of Illinois/NCSA
 Open Source License by the LLVM Team (http://llvm.org). See the 
 LLVM license for additional details. 
+CMake is released under the OSI-approved BSD 3-clause License, originally
+developed by Kitware Inc (https://cmake.org). See the CMake license for
+additional details. CMake distributions include third party software
+with compatible licenses.
 
 2)   BUILD AND INSTALLATION
 
 General Information:
 The utilities required to build and run h2m are: CMake (preferably
-the most recent version), LLVM, Clang, curl or wget (only if downloads
+a very recent version), LLVM, Clang, curl or wget (only if downloads
 of CMake, LLVM, and Clang are needed), bash, and standard unix utilities.
 Though it was principally designed for bash shells, h2mbuild.sh may
 run under other shells including ksh and zsh. Other posix compliant
 shells may also work, but they have not been tested.
 LLVM and Clang are absolutely required to run h2m. The h2mbuild.sh
-script can handle the installation of this software if necessary.
+script can handle the installation of this software if necessary. In
+fact, it is recommended that Clang and LLVM be downloaded and built
+during the installation process to avoid potential complications and
+avoid the need to determine the locations of their config.cmake files.
 If CMake is not installed, (ie the command 'which cmake' fails) CMake
 will need to be installed. The build script can perform a "bare-bones"
 installation if requested.
@@ -82,10 +89,11 @@ paths to the directories containing the LLVMConfig.cmake and
 ClangConfig.cmake files which will provide all the needed variables
 to complete a build. If these files do not exist, manual paths to
 library and header files can be specified.
-Because the h2mbuild.sh script must change directories, always run
+Because the h2mbuild.sh script may change directories, always run
 it as ./h2mbuild.sh. It will not work correctly if run from a 
 different working directory (although it will not cause any damage,
-it will not complete the build process).
+it will not complete the build process). The script should fail with
+an error if not run from the proper directory.
 
 Usage of the h2mbuild.sh script:
 Usage: ./h2mbuild.sh [options]
@@ -114,8 +122,8 @@ Clang and LLVM will be downloaded and built if -download is specified.
 This option will be ignored if -download was not specified.
 
 -LLVM_DIR [path]	Option to specify the absolute path to the 
-location of the LLVMConfig.cmake file if LLVM is already installed 
-(ie if LLVMConfig.cmake is installed in /Users/lib/cmake/LLVM, specify
+location of the LLVMConfig.cmake file if LLVM is already built 
+(ie if LLVMConfig.cmake is present in /Users/lib/cmake/LLVM, specify
 -LLVM_DIR /Users/lib/cmake/LLVM). If this option is found, manual path
 specifications will be ignored (ie LLVM_LIB_PATH will be ignored).
 This option will be ignored if -download is specified.
@@ -200,13 +208,19 @@ It is absolutely necessary to have CMake installed to build h2m, but
 the script is not necessarilly needed. To build h2m without the script,
 follow these steps.
 
+0.5). Download and Build CMake
+CMake releases can be downloaded from https://cmake.org/download.
+Build and installation instructions for CMake can be found at 
+https://cmake.org/install.
+
 1). Download and Build Clang/LLVM
 LLVM and Clang can be downloaded fron releases.llvm.org.
 To guarantee that all the needed files are present, download and 
 build from source. A binary release is unlikely to have
 the needed header and CMake files. Clang/LLVM version 4.0.0 is the
 only version thoroughly tested. Somewhat earlier versions are likely to
-work as well. Later versions may not. 
+work as well. Later versions may not. The Clang website provides good
+build instructions (https://clang.llvm.org/get_started.html).
 
 2). Find the CMake Configuration Files
 The files clang-config.cmake and llvm-config.cmake should be located
@@ -237,9 +251,9 @@ absolute paths (ie /Users/me/clang-llvm/build/lib/cmake/clang not
 If you would like to install h2m, add an extra argument of the form
 '-DINSTALL_PATH=[path to desired installation location].
 
-3.5). CMake Without Configuration Files
+3.5). How to Run CMake Without Configuration Files
 In the directory including h2m.h, h2m.cpp, and CMakeLists.txt, run the
-following unpleasant command, referring to the letters specified earlier
+following unpleasant command. Refer to the letters specified earlier
 in step 2.5 which represent the absolute paths to the directories found
 in that step:
 'cmake . -DLLVM_LIB_PATH=[e] -DLLVM_INCLUDE_PATH=[d] 
@@ -262,14 +276,16 @@ given has the proper structure (ie, the headers or library files are in
 the positions mentioned in this document).
 
 3. LLVM/Clang packages will be searched for in standard places before
-CMake even looks at the manual configuration variables specified. If CMake
+CMake even looks at variables such as LLVM_INCLUDE_DIRS. If CMake
 gives a message about unused variables, this often indicates that a cached
 variable is being used or the package is in a default location and has
-been found. This often results in incompatible versions and linker errors.
+been found. This can result in incompatible versions and linker errors.
+Often a clean download and build of LLVM and Clang can fix these problems.
 
 4. Newer versions of Clang/LLVm may be incompatible with the h2m
 implementation. Release 4.0 is known to work, and this is the 
-default download URL.
+default download URL. It is likely that releases after 4.0 will not
+work. 
 
 3)   USAGE OF H2M
 
@@ -288,9 +304,19 @@ Untranslatable features will be commented out. Invalid names begining with an un
 will be prefixed with 'h2m' to create a valid name.
 Warnings about invalid names or commented out lines will be printed to standard error
 unless supressed with the -q or -s option. 
-Each file is translated into exactly one fortran module. During recursion, USE statements
-will link them based on dependencies in the header files. Note that this will result in
-many more USE statements than are probably necessary for any given module.
+By default, only the contents of a single header file are written into a single Fortran
+module. Files included by this header are ignored. There are two ways to change this.
+The first way is to request a recursive run with the option -recursive or -r.
+During recursion, Each file is translated into exactly one fortran module. These
+modules will be linked together by USE statements, probably far more USE statements
+than are actually necessary. The tool will attempt to link them in the order which
+corresponds to the dependencies among the C header files. By default, system headers
+will be translated into modules as well. This can be disabled with the option
+-no-system-headers or -n.
+The second way is to request that all local headers included by the specified file,
+meaning all includes excluding system headers, be translated and written to a single
+module. This option is -together or -t. There is no option to include system headers
+when translating in this way.
 
 Errors: In the case of some errors, the program will terminate and the output file
 will be deleted. Most, however, are expected to be minor and processing will
@@ -312,10 +338,30 @@ Enumerated Types: An enumerated type of arbitrary length can be translated. Beca
 Fortran enums do not have their own scope as C enums do, the enumerator's name will
 become a member of the enumerated type with an unspecified value. 
 
+Typedefs: There is no Fortran type interoperable with a typedef. All typedefs will
+be translated into Fortran TYPE definitions containing exactly one field. This field
+will be named [typedef name]_[type redefined]. For example:
+typedef int my_int;
+-> h2m ->
+TYPE, BIND(C) :: my_int
+  my_int_C_INT
+END TYPE my_int
+
 Other Conflicting Names: The h2m tool is not capable of finding all name conflicts.
 Most name conflicts will have to be fixed manually by the programmer, either by
 modifying a name or by modifying a USE statement to a USE ONLY statement to exclude
-conflicting symbols.
+conflicting symbols. However, h2m will usually notice when a typedef statement would
+conflict with the name of an existing struct. For example:
+
+struct my_struct {
+  int x;
+};
+typedef struct my_struct my_struct;
+
+Both the struct and the typedef would be translated into Fortran TYPE definitions
+with the name of my_struct because Fortran has no equivalent to C struct tag names.
+The second structure definition would be a useless repetition and cause an error in
+Fortran, thus h2m will print a warning and not translate the typedef.
 
 Names Begining With "_": Names will be prepended with h2m in order to create
 a legal identifier. Warnings will be printed to standard error when a name is
@@ -324,6 +370,9 @@ changed.
 Unrecognized Types: When h2m does not recognize a type in a header, it will print a
 warning about the problem and surround the questionably translated text with 
 unrecognized_type(...) in the output.
+
+Unions: There is no Fortran type interoperable with a union. A union will be translated
+into a TYPE definition in Fortran, but this translated TYPE is not interoperable.
 
 
 OPTIONS:
@@ -374,6 +423,13 @@ is useful if a C source file includes headers which need to be translated, but t
 C source file should not be translated and should only be used to determine which
 other files to translate.
 
+-together
+-t			Send all the local (non-system) header files to a single module as
+they are translated. In this case, the entire text of the file, including all portions
+added by the preprocessor, is translated into a single module. System header files will
+never be included in this translation. If -recursive or -r option is also specified, this
+will likely lead to symbols being defined multiple times.
+
 Clang Options: Following specification of the input file, options after the source are passed
 as arguments to the Clang compiler instance used by the tool. The Clang/LLVM manual pages
 and websites should be used as a reference for these options.
@@ -416,4 +472,7 @@ Name conflicts occur quite frequently becaus C has different scoping rules than 
 Compiler errors such as 'Error: Symbol [symbol] cannot have a type' are likely due to 
 name conflicts between function or type names. These name conflicts typically lead to 
 cascades of closely following but seemingly unrelated errors.
+
+Typedefs defining 'void' will cause undefined type errors. Fortran has no reasonable
+translation for a 'void' type and h2m cannot handle it.
 

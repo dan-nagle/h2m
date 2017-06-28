@@ -15,6 +15,27 @@ static void LineError(PresumedLoc sloc) {
   }
 }
 
+// This function exists to make sure that a type is not declared
+// twice. This frequently happens with typedefs renaming structs.
+// This results in duplicate-name-declaration errors in Fortran
+// because there are no seperate name-look-up procedures for
+// "tag-names" as there are in C (ie in C typedef struct Point point
+// is legal but in Fortran this causes conflicts.) A static map will
+// make sure that no typedef declares an already declared name.
+// If the name has already been seen, it returns false. If it hasn't,
+// it adds it to a set (will return false if called again with that
+// name) and returns true.
+bool RecordDeclFormatter::StructAndTypedefGuard(string name) {
+  static std::set<string> seennames;  // Records all identifiers seen.
+  // If we have already added this file to the set... false
+  if (seennames.find(name) != seennames.end()) {
+    return false;
+  } else {  // Otherwise, add it to the stack and return true
+    seennames.insert(name);
+    return true;
+  }
+}
+
 // Fetches the fortran module name from a given filepath Filename
 // IMPORTANT: ONLY call this ONCE for ANY FILE. The static 
 // structure requires this, otherwise you will have all sorts of
@@ -59,7 +80,7 @@ static llvm::cl::OptionCategory h2mOpts("Options for the h2m translator");
 static cl::extrahelp CommonHelp(CommonOptionsParser::HelpMessage);
 
 // A help message for this specific tool can be added afterwards.
-static cl::extrahelp MoreHelp("\nMore help text...");
+static cl::extrahelp MoreHelp("\nSee README.txt for more information on h2m behavior.\n");
 
 // Positional parameter: the first input parameter should be the compilation file. 
 // Currently, h2m is only designed to take one file at a time.
@@ -96,7 +117,11 @@ static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::cat(h2
 
 // Option to specify the compiler to use to test the output. No specification means no compilation.
 static cl::opt<string> Compiler("compile", cl::cat(h2mOpts), cl::desc("Command to attempt compilation of the output file"));
-static cl::alias Compiler2("c", cl::desc("Alias for compile"), cl::cat(h2mOpts), cl::aliasopt(Compiler));
+static cl::alias Compiler2("c", cl::desc("Alias for -compile"), cl::cat(h2mOpts), cl::aliasopt(Compiler));
+
+// Option to send all non-system header information for this file into a single Fortran module
+static cl::opt<bool> Together("together", cl::cat(h2mOpts), cl::desc("Send this entire file and all non-system includes to one module"));
+static cl::alias Together2("t", cl::cat(h2mOpts), cl::desc("Alias for -together"), cl::aliasopt(Together));
 
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
@@ -479,7 +504,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   }
   if (args.getSilent() == false) {
     errs() << "Warning: Translation of typedef like macro requires renaming ";
-    errs() << macroName << type_id << "\n";
+    errs() << macroName << " as " << type_id << "\n";
     LineError(loc);
   }
 
@@ -591,7 +616,8 @@ string VarDeclFormatter::getInitValueASString() {
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
       // ARRAY --- won't be used here bc it's handled by getFortranArrayDeclASString()
       Expr *exp = varDecl->getInit();
-      string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (), varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+      string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (),
+          varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
       // comment out arrayText
       std::istringstream in(arrayText);
       for (std::string line; std::getline(in, line);) {
@@ -615,7 +641,8 @@ string VarDeclFormatter::getInitValueASString() {
 
 // This function fetches the type and name of an array element through the 
 // ast context.
-void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arrayValues, string arrayShapes, bool &evaluatable, bool firstEle) {
+void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
+    string arrayShapes, bool &evaluatable, bool firstEle) {
   ArrayRef<Expr *> innerElements = ile->inits ();
   if (firstEle) {
     size_t numOfInnerEle = innerElements.size();
@@ -658,8 +685,10 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       if (e_qualType.getTypePtr()->isCharType()) {
         // handle stringliteral case
         Expr *exp = varDecl->getInit();
-        string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (), varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
-        arrayDecl = tf.getFortranTypeASString(true) + ", parameter, public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + arrayText + "\n";
+        string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (),
+            varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+        arrayDecl = tf.getFortranTypeASString(true) + ", parameter, public :: " +
+            tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + arrayText + "\n";
       } else {
         bool evaluatable = false;
         Expr *exp = varDecl->getInit();
@@ -737,16 +766,19 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // structure type
       RecordDecl *rd = varDecl->getType().getTypePtr()->getAsStructureType()->getDecl();
       // RecordDeclFormatter rdf(rd, rewriter, args);
-      // rdf.setTagName(varDecl->getNameAsString());  // TODO: Experiment with this line
-      // vd_buffer = rdf.getFortranStructASString();  // TODO: This line is wrong. Fix.
+      // rdf.setTagName(varDecl->getNameAsString());  // Done: Experiment with this line
+      // vd_buffer = rdf.getFortranStructASString();  // Done: This line is wrong. Fix.
       // Create a structure defined in the module file.
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
       vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
 
       // The following are checks for potentially illegal characters which might be
       // at the begining of the anonymous types. These types must be commented out.
+      // It also looks for the "anonymous at" qualifier which might be present if 
+      // the other tell-tale signs are not.
       string f_type = tf.getFortranTypeASString(false);
-      if (f_type.front() == '/' || f_type.front() == '_' || f_type.front() == '\\') {
+      if (f_type.front() == '/' || f_type.front() == '_' || f_type.front() == '\\' ||
+          f_type.find("anonymous at") != string::npos) {
         vd_buffer = "! " + vd_buffer;
       }
 
@@ -776,7 +808,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } else {
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
-      // If it is not a structure, pointer, or array, proceed simply
+      // If it is not a structure, pointer, or array, proceed with no special treatment.
     } else {
       string value = getInitValueASString();
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
@@ -806,8 +838,8 @@ string VarDeclFormatter::getFortranVarDeclASString() {
 TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   typedefDecl = t;
   isLocValid = typedefDecl->getSourceRange().getBegin().isValid();
-  // sloc, if uninitialized, should be an invalid location. Because it is always passed to a function
-  // which checks validity, this shoudl be fine.
+  // sloc, if uninitialized, will be an invalid location. Because it is always passed to a function
+  // which checks validity, this should be a fine way to guard against an invalid location.
   if (isLocValid) {
     isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(typedefDecl->getSourceRange().getBegin());
     sloc = rewriter.getSourceMgr().getPresumedLoc(typedefDecl->getSourceRange().getBegin());
@@ -815,42 +847,55 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments 
   
 };
 
-// From a C typedef, a string representing a Fortran typedef is created. The fortran equivalent
-// is a type with only one field. The name of this field is name_C_INT or name_C_PTR, depending
+// From a C typedef, a string representing a Fortran pseudo-typedef is created. The fortran equivalent
+// is a type with only one field. The name of this field is name_type (ie name_C_INT), depending
 // on the type. Note that this function will be called for Structs and Enums as well, but that they
 // will be skipped and handled elsewhere (in recordDeclFormatter). A typedef with an illegal 
 // name will be prepended with "h2m" to become legal fortran.
+// This function will check for name duplication. In the case that this is a duplicate identifier,
+// a string containing a comment will be returned (no definition will be provided).
 string TypedefDeclFormater::getFortranTypedefDeclASString() {
   string typdedef_buffer;
-  if (isLocValid and !isInSystemHeader) {
-      if (typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isStructureType()
-        or typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isEnumeralType ()) {
-        // skip it, since it will be translated in recordecl
-      } else {
-        // other regular type defs
-        TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
-        CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc, args);
-        string identifier = typedefDecl->getNameAsString();
-        if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining!
-          string old_identifier = identifier;
-          identifier = "h2m" + identifier;  // Prepend h2m to fix the problem
-          if (args.getSilent() == false) {  // Warn unless silenced
-            errs() << "Warning: illegal identifier " << old_identifier << " renamed " << identifier << "\n";
-            LineError(sloc);
-          }
-        }
-        typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
-        // Because names in typedefs may collide with the typedef name, 
-	// suffixes are appended
-        if (args.getSilent() == false) {
-          errs() << "Warning: due to name collisions during typdef translation, " << identifier;
-          errs() <<  "\nrenamed " << identifier << tf.getFortranTypeASString(false) << "\n";
-          LineError(sloc);
-        }
-        typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
-        typdedef_buffer += "END TYPE " + identifier + "\n";
+  if (isLocValid and !isInSystemHeader) {  // Keeps system files from leaking in
+  // if (typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isStructureType()
+  //  or typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isEnumeralType ()) {
+  // } else {
+  // The above commented out section appeared with a comment indicating that struct/enum
+  // typedefs would be handled in the RecordDeclFormatter section. This does not appear
+  // to be the case.
+    TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
+    CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc, args);
+    string identifier = typedefDecl->getNameAsString();
+    if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining.
+      string old_identifier = identifier;
+      identifier = "h2m" + identifier;  // Prepend h2m to fix the problem.
+      if (args.getSilent() == false) {  // Warn about the renaming unless silenced.
+        errs() << "Warning: illegal identifier " << old_identifier << " renamed " << identifier << "\n";
+        LineError(sloc);
       }
-    } 
+    }
+    // Check to see whether we have declared something with this identifier before.
+    // Skip this duplicate declaration if necessary.
+    if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+      if (args.getSilent() == false) {
+        errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
+        LineError(sloc);
+      }
+      return "\n! Duplicate declaration of " + identifier + ", TYPEDEF , skipped. \n";
+    }
+
+    typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
+    // Because names in typedefs may collide with the typedef name, 
+    // suffixes are appended to the internal member of the typedef.
+    if (args.getSilent() == false) {
+      errs() << "Warning: due to name collisions during typdef translation, " << identifier;
+      errs() <<  "\nrenamed " << identifier << tf.getFortranTypeASString(false) << "\n";
+      LineError(sloc);
+    }
+    typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
+    typdedef_buffer += "END TYPE " + identifier + "\n";
+  //  }
+  } 
   return typdedef_buffer;
 };
 
@@ -858,7 +903,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
 EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   enumDecl = e;
   // Becasue sloc is only ever passed to a function which checks its validity, this should be a fine
-  // way to deal with an invalid location.
+  // way to deal with an invalid location. An empty sloc is an invalid location.
   if (enumDecl->getSourceRange().getBegin().isValid()) {
     sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
     isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(enumDecl->getSourceRange().getBegin());
@@ -908,12 +953,22 @@ string EnumDeclFormatter::getFortranEnumASString() {
       enum_buffer += "    enumerator " + enumName+"\n";
     } else {  // I don't think this is actually a problem for potential illegal underscores.
       string identifier = enumDecl-> getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      // This checks to make sure that this is not an anonymous enumeration
       if (identifier.find("anonymous at") == string::npos) {
         enum_buffer += "    enumerator " + identifier+"\n";
       }
     }
+    // Check to see whether we have declared something with this identifier before.
+    // Skip this duplicate declaration if necessary.
+    if (RecordDeclFormatter::StructAndTypedefGuard(enumName) == false) {
+      if (args.getSilent() == false) {
+        errs() << "Warning: skipping duplicate declaration of " << enumName << "\n";
+        LineError(sloc);
+      }
+      return "\n! Duplicate declaration of " + enumName + ", ENUM , skipped. \n";
+    }
 
-      enum_buffer += "END ENUM\n";
+    enum_buffer += "END ENUM\n";
   }
 
   return enum_buffer;
@@ -976,13 +1031,13 @@ string RecordDeclFormatter::getFortranFields() {
 // similar, but anonymous structs need to be handled specially. This 
 // function puts together the name of the struct as well as the fields fetched
 // from the getFortranFields() function above. All illegal names are prepended
-// with h2m.
+// with h2m. Checks are made for duplicate names.
 string RecordDeclFormatter::getFortranStructASString() {
   // initalize mode here
   setMode();
 
   string rd_buffer;
-  if (!isInSystemHeader) {  // I don't know why this is here. 
+  if (!isInSystemHeader) {  // Prevents system headers from leaking in
     string fieldsInFortran = getFortranFields();
     if (fieldsInFortran.empty()) {
       rd_buffer = "! struct without fields may cause warnings\n";
@@ -1002,9 +1057,17 @@ string RecordDeclFormatter::getFortranStructASString() {
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
 
-      rd_buffer += "! ID_ONLY\n";
+      // Check to see whether we have declared something with this identifier before.
+      // Skip this duplicate declaration if necessary.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
+          LineError(sloc);
+        }
+        return "\n! Duplicate declaration of " + identifier + ", ID_ONLY struct, skipped. \n";
+      }
+
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
-      
     } else if (mode == TAG_ONLY) {
       string identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
@@ -1014,7 +1077,17 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      rd_buffer += "! TAG_ONLY\n";
+
+      // Check to see whether we have declared something with this identifier before.
+      // Skip this duplicate declaration if necessary.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
+          LineError(sloc);
+        }
+        return "\n! Duplicate declaration of " + identifier + ", TAG_ONLY struct, skipped. \n";
+      }
+
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
       string identifier = tag_name;
@@ -1025,7 +1098,17 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      rd_buffer += "! ID_TAG \n";
+
+      // Check to see whether we have declared something with this identifier before.
+      // Skip this duplicate declaration if necessary.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
+          LineError(sloc);
+        }
+        return "\n! Duplicate declaration of " + identifier + ", ID_TAG struct, skipped. \n";
+      }
+
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
     } else if (mode == TYPEDEF) {
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
@@ -1036,9 +1119,19 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+
+      // Check to see whether we have declared something with this identifier before.
+      // Skip this duplicate declaration if necessary.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
+          LineError(sloc);
+        }
+        return "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
+      }
+
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {
-      rd_buffer += "! anonymous\n";
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // Erase past all the spaces so that only the name remains (ie get rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
@@ -1053,7 +1146,15 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      rd_buffer += "! ANONYMOUS\n";
+      // We have previously seen a declaration with this name.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
+          LineError(sloc);
+        }
+        return "\n! Duplicate declaration of " + identifier + ", ANONYMOUS struct, skipped. \n";
+      }
+
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
       string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
       // Comment out the concents of the anonymous struct. There is no good way to guess at a name for it.
@@ -1061,7 +1162,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       for (std::string line; std::getline(in, line);) {
         rd_buffer += "! " + line + "\n";
         if (args.getQuiet() == false && args.getSilent() == false) {
-          errs() << "Warning: line " << line << " commented out \n";
+          errs() << "Warning: line in anonymous struct" << line << " commented out \n";
           LineError(sloc);
         }
       }
@@ -1618,7 +1719,11 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     // Includes become part of the AST. However, there shouldn't be any
     // problem with potentially invalid locations during the check. The
     // Function checks for that.
-    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+    // Note that, if the option Together is specified, the entire AST (save
+    // for system headers which are checked for elsewhere) is sent to the
+    // same file due to the || statement
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
+        args.getTogether() == true) {
       FunctionDeclFormatter fdf(cast<FunctionDecl> (d), TheRewriter, args);
       allFunctionDecls += fdf.getFortranFunctDeclASString();
     }
@@ -1628,7 +1733,8 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     // << "END INTERFACE\n";      
   } else if (isa<TypedefDecl> (d)) {
     // Keep included header files out of the mix by checking the location
-    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
+        args.getTogether() == true) {
       TypedefDecl *tdd = cast<TypedefDecl> (d);
       TypedefDeclFormater tdf(tdd, TheRewriter, args);
       args.getOutput().os() << tdf.getFortranTypedefDeclASString();
@@ -1636,7 +1742,8 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 
   } else if (isa<RecordDecl> (d)) {
     // Keep included header files out of the mix by checking the location
-    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
+        args.getTogether() == true) {
       RecordDecl *rd = cast<RecordDecl> (d);
       RecordDeclFormatter rdf(rd, TheRewriter, args);
       args.getOutput().os() << rdf.getFortranStructASString();
@@ -1644,7 +1751,8 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 
   } else if (isa<VarDecl> (d)) {
     // Keep included header files out of the mix by checking the location
-    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
+        args.getTogether() == true) {
       VarDecl *varDecl = cast<VarDecl> (d);
       VarDeclFormatter vdf(varDecl, TheRewriter, args);
       args.getOutput().os() << vdf.getFortranVarDeclASString();
@@ -1652,14 +1760,16 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 
   } else if (isa<EnumDecl> (d)) {
     // Keep included header files out of the mix by checking the location
-    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
+        args.getTogether() == true) {
       EnumDeclFormatter edf(cast<EnumDecl> (d), TheRewriter, args);
       args.getOutput().os() << edf.getFortranEnumASString();
     }
   } else {
 
     // Keep included header files out of the mix by checking the location
-    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation())) {
+    if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
+        args.getTogether() == true) {
       args.getOutput().os() << "!found other type of declaration \n";
       d->dump();
       RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
@@ -1777,6 +1887,12 @@ int main(int argc, const char **argv) {
       errs() << "Error: incompatible options, skip given file and no recursion (-i without -r)";
       errs() << "Either specify a recursive translation or remove the option to skip the first file.";
       return(1);
+    // If all the main file's AST (including headers courtesty of the preprocessor) is sent to one
+    // module and a recursive option is also specified, things defined in the headers will be
+    // defined multiple times over several recursively translated modules.
+    } else if (Together == true && Recursive == true) {
+      errs() << "Warning: request for all local includes to be sent to a single file accompanied\n";
+      errs() << "by recursive translation (-t and -r) may result in multiple declaration errors.\n";
     }
     // Determine file to open and initialize it. Wrtie to stdout if no file is given.
     string filename;
@@ -1795,7 +1911,8 @@ int main(int argc, const char **argv) {
     if (Optimistic == true) {  // Keep all output inspite of errors
       OutputFile.keep();
     }
-    Arguments args(Quiet, Silent, OutputFile, NoHeaders);  // Create an object to pass around arguments
+    // Create an object to pass around arguments
+    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together);
 
 
     // Create a new clang tool to be used to run the frontend actions
