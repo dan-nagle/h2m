@@ -42,6 +42,8 @@
 #include <stack>
 // Map is used to assign unique module names if there are duplicate file names
 #include <map>
+// Used to determine whether or not a character has a lowercase equivalent
+#include <locale>
 
 using namespace clang;
 using namespace clang::tooling;
@@ -104,6 +106,10 @@ public:
   static bool isString(const string input);
   static bool isChar(const string input);
   static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args);
+  // Constants to be used for length checking when comparing names/lines
+  // to see if they are valid Fortran.
+  static const int name_max = 63;
+  static const int line_max = 132;
 private:
   Arguments &args;
 };

@@ -15,6 +15,22 @@ static void LineError(PresumedLoc sloc) {
   }
 }
 
+// A helper function to be used to find lines/names which are too 
+// long to be valid fortran. It returns the string which is passed
+// in, regardless of the outcome of the test. The first argument
+// is the string to be checked. The integer agument is the
+// limit (how many characters are allowed), the boolean is whether
+// or not to warn, and the Presumed location is for passing to 
+// LineError if needed. 
+static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
+  if (tocheck.length() > limit && no_warn == false) {
+    errs() << "Warning: length of '" << tocheck;
+    errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
+    LineError(sloc);
+  }
+  return tocheck;  // Send back the string!
+}
+
 // This function exists to make sure that a type is not declared
 // twice. This frequently happens with typedefs renaming structs.
 // This results in duplicate-name-declaration errors in Fortran
@@ -27,6 +43,13 @@ static void LineError(PresumedLoc sloc) {
 // name) and returns true.
 bool RecordDeclFormatter::StructAndTypedefGuard(string name) {
   static std::set<string> seennames;  // Records all identifiers seen.
+
+  // Put the name into lowercase. Fortran is not case sensitive.
+  std::locale location;  // Determines if a lowercase exists
+  for (string::size_type j = 0; j < name.length(); j++) {
+    name[j] = std::tolower(name[j], location); 
+  }
+
   // If we have already added this file to the set... false
   if (seennames.find(name) != seennames.end()) {
     return false;
@@ -64,6 +87,9 @@ static string GetModuleName(string Filename, Arguments& args) {
     repeats[filename] = 2;
   }
   filename = "module_" + filename;
+  if (filename.length() > 63 && args.getSilent() == false) {
+    errs() << "Warning: module name, " << filename << " too long.";
+  }
   return filename;
 }
 
@@ -502,11 +528,6 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
     type_id.erase(0, found + 1);  // Erase up to the space
     found=type_id.find_first_of(" ");
   }
-  if (args.getSilent() == false) {
-    errs() << "Warning: Translation of typedef like macro requires renaming ";
-    errs() << macroName << " as " << type_id << "\n";
-    LineError(loc);
-  }
 
   if (macroName[0] == '_') {
     if (args.getSilent() == false) {
@@ -514,27 +535,40 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
       errs() << macroName << " renamed h2m" << macroName << "\n";
       LineError(loc);
     }
-    ft_buffer += "TYPE, BIND(C) :: h2m" + macroName+ "\n";
+
+    // Check the length of these lines to make sure they are legal under Fortran.
+    ft_buffer += CheckLength("TYPE, BIND(C) :: h2m" + macroName+ "\n", CToFTypeFormatter::line_max,
+        args.getSilent(), loc);
     if (macroVal.find("char") != std::string::npos) {
-      ft_buffer += "    CHARACTER(C_CHAR) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     } else if (macroVal.find("long") != std::string::npos) {
-      ft_buffer += "    INTEGER(C_LONG) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     } else if (macroVal.find("short") != std::string::npos) {
-      ft_buffer += "    INTEGER(C_SHORT) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     } else {
-      ft_buffer += "    INTEGER(C_INT) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     }
     ft_buffer += "END TYPE h2m" + macroName+ "\n";
   } else {
-    ft_buffer = "TYPE, BIND(C) :: " + macroName+ "\n";
+    // The CheckLength function is employed here to make sure lines are acceptable lengths
+    ft_buffer = CheckLength("TYPE, BIND(C) :: " + macroName+ "\n", CToFTypeFormatter::line_max,
+        args.getSilent(), loc);
     if (macroVal.find("char") != std::string::npos) {
-      ft_buffer += "    CHARACTER(C_CHAR) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     } else if (macroVal.find("long") != std::string::npos) {
-      ft_buffer += "    INTEGER(C_LONG) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     } else if (macroVal.find("short") != std::string::npos) {
-      ft_buffer += "    INTEGER(C_SHORT) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     } else {
-      ft_buffer += "    INTEGER(C_INT) :: " + type_id + "\n";
+      ft_buffer += CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+          args.getSilent(), loc);
     }
     ft_buffer += "END TYPE " + macroName+ "\n";
   }
@@ -670,14 +704,29 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 };
 
 // Much more complicated function used to generate an array declaraion. 
-// Syntax for C and Fortran arrays are completely different.
+// Syntax for C and Fortran arrays are completely different. The array 
+// must be declared and initialization carried out if necessary.
 string VarDeclFormatter::getFortranArrayDeclASString() {
-  string arrayDecl;
+  string arrayDecl = "";
   if (varDecl->getType().getTypePtr()->isArrayType() and !isInSystemHeader) {
     CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
+  
+    string temp_id = tf.getFortranIdASString(varDecl->getNameAsString());
+    // Check for an illegal name length. Warn if it exists.
+    CheckLength(temp_id, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    // Check to see whether we have seen this identifier before. If need be, comment
+    // out the duplicate declaration.
+    if (RecordDeclFormatter::StructAndTypedefGuard(temp_id) == false) {
+      if (args.getSilent() == false) {
+        errs() << "Warning: skipping duplicate declaration of " << temp_id << ", array declaration.\n";
+        LineError(sloc);
+      }
+      arrayDecl = "! Skipping duplicate declaration of " + temp_id + "\n!";
+    }
+
     if (!varDecl->hasInit()) {
-      // only declared, no init
-      arrayDecl = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+      // only declared, no initialization of the array takes place
+      arrayDecl += tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
     } else {
       // has init
       const ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
@@ -687,7 +736,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
         Expr *exp = varDecl->getInit();
         string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (),
             varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
-        arrayDecl = tf.getFortranTypeASString(true) + ", parameter, public :: " +
+        arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public :: " +
             tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + arrayText + "\n";
       } else {
         bool evaluatable = false;
@@ -747,6 +796,10 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       }     
     }
   }
+  // Check for lines which exceed the Fortran maximum. The helper will warn
+  // if they are found and Silent is false.
+  CheckLength(arrayDecl, CToFTypeFormatter::line_max, args.getSilent(), sloc);
+
   return arrayDecl;
 };
 
@@ -755,11 +808,12 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 // Hanldes various variable declarations and returns them as fortran strings. Helper
 // functions are called for arrays which are difficult to format. The type is 
 // fetched with the helper function getFortranTypeASString. Any illegal identifiers (ie _thing)
-// prepended with "h2m" to become legal fortran identifiers.
+// are prepended with "h2m" to become legal fortran identifiers.
 string VarDeclFormatter::getFortranVarDeclASString() {
-  string vd_buffer;
+  string vd_buffer = "";
+  string identifier = "";   // Will eventually hold the variable's name
   
-   if (!isInSystemHeader) {  // This appears to protect local headers from having system
+  if (!isInSystemHeader) {  // This appears to protect local headers from having system
    // headers leak into the definitions
     // This is a declaration of a TYPE(stuctured_type) variable
     if (varDecl->getType().getTypePtr()->isStructureType()) {
@@ -770,7 +824,8 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // vd_buffer = rdf.getFortranStructASString();  // Done: This line is wrong. Fix.
       // Create a structure defined in the module file.
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
-      vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+      identifier = tf.getFortranIdASString(varDecl->getNameAsString());
+      vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + "\n";
 
       // The following are checks for potentially illegal characters which might be
       // at the begining of the anonymous types. These types must be commented out.
@@ -781,16 +836,27 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           f_type.find("anonymous at") != string::npos) {
         vd_buffer = "! " + vd_buffer;
       }
+      // We have seen something with this name before. This will be a problem.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
+          LineError(sloc);
+        }
+        vd_buffer = "!" + vd_buffer;
+        vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
+        return vd_buffer;  // Skip the name and length checks. It's commented out anyway.
+      }
 
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
         // handle initialized numeric array specifically
+        // length, name, and identifier repetition checks are carried out in the helper
         vd_buffer = getFortranArrayDeclASString();
     } else if (varDecl->getType().getTypePtr()->isPointerType() and 
       varDecl->getType().getTypePtr()->getPointeeType()->isCharType()) {
       // string declaration
       string value = getInitValueASString();
       CToFTypeFormatter tf(varDecl->getType().getTypePtr()->getPointeeType(), varDecl->getASTContext(), sloc, args);
-      string identifier = tf.getFortranIdASString(varDecl->getNameAsString());
+      identifier = tf.getFortranIdASString(varDecl->getNameAsString());
       if (identifier.front() == '_') {
          if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
@@ -808,11 +874,22 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } else {
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
+      // We have seen something with this name before. This will be a problem.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
+          LineError(sloc);
+        }
+        vd_buffer = "!" + vd_buffer;
+        vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
+        return vd_buffer;  // Skip the name and length checks. It's commented out anyway.
+      }
+ 
       // If it is not a structure, pointer, or array, proceed with no special treatment.
     } else {
       string value = getInitValueASString();
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
-      string identifier = tf.getFortranIdASString(varDecl->getNameAsString());
+      identifier = tf.getFortranIdASString(varDecl->getNameAsString());
       if (identifier.front() == '_') {
          if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
@@ -828,9 +905,25 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } else {
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
+      // We have seen something with this name before. This will be a problem.
+      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+        if (args.getSilent() == false) {
+          errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
+          LineError(sloc);
+        }
+        vd_buffer = "!" + vd_buffer;
+        vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
+        return vd_buffer;  // Skip the name and length checks. It's commented out anyway.
+      }
     }
+    
   }
 
+  // Identifier may be initialized to "". This will cause no harm.
+  CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+  // As we check for valid fortran name and line lengths, we add one to account for the
+  // presence of the newline character.
+  CheckLength(vd_buffer, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
   return vd_buffer;
 };
 
@@ -874,16 +967,10 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         LineError(sloc);
       }
     }
-    // Check to see whether we have declared something with this identifier before.
-    // Skip this duplicate declaration if necessary.
-    if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
-      if (args.getSilent() == false) {
-        errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-        LineError(sloc);
-      }
-      return "\n! Duplicate declaration of " + identifier + ", TYPEDEF , skipped. \n";
-    }
+    
 
+    // Check to make sure the identifier is not too lone
+    CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
     // Because names in typedefs may collide with the typedef name, 
     // suffixes are appended to the internal member of the typedef.
@@ -892,9 +979,29 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       errs() <<  "\nrenamed " << identifier << tf.getFortranTypeASString(false) << "\n";
       LineError(sloc);
     }
-    typdedef_buffer += "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
+    string to_add = "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
+    // Check for an illegal length. The \n character is the reason for the +1. It doesn't count
+    // towards line length.
+    CheckLength(to_add, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+    typdedef_buffer += to_add;
     typdedef_buffer += "END TYPE " + identifier + "\n";
   //  }
+    // Check to see whether we have declared something with this identifier before.
+    // Skip this duplicate declaration if necessary.
+    if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+      if (args.getSilent() == false) {
+        errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
+        LineError(sloc);
+      }
+      string temp_buf = typdedef_buffer;
+      typdedef_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
+      std::istringstream in(temp_buf);
+      // Loops through the buffer like a line-buffered stream and comments it out
+      for (std::string line; std::getline(in, line);) {
+        typdedef_buffer += "! " + line + "\n";
+      }
+      
+    }
   } 
   return typdedef_buffer;
 };
@@ -918,8 +1025,12 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) :
 // resut in serious problems if the enumeration is too large.
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
-  if (!isInSystemHeader) {  // I have no idea why this is here. It doesn't seem to be doing anything.
+  if (!isInSystemHeader) {  // Keeps definitions in system headers from leaking into the translation
     string enumName = enumDecl->getNameAsString();
+    // Check the length of the name to make sure it is valid Fortran
+    // Note that it would be impossible for this line to be an illegal length unless
+    // the variable name were hopelessly over the length limit.
+    CheckLength(enumName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     enum_buffer = "ENUM, BIND( C )\n";
     // enum_buffer += "    enumerator :: ";  // Removed when changes were made to allow unlimited enum length
     // Cycle through the pieces of the enum and translate them into fortran
@@ -935,7 +1046,20 @@ string EnumDeclFormatter::getFortranEnumASString() {
         }
       }
       int constVal = (*it)->getInitVal ().getExtValue ();  // Get the initialization value
-      enum_buffer += "    enumerator :: " + constName + "=" + to_string(constVal) + "\n";
+      // Check for a valid name length
+      CheckLength(constName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      // Problem! We have seen an identifier with this name before! Comment out the line
+      // and warn about it.
+      if (RecordDeclFormatter::StructAndTypedefGuard(constName) == false) { 
+        if (args.getSilent() == false) {
+          errs() << "Warning: skipping duplicate declaration of " << constName << ", enum member.\n";
+          LineError(sloc);
+        }
+        enum_buffer += "! Skipping duplicate identifier.";
+        enum_buffer +=  "    ! enumerator :: " + constName + "=" + to_string(constVal) + "\n";
+      } else {  // Otherwise, just add it on the buffer
+        enum_buffer += "    enumerator :: " + constName + "=" + to_string(constVal) + "\n";
+      }
     }
     // erase the redundant colon  // This erasing and adding back in of a newline is obsolete with the new format
     // enum_buffer.erase(enum_buffer.size()-2);
@@ -965,7 +1089,17 @@ string EnumDeclFormatter::getFortranEnumASString() {
         errs() << "Warning: skipping duplicate declaration of " << enumName << "\n";
         LineError(sloc);
       }
-      return "\n! Duplicate declaration of " + enumName + ", ENUM , skipped. \n";
+      // Comment out the declaration by stepping through and appending ! before newlines
+      // to avoid duplicate identifier collisions.
+      string temp_buf = enum_buffer;
+      enum_buffer = "\n! Duplicate declaration of " + enumName + ", ENUM, skipped.\n";
+      std::istringstream in(temp_buf);
+      for (std::string line; std::getline(in, line);) {
+        enum_buffer += "! " + line + "\n";
+      }
+      // Add in a few last details... and return to avoid having END ENUM pasted on the end
+      enum_buffer += "! END ENUM\n";
+      return(enum_buffer);
     }
 
     enum_buffer += "END ENUM\n";
@@ -1020,6 +1154,8 @@ string RecordDeclFormatter::getFortranFields() {
         }
         identifier = "h2m" + identifier;
       }
+      // Make sure that the field's identifier isn't too long for a fortran name
+      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
       fieldsInFortran += "    " + tf.getFortranTypeASString(true) + " :: " + identifier + "\n";
     }
@@ -1049,13 +1185,17 @@ string RecordDeclFormatter::getFortranStructASString() {
 
     if (mode == ID_ONLY) {
       string identifier = recordDecl->getNameAsString();
-      if (identifier.front() == '_') {  // Illegal underscore detected
+            if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
           LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
+      // line can be guaranteed not to be too long.
+      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+
 
       // Check to see whether we have declared something with this identifier before.
       // Skip this duplicate declaration if necessary.
@@ -1064,7 +1204,14 @@ string RecordDeclFormatter::getFortranStructASString() {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
           LineError(sloc);
         }
-        return "\n! Duplicate declaration of " + identifier + ", ID_ONLY struct, skipped. \n";
+        // Comment out the declaration by stepping through and appending ! before newlines
+        rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        std::istringstream in(temp_buf);
+        for (std::string line; std::getline(in, line);) {
+          rd_buffer += "! " + line + "\n";
+        }
+        return rd_buffer;
       }
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
@@ -1077,6 +1224,10 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
+      // line can be guaranteed not to be too long.
+      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+
 
       // Check to see whether we have declared something with this identifier before.
       // Skip this duplicate declaration if necessary.
@@ -1085,7 +1236,14 @@ string RecordDeclFormatter::getFortranStructASString() {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
           LineError(sloc);
         }
-        return "\n! Duplicate declaration of " + identifier + ", TAG_ONLY struct, skipped. \n";
+        // Comment out the declaration by stepping through and appending ! before newlines
+        rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        std::istringstream in(temp_buf);
+        for (std::string line; std::getline(in, line);) {
+          rd_buffer += "! " + line + "\n";
+        }
+        return rd_buffer;
       }
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
@@ -1098,6 +1256,10 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
+      // line can be guaranteed not to be too long.
+      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+
 
       // Check to see whether we have declared something with this identifier before.
       // Skip this duplicate declaration if necessary.
@@ -1106,7 +1268,14 @@ string RecordDeclFormatter::getFortranStructASString() {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
           LineError(sloc);
         }
-        return "\n! Duplicate declaration of " + identifier + ", ID_TAG struct, skipped. \n";
+        // Comment out the declaration so that it is present in the output file
+        rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        std::istringstream in(temp_buf);
+        for (std::string line; std::getline(in, line);) {
+          rd_buffer += "! " + line + "\n";
+        }
+        return rd_buffer;
       }
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
@@ -1119,6 +1288,10 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
+      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
+      // line can be guaranteed not to be too long.
+      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+
 
       // Check to see whether we have declared something with this identifier before.
       // Skip this duplicate declaration if necessary.
@@ -1127,11 +1300,20 @@ string RecordDeclFormatter::getFortranStructASString() {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
           LineError(sloc);
         }
-        return "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
+        // Comment out the declaration so that it is present in the output file
+        rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        std::istringstream in(temp_buf);
+        for (std::string line; std::getline(in, line);) {
+          rd_buffer += "! " + line + "\n";
+        }
+        return rd_buffer;
       }
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {
+      // Note that no length checking goes on here because there's no need. 
+      // This will all be commented out anyway.
       string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // Erase past all the spaces so that only the name remains (ie get rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
@@ -1146,13 +1328,13 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // We have previously seen a declaration with this name.
+      // We have previously seen a declaration with this name. This shouldn't be possible, so don't 
+      // worry about commenting it out. It's commented out anyway.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
           LineError(sloc);
         }
-        return "\n! Duplicate declaration of " + identifier + ", ANONYMOUS struct, skipped. \n";
       }
 
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
@@ -1171,9 +1353,9 @@ string RecordDeclFormatter::getFortranStructASString() {
   return rd_buffer;    
 };
 
-// Determines what sort of struct we are dealing with. I'm still
-// not entirely sure what the differences is because the only kind
-// I've ever run into is an ID_ONLY struct. I don't know what tag_name is.
+// Determines what sort of struct we are dealing with. The differences
+// are subtle. If you need to understand what these modes are, you will
+// have to play around with some structs. 
 void RecordDeclFormatter::setMode() {
   // int ANONYMOUS = 0;
   // int ID_ONLY = 1;
@@ -1314,11 +1496,17 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       //  LineError(sloc);
       // }
     }
+    // Check for a valid name length for the dummy variable.
+    CheckLength(pname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     
     CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
     // in some cases parameter doesn't have a name
-    paramsDecl += "    " + tf.getFortranTypeASString(true) + ", value" + " :: " + pname + "\n"; // need to handle the attribute later
-    index ++;
+    paramsDecl += "    " + tf.getFortranTypeASString(true) + ", value" + " :: " + pname + "\n";
+    // need to handle the attribute later - I don't know what this commment means
+    // Similarly, check the length of the declaration line to make sure it is valid Fortran.
+    // Note that the + 1 in length is to account for the newline character.
+    CheckLength(pname, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+    index++;
   }
   return paramsDecl;
 }
@@ -1391,19 +1579,23 @@ bool FunctionDeclFormatter::argLocValid() {
 // must also decide what sorts of iso_c_binding to use and relies
 // on an earlier defined function.
 string FunctionDeclFormatter::getFortranFunctDeclASString() {
-  string fortanFunctDecl;
+  string fortranFunctDecl;
   if (!isInSystemHeader and argLocValid()) {
     string funcType;
     string paramsString = getParamsTypesASString();
     string imports;
     if (!paramsString.empty()) {
-      imports = "    USE iso_c_binding, only: " + getParamsTypesASString() + "\n";
+      // CheckLength just returns the same string, but it will make sure the line is not too
+      // long for Fortran and it will warn if needed and not silenced.
+      imports = CheckLength("    USE iso_c_binding, only: " + getParamsTypesASString() + "\n",
+          CToFTypeFormatter::line_max, args.getSilent(), sloc);
     } else {
       imports = "    USE iso_c_binding\n";
     }
     imports +="    import\n";
     
     // check if the return type is void or not
+    // A void type means we create a subroutine. Otherwise a function is written.
     if (returnQType.getTypePtr()->isVoidType()) {
       funcType = "SUBROUTINE";
     } else {
@@ -1419,16 +1611,21 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
         LineError(sloc);
       }
     }
-    fortanFunctDecl = funcType + " " + funcname + "(" + getParamsNamesASString() + ")" + " bind (C)\n";
+    // Check to make sure the function's name isn't too long. Warn if necessary.
+    CheckLength(funcname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    // Check to make sure this declaration line isn't too long. It well might be.
+    fortranFunctDecl = CheckLength(funcType + " " + funcname + "(" + getParamsNamesASString() + 
+        ")" + " bind (C)\n", CToFTypeFormatter::line_max, args.getSilent(), sloc);
     
-    fortanFunctDecl += imports;
-    fortanFunctDecl += getParamsDeclASString();
+    fortranFunctDecl += imports;
+    fortranFunctDecl += getParamsDeclASString();
     // preserve the function body as comment
     if (funcDecl->hasBody()) {
       Stmt *stmt = funcDecl->getBody();
       clang::SourceManager &sm = rewriter.getSourceMgr();
       // comment out the entire function {!body...}
-      string bodyText = Lexer::getSourceText(CharSourceRange::getTokenRange(stmt->getSourceRange()), sm, LangOptions(), 0);
+      string bodyText = Lexer::getSourceText(CharSourceRange::getTokenRange(stmt->getSourceRange()),
+          sm, LangOptions(), 0);
       string commentedBody;
       std::istringstream in(bodyText);
       for (std::string line; std::getline(in, line);) {
@@ -1438,18 +1635,35 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
         }
         commentedBody += "! " + line + "\n";
       }
-      fortanFunctDecl += commentedBody;
+      fortranFunctDecl += commentedBody;
 
     }
     if (returnQType.getTypePtr()->isVoidType()) {
-      fortanFunctDecl += "END SUBROUTINE " + funcname + "\n\n";   
+      fortranFunctDecl += "END SUBROUTINE " + funcname + "\n\n";   
     } else {
-      fortanFunctDecl += "END FUNCTION " + funcname + "\n\n";
+      fortranFunctDecl += "END FUNCTION " + funcname + "\n\n";
+    }
+   
+    // The guard function checks for duplicate identifiers. This might 
+    // happen because C is case sensitive. It shouldn't happen often, but if
+    // it does, the duplicate declaration needs to be commented out.
+    if (RecordDeclFormatter::StructAndTypedefGuard(funcname) == false) { 
+      if (args.getSilent() == false) {
+        errs() << "Warning: duplicate declaration of " << funcname << ", FUNCTION, skipped.\n";
+        LineError(sloc);
+      }
+      string temp_buf = fortranFunctDecl;
+      fortranFunctDecl = "\n! Duplicate declaration of " + funcname + ", FUNCTION, skipped.\n";
+      std::istringstream in(temp_buf);
+      // Loops through the buffer like a line-buffered stream and comments it out
+      for (std::string line; std::getline(in, line);) {
+        fortranFunctDecl += "! " + line + "\n";
+      }
     }
     
   }
 
-  return fortanFunctDecl;
+  return fortranFunctDecl;
 };
 
 // -----------initializer MacroFormatter--------------------
@@ -1508,16 +1722,19 @@ bool MacroFormatter::isFunctionLike() {
 // to translate a macro, in which case the line must be commented out.
 string MacroFormatter::getFortranMacroASString() {
   string fortranMacro;
+  bool duplicateIdentifier = false;
+
   // If we are not in the main file, don't include this. Just
-  // return an empty string.
-  if (ci.getSourceManager().isInMainFile(md->getMacroInfo()->getDefinitionLoc()) == false) {
+  // return an empty string.  If the Together argument is specified, include it anyway.
+  if (ci.getSourceManager().isInMainFile(md->getMacroInfo()->getDefinitionLoc()) == false
+      && args.getTogether() == false) {
     return "";
   } 
-  if (!isInSystemHeader) {
+  if (!isInSystemHeader) {  // Keeps macros from system headers from bleeding into the file
     // remove all tabs
     macroVal.erase(std::remove(macroVal.begin(), macroVal.end(), '\t'), macroVal.end());
 
-    // handle object first
+    // handle object first, this means definitions of parameters of int, char, double... types
     if (isObjectLike()) {
       // analyze type
       if (!macroVal.empty()) {
@@ -1604,6 +1821,8 @@ string MacroFormatter::getFortranMacroASString() {
             fortranMacro += "! " + line + "\n";
           }
         }
+        // Check the length of the lines of all object like macros prepared.
+        CheckLength(fortranMacro, CToFTypeFormatter::line_max, args.getSilent(), sloc);
     } else { // macroVal.empty(), make the object a bool positive
       if (macroName[0] == '_') {
         if (args.getSilent() == false) {
@@ -1615,6 +1834,8 @@ string MacroFormatter::getFortranMacroASString() {
       } else {
         fortranMacro = "INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
       }
+      // Check the length of the lines of all the empty macros prepared.
+      CheckLength(fortranMacro, CToFTypeFormatter::line_max, args.getSilent(), sloc);
     }
 
 
@@ -1646,9 +1867,14 @@ string MacroFormatter::getFortranMacroASString() {
             fortranMacro += argname;
             fortranMacro += ", ";
           }
-          // erase the redundant colon
+                    // erase the redundant colon
           fortranMacro.erase(fortranMacro.size()-2);
           fortranMacro += ") bind (C)\n";
+          // Check that this line is not too long. Take into account the fact that the
+          // characters INTERFACE\n alleady at the begining take up 10 characters and the 
+          // newline just added uses another one.
+          CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
+
         }
         if (!functionBody.empty()) {  // Comment out the body of the function-like macro 
           std::istringstream in(functionBody);
@@ -1684,6 +1910,11 @@ string MacroFormatter::getFortranMacroASString() {
           // erase the redundant colon
           fortranMacro.erase(fortranMacro.size()-2);
           fortranMacro += ") bind (C)\n";
+          // Check that this line is not too long. Take into account the fact that the
+          // characters INTERFACE\n alleady at the begining take up 10 characters and the 
+          // newline just added uses another one.
+          CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
+
         }
         if (!functionBody.empty()) {
           std::istringstream in(functionBody);
@@ -1699,6 +1930,32 @@ string MacroFormatter::getFortranMacroASString() {
         fortranMacro += "END INTERFACE\n";
       }
     }
+
+    // Here checks for illegal name lengths and repeated names occur. It seemed best to do this
+    // in one place. I must surrender to the strange structure of this function already in place.
+    string temp_name;
+    if (macroName.front() == '_') {
+      temp_name = "h2m" + macroName;
+    } else {
+      temp_name = macroName;
+    }
+    // Check the name's length to make sure that it is valid
+    CheckLength(temp_name, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    // Now check to see if this is a repeated identifier. This is very uncommon but could occur.
+    if (RecordDeclFormatter::StructAndTypedefGuard(temp_name) == false) {
+      if (args.getSilent() == false) {
+        errs() << "Warning: skipping duplicate declaration of " << temp_name << ", macro definition.\n";
+        LineError(sloc);
+      }
+      string temp_buf = fortranMacro;  // Comment out all the lines using an istringstream
+      fortranMacro = "\n! Duplicate declaration of " + temp_name + ", MACRO, skipped.\n";
+      std::istringstream in(temp_buf);
+      for (std::string line; std::getline(in, line);) {
+        fortranMacro += "! " + line + "\n";
+      }
+    }
+    
+
   }
   return fortranMacro;
 };
