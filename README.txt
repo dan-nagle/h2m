@@ -68,6 +68,9 @@ with compatible licenses.
 2)   BUILD AND INSTALLATION
 
 General Information:
+LLVM and Clang are very demanding on compilers and libraries used
+to build them. A recent version of gcc or Clang is recommended for
+the build process.
 The utilities required to build and run h2m are: CMake (preferably
 a very recent version), LLVM, Clang, curl or wget (only if downloads
 of CMake, LLVM, and Clang are needed), bash, and standard unix utilities.
@@ -286,6 +289,12 @@ Often a clean download and build of LLVM and Clang can fix these problems.
 implementation. Release 4.0 is known to work, and this is the 
 default download URL. It is likely that releases after 4.0 will not
 work. 
+
+5. LLVM and Clang are extremely demanding on the compilers used to 
+build them. Later versions of gcc are known to work, as is another
+version of Clang, but icc will probably not work. See the Clang and
+LLVM websites for more information about troubleshooting their
+build processes. 
 
 3)   USAGE OF H2M
 

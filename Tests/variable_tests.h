@@ -14,3 +14,7 @@ bool my_bool;
 short my_short;
 
 long my_long;
+
+char my_char = 'a';
+
+char* my_car;

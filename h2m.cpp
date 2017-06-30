@@ -980,6 +980,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       LineError(sloc);
     }
     string to_add = "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
+    CheckLength(identifier + "_" + tf.getFortranTypeASString(false), CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Check for an illegal length. The \n character is the reason for the +1. It doesn't count
     // towards line length.
     CheckLength(to_add, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);

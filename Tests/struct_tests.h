@@ -14,7 +14,7 @@ struct y {
 
 typedef struct y struct_y;
 
-typedef y y;
+typedef struct y y;
 
 typedef struct z {
   int* place_holder;

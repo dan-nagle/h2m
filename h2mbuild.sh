@@ -69,8 +69,6 @@ CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
 install_h2m="no"
 INSTALL_H2M_DIR="/usr/local/bin"
 
-# Testing for features used within this script. Failures are fatal.
-which cmake>/dev/null || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
 
 
 # Process command line args via shift in a while loop
@@ -348,6 +346,9 @@ then
   then
     download_dir="$start_dir"/"$download_dir"  # Now we have an absolute path which Cmake needs!
   fi
+ 
+  # To provide more descriptive errors, a specific test for CMake is made.
+  which cmake>/dev/null || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
 
   if [ "$install_h2m" == "yes" ]  # If installation is requested, we must follow a different command 
   then
@@ -519,9 +520,10 @@ then
   cmake_command="$cmake_command -DINSTALL_PATH=$INSTALL_H2M_DIR" 
 fi
 
-# Attempt to execute the cmake commands to create h2m
-# echo "cmake command is $cmake_command"  # Debugging line
+# To provide more descriptive errors, a specific test for CMake is made.
+which cmake>/dev/null || error_report "Error: CMake is needed to build LLVM/Clang and h2m."
 
+# Attempt to execute the cmake commands to create h2m
 # The echo use is necessary to keep cmake from interpretting everything as the source directory
 cmake . `echo "$cmake_command" ` || exit 1
 make || exit 1

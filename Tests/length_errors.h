@@ -6,21 +6,42 @@
 #define this_macr_name_is_exactly_63_characters_long_thus_should_be_ok();
 
 
-int this_function_will_produce_lines_too_long_woe_is_us(int arg1, double arg2, void* arg3,
-    char arg4, char* arg5, int arg6);
+int this_function_will_produce_lines_too_long_woe_is_us(int argument1, double argument2, void* argument3,
+    char argument4, char* argument5, int argument6);
 
-void this_function_will_also_produce_lines_too_long_woe_is_us(int arg1, double arg2, void* arg3,
-    char arg4, char* arg5, int arg6);
+void this_function_will_also_produce_lines_too_long_woe_is_us(int argument1, double argumnet2, void* argument3,
+    char argument4, char* argument5, int argumnet6);
 
 int this_function_is_exactly_one_character_too_long_for_fortran_woe_();
 void this_subroutn_is_exactly_one_character_too_long_for_fortran_woe_();
 
 int this_is_not_a_fancy_function_but_you_notice_that_it_is_also_too_long_for_fortran;
-double but_this_one_should_be_just_barely_short_enough_to_be_accepted_
+double but_this_one_should_be_just_barely_short_enough_to_be_accepted_;
 
 double this_var_name_is_exactly_63_characters_long_thus_should_be_ok__;
 
 double this_func_name_is_exactly_63_characters_long_thus_should_be_ok_();
 
 void this_subr_name_is_exactly_63_characters_long_thus_should_be_ok();
+
+struct this_struct_name_is_exactly_one_character_too_long_for_fortran_{
+  int this_struct_fild_is_exactly_one_character_too_long_for_fortran_;
+} this_struct_vari_is_exactly_one_character_too_long_for_fortran;
+
+struct this_strct_name_is_exactly_63_characters_long_thus_should_be_ok{
+  int this_strct_fild_is_exactly_63_characters_long_thus_should_be_ok;
+} this_strct_vari_is_exactly_63_characters_long_thus_should_be_ok;
+
+typedef int this_typdef_name_is_exactly_one_character_too_long_for_fortran;
+
+typedef int this_typdf_name_is_exactly_63_characters_long_thus_should;
+
+enum this_enum_name_is_exactly_one_character_too_long_for_fortran____{
+  this_enum_vari_is_exactly_one_character_too_long_for_fortran____
+};
+
+enum this_enum_name_is_exactly_63_characters_long_thus_should_be_ok{
+  this_enum_vari_is_exactly_63_characters_long_thus_should_be_ok;
+};
+
 
