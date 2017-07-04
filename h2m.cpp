@@ -797,7 +797,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             }
           } else {
                 //INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/))
-            arrayDecl += tf.getFortranTypeASString(true)+" :: "+ varDecl->getNameAsString() +"("+arrayShapes_fin+")"+" = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
+            arrayDecl += tf.getFortranTypeASString(true)+", BIND(C) :: "+ varDecl->getNameAsString() +"("+arrayShapes_fin+")"+" = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
 
           }
         }
