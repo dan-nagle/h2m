@@ -5,9 +5,10 @@ Contents:
   0) Quick Start
   1) Introduction and Credits
   2) Build and Installation
-     General information
-     Usage of the h2mbuild.sh script
-     Building h2m without the script
+     General Information
+     Usage of the h2mbuild.sh Script
+     Building h2m on Supercomputers
+     Building h2m Without the Script
      Troubleshooting
   3) Usage of h2m
      Behavior
@@ -205,16 +206,68 @@ h2m binary to a specified directory. The default destination is
 to install the h2m binary. A path relative to the current directory
 can be supplied, but an absoulte path is recommended.
 
+Building h2m On Supercomputers:
+
+The h2mbuild.sh script and CMakeLists.txt script should ideally run on 
+supercomputers exactly as described throughout this section.
+However, in practice it may be much more difficult to build h2m on a
+supercomputer. This section contains some special advice for this
+more complicated build process.
+
+1. Minimize libraries that might accidentally be linked into a build
+This will likely mean unloading all the modules that are not 
+absolutely necessary to build h2m (probably meaning compiler packages and
+cmake). If the system where the build is being attempted does not use 
+modules, more complicated and individualized methods for avoiding
+the inclusion of bad library references into a build may be necessary.
+Every effort should be made to keep the linker from adding improper
+references. If the build ends with a warning about a missing .so
+library or h2m fails to execute because the dynamic linker cannot
+resolve references to a library, a bad reference has probably been
+introduced into the build of LLVM or Clang. The build process will
+need to be restarted (the build with the bad reference is useless)
+and additional efforts to keep bad libraries out of the build will
+be necessary.
+
+2. Check the available compilers and versions
+LLVM and Clang are extremely demanding of the compilers that build them.
+Recent versions of gcc and Clang compilers should be acceptable. Check
+the LLVM website to make sure that the compiler available is not one
+of those known to contain a bug resulting in build failure. No version
+of the Intel C compiler is likely to correctly build LLVM and Clang
+and it should never be used.
+
+3. Check the compiler found by CMake
+If there are several compilers available, CMake may choose the wrong one.
+CMake should inform you of the compiler and version used as it begins
+the build process. Make sure it is the compiler you want it to use. If
+CMake chooses the wrong compiler, unload the unwanted compiler's module,
+change the path variable, or build Clang and LLVM manually, specifying
+the desired compiler. You will need to refer to LLVM build instructions
+and CMake documentation to do this.
+
+4. Build in pieces if errors occur
+It may be necessary to build CMake, Clang and LLVM, and h2m seperately
+due to complicated problems building the large projects. Troubleshooting
+advice fromt the LLVM and CMake websites should be helpful. The
+h2mbuild.sh script can then be used to build h2m or CMake can be
+used directly, specifying the directories to search for the CMake config
+files as specified above. Running CMake directly allows greater
+control and special options and variables (if needed) can be specified.
+
+
 Building h2m Without the Script:
 
 It is absolutely necessary to have CMake installed to build h2m, but 
 the script is not necessarilly needed. To build h2m without the script,
 follow these steps.
 
-0.5). Download and Build CMake
+0.5). Download and Build (or update) CMake
 CMake releases can be downloaded from https://cmake.org/download.
 Build and installation instructions for CMake can be found at 
-https://cmake.org/install.
+https://cmake.org/install. If an older version of cmake (prior to 3.2)
+is installed, it will need to be updated. Reference the CMake website
+for instructions on updating to the latest version.
 
 1). Download and Build Clang/LLVM
 LLVM and Clang can be downloaded fron releases.llvm.org.
@@ -272,6 +325,8 @@ Troubleshooting
 1. It can cause problems if an older version of Clang or LLVM is
 used with a newer version of the other. Check to make sure there
 is not a mismatch between versions if linker errors are seen.
+This advice only applies when Clang and LLVM were already available
+on the computer used.
 
 2. Multiple copies of some files exist within the LLVM/Clang
 build tree. Make sure, if manual paths are specified, that the directory
@@ -291,10 +346,25 @@ default download URL. It is likely that releases after 4.0 will not
 work. 
 
 5. LLVM and Clang are extremely demanding on the compilers used to 
-build them. Later versions of gcc are known to work, as is another
-version of Clang, but icc will probably not work. See the Clang and
+build them. Later versions of gcc are known to work, as are other
+versions of Clang, but icc will probably not work. See the Clang and
 LLVM websites for more information about troubleshooting their
 build processes. 
+
+6. Make sure that the compiler you think is being used to build LLVM
+and Clang is actually the compiler found by CMake. Alteration of 
+search paths or manual builds explicitly specifying the compiler,
+may be necessary. CMake should specify the found compiler and 
+version as it begins the build process.
+
+7. Always build h2m and Clang/LLVM with the same version of the
+same compiler. Bad library references can cause problems if this
+is not done.
+
+8. If there are syntax errors while attempting to run the h2mbuild.sh
+script, make sure that either bash, ksh, or zsh is being used to
+run the script. The build script was written to be run in bash
+and bash should be used if it is available.
 
 3)   USAGE OF H2M
 
@@ -308,7 +378,7 @@ BEHAVIOR
 
 The h2m autofortran tool will attempt to translate struct, function, macros, enum,
 and variable declarations. It is not designed to translate complex program code. For
-example, if a function definition is provided, it will be commented out in
+example, if a function definition is provided, it will be commented out in Fortran.
 Untranslatable features will be commented out. Invalid names begining with an underscore
 will be prefixed with 'h2m' to create a valid name.
 Warnings about invalid names or commented out lines will be printed to standard error
@@ -330,7 +400,8 @@ when translating in this way.
 Errors: In the case of some errors, the program will terminate and the output file
 will be deleted. Most, however, are expected to be minor and processing will
 continue. For example, many errors raised by Clang as it processes header files are
-completely irrelevant to h2m.
+completely irrelevant to h2m. To make sure that the output file is kept despite
+any errors, use the -keep-going or -k option.
 
 Module Names: The base file name is prepended with "module_" to create a name
 for the fortran module generated from each file. If identically named header 
@@ -338,14 +409,18 @@ files are found during recursive inclusion, a suffix of _[number of repetition]
 will be appended to create a unique module name.
 
 Macros: Because fortran has no equivalent to the C macro, macros are traslated
-into functions. However, because types often cannot be determined for macros,
+approximately. However, because types often cannot be determined for macros,
 a translation attempt may fail. In this case, the line will be commented out
 and a warning will be printed to standard error. These warnings can be silenced
-with the -q or -s option.
+with the -q or -s option. Macros will be translated into functions, subroutines,
+or parameters as most appropriate.
 
 Enumerated Types: An enumerated type of arbitrary length can be translated. Because
 Fortran enums do not have their own scope as C enums do, the enumerator's name will
-become a member of the enumerated type with an unspecified value. 
+become a member of the enumerated type with an unspecified value. This will prevent
+exact interoperability (the sizes will not be identical) and user intervention
+will be required.
+#TODO: FIND OUT IF THIS ACTUALLY SUPPORTS INTEROP
 
 Typedefs: There is no Fortran type interoperable with a typedef. All typedefs will
 be translated into Fortran TYPE definitions containing exactly one field. This field
@@ -356,11 +431,14 @@ TYPE, BIND(C) :: my_int
   my_int_C_INT
 END TYPE my_int
 
-Other Conflicting Names: The h2m tool is not capable of finding all name conflicts.
-Most name conflicts will have to be fixed manually by the programmer, either by
-modifying a name or by modifying a USE statement to a USE ONLY statement to exclude
-conflicting symbols. However, h2m will usually notice when a typedef statement would
-conflict with the name of an existing struct. For example:
+Other Conflicting Names: The h2m tool attempts to find name conflicts as it 
+translates code. It will raise warnings about conflicting names and coment
+out the identifier causing the name conflict. However, h2m may not catch
+all conflicts, in which case compiler errors will occur. Name conflicts will have
+to be fixed manually by the programmer, either by modifying a name or by 
+modifying a USE statement to a USE ONLY statement to exclude conflicting symbols.
+However, h2m should notice when a typedef statement would conflict with the 
+name of an existing struct. For example:
 
 struct my_struct {
   int x;
@@ -372,16 +450,31 @@ with the name of my_struct because Fortran has no equivalent to C struct tag nam
 The second structure definition would be a useless repetition and cause an error in
 Fortran, thus h2m will print a warning and not translate the typedef.
 
+Another cause of name conflicts is capitalization. C is case sensitive and Fortran
+is not. Though h2m should catch and warn about such conflicts, the user
+must manually change names to address the problem.
+
+In all cases, comments in the code should point out the problem.
+
+
 Names Begining With "_": Names will be prepended with h2m in order to create
 a legal identifier. Warnings will be printed to standard error when a name is
-changed.
+changed. A user must change names in the C files to allow interoperability.
 
 Unrecognized Types: When h2m does not recognize a type in a header, it will print a
 warning about the problem and surround the questionably translated text with 
-unrecognized_type(...) in the output.
+unrecognized_type(...) in the output. This should only happen with (void) types
+for which there is no Fortran equivalent.
 
 Unions: There is no Fortran type interoperable with a union. A union will be translated
 into a TYPE definition in Fortran, but this translated TYPE is not interoperable.
+
+Name and Line Lengths Exceeding Maximum:
+Though C has no limits on line and name lengths, Fortran does. Though h2m can detect
+line length problems and warn about them, it is not able to address these issues
+which may require continuing lines with the "&" symbol. This often occurs during
+very long function declarations or during translations of typedefs where appending
+the type to the fiend in the generated structure increases its length.
 
 
 OPTIONS:
@@ -479,9 +572,12 @@ that there is necessarilly something wrong with the code in question.
 
 Name conflicts occur quite frequently becaus C has different scoping rules than fortran.
 Compiler errors such as 'Error: Symbol [symbol] cannot have a type' are likely due to 
-name conflicts between function or type names. These name conflicts typically lead to 
-cascades of closely following but seemingly unrelated errors.
+name conflicts between module and function or type names. These name conflicts typically
+lead to cascades of closely following but seemingly unrelated errors.
 
 Typedefs defining 'void' will cause undefined type errors. Fortran has no reasonable
 translation for a 'void' type and h2m cannot handle it.
+
+If Clang runs into an error pragma (#error) during preprocessing, an error will be
+raised.
 

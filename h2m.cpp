@@ -708,6 +708,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 // must be declared and initialization carried out if necessary.
 string VarDeclFormatter::getFortranArrayDeclASString() {
   string arrayDecl = "";
+  // This keeps system header pieces from leaking into the translation
   if (varDecl->getType().getTypePtr()->isArrayType() and !isInSystemHeader) {
     CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
   
@@ -716,12 +717,16 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     CheckLength(temp_id, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Check to see whether we have seen this identifier before. If need be, comment
     // out the duplicate declaration.
-    if (RecordDeclFormatter::StructAndTypedefGuard(temp_id) == false) {
+    // We need to strip off the (###) for the test or we will end up testing
+    // for a repeat of the variable n(4) rather than n if the name is n
+    string truncated_id;
+    truncated_id = temp_id.substr(0, temp_id.find_first_of("("));
+    if (RecordDeclFormatter::StructAndTypedefGuard(truncated_id) == false) {
       if (args.getSilent() == false) {
-        errs() << "Warning: skipping duplicate declaration of " << temp_id << ", array declaration.\n";
+        errs() << "Warning: skipping duplicate declaration of " << truncated_id << ", array declaration.\n";
         LineError(sloc);
       }
-      arrayDecl = "! Skipping duplicate declaration of " + temp_id + "\n!";
+      arrayDecl = "! Skipping duplicate declaration of " + truncated_id + "\n!";
     }
 
     if (!varDecl->hasInit()) {
@@ -917,13 +922,12 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       }
     }
     
+    // Identifier may be initialized to "". This will cause no harm.
+    CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    // As we check for valid fortran name and line lengths, we add one to account for the
+    // presence of the newline character.
+    CheckLength(vd_buffer, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
   }
-
-  // Identifier may be initialized to "". This will cause no harm.
-  CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
-  // As we check for valid fortran name and line lengths, we add one to account for the
-  // presence of the newline character.
-  CheckLength(vd_buffer, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
   return vd_buffer;
 };
 

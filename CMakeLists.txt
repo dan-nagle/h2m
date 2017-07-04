@@ -35,9 +35,11 @@ elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all m
   message(STATUS "Using LLVM libs in ${LLVM_LIB_PATH}")
   message(STATUS "USING LLVM includes in ${LLVM_INCLUDE_PATH}")
 
+  # These are a best guess at the needed definitions. They are meant for version 4.0.
   add_definitions(-DLLVM_BUILD_GLOBAL_ISEL -D_DEBUG -D__STDC_CONSTANT_MACROS -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS)
   include_directories(${LLVM_INCLUDE_PATH})
   # These are all the libraries that could possibly be needed. Chances are only a few actually are needed
+  # but without the LLVM config file I have no idea.
   set(LLVM_include_libs LLVMLTO LLVMPasses LLVMObjCARCOpts LLVMMIRParser LLVMSymbolize LLVMDebugInfoPDB
      LLVMDebugInfoDWARF LLVMCoverage LLVMTableGen LLVMOrcJIT LLVMXCoreDisassembler LLVMXCoreCodeGen 
      LLVMXCoreDesc LLVMXCoreInfo LLVMXCoreAsmPrinter LLVMSystemZDisassembler LLVMSystemZCodeGen 
@@ -127,10 +129,10 @@ endif()
 # All Clang projects MUST be compiled with hidden visibility and no rtti, the same way Clang is compiled.
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11 -fno-rtti -fvisibility=hidden -fvisibility-inlines-hidden")
 
-# get_property(included DIRECTORY PROPERTY INCLUDE_DIRECTORIES) # Debugging message
+# get_property(included DIRECTORY PROPERTY INCLUDE_DIRECTORIES) # Debugging message to see included directories
 # message(STATUS ${included})
 
-# CMake will take care of local include files
+# CMake will take care of local include files (and the non-locals now that they are specified)
 add_executable(h2m h2m.cpp)
 
 # Find and map all the given clang libraries and link them to the executable
@@ -147,7 +149,7 @@ foreach(lib ${link_clang_libs})
     set_property(TARGET ${lib} PROPERTY IMPORTED_LOCATION ${found_${lib}})
     target_link_libraries(h2m "${lib}")
   else()
-    message(WARNING "Unable to locate clang library, ${lib}")
+    message(WARNING "Unable to locate clang library, ${lib}")  # Let people know what's wrong.
     message(STATUS "Searched ${CLANG_LIB_PATH}/lib${lib}.a")
   endif()
 endforeach()
