@@ -713,14 +713,16 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
   
     string temp_id = tf.getFortranIdASString(varDecl->getNameAsString());
+
     // Check for an illegal name length. Warn if it exists.
-    CheckLength(temp_id, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    string truncated_id;
+    truncated_id = temp_id.substr(0, temp_id.find_first_of("("));
+    CheckLength(truncated_id, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Check to see whether we have seen this identifier before. If need be, comment
     // out the duplicate declaration.
     // We need to strip off the (###) for the test or we will end up testing
     // for a repeat of the variable n(4) rather than n if the name is n
-    string truncated_id;
-    truncated_id = temp_id.substr(0, temp_id.find_first_of("("));
+
     if (RecordDeclFormatter::StructAndTypedefGuard(truncated_id) == false) {
       if (args.getSilent() == false) {
         errs() << "Warning: skipping duplicate declaration of " << truncated_id << ", array declaration.\n";
@@ -731,7 +733,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
     if (!varDecl->hasInit()) {
       // only declared, no initialization of the array takes place
-      arrayDecl += tf.getFortranTypeASString(true) + ", public :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
     } else {
       // has init
       const ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
@@ -741,7 +743,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
         Expr *exp = varDecl->getInit();
         string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (),
             varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
-        arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public :: " +
+        arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public, BIND(C) :: " +
             tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + arrayText + "\n";
       } else {
         bool evaluatable = false;
@@ -782,7 +784,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             }
           } //<--end iteration (one pass through the array elements)
           if (!evaluatable) {
-            string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(varDecl->getSourceRange()), rewriter.getSourceMgr(), LangOptions(), 0);
+            string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(varDecl->getSourceRange()),
+                rewriter.getSourceMgr(), LangOptions(), 0);
                 // comment out arrayText
             std::istringstream in(arrayText);
             for (std::string line; std::getline(in, line);) {
@@ -830,7 +833,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // Create a structure defined in the module file.
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
-      vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + "\n";
+      vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + "\n";
 
       // The following are checks for potentially illegal characters which might be
       // at the begining of the anonymous types. These types must be commented out.
@@ -873,11 +876,12 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // Detrmine the state of the declaration. Is there something declared? Is it commented out?
       // Create the declaration in correspondence with this.
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + "\n";
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + " " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + " " + value + "\n";
       } else {
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
+        // TODO: DETERMINE WHETHER OR NOT THE BIND(C) SHOULD BE HERE FOR THE PARAMETER
+        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public, BIND(C) :: " + identifier + " = " + value + "\n";
       }
       // We have seen something with this name before. This will be a problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
@@ -904,11 +908,11 @@ string VarDeclFormatter::getFortranVarDeclASString() {
          identifier = "h2m" + identifier;
       } 
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + "\n";
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public :: " + identifier + " " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + " " + value + "\n";
       } else {
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public, BIND(C) :: " + identifier + " = " + value + "\n";
       }
       // We have seen something with this name before. This will be a problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {

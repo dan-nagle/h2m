@@ -1,6 +1,6 @@
 #include "example.h"
 
-// Use the common forumlate pi*r^2 to calculate
+// Use the common forumla pi*r^2 to calculate
 // the area of a cirle struct.
 double calculate_area(struct circle shape) {
   double area;

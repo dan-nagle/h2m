@@ -539,8 +539,9 @@ and websites should be used as a reference for these options.
 
 EXAMPLE
 
-The Example directory contains a small tutorial script which demonstrates the use of
-h2m. This section will very briefly summarize the use of h2m for mixed programming.
+The Example directory contains several subdirectories containing useful h2m examples.
+The first directory, Example_1, contains a small script which will provide a short
+tutorial. The following section summarizes the process the script preforms.
 
 Step 1: Translate the desired header file from C to Fortran using h2m:
 h2m -out=module_header.f90 ./header.h
@@ -579,5 +580,14 @@ Typedefs defining 'void' will cause undefined type errors. Fortran has no reason
 translation for a 'void' type and h2m cannot handle it.
 
 If Clang runs into an error pragma (#error) during preprocessing, an error will be
-raised.
+raised. This is unavoidable.
 
+It can cause problems if compilers from different vendors are used to compile the C
+and Fortran code pieces intended for a mixed-language executable. For example, using
+icc for the C code and gfortran for the Fortran code is not advisable. It might not
+cause problems, but it also might. If you use gcc for the C code, use gfortran for
+the Fortran code. Likewise, if you use icc for the C code, use ifort for the Fortran
+code.
+
+Multidimensional arrays are not translated properly by h2m. It will be necessary
+to adjust their dimensions by hand to support interoperability.

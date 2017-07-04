@@ -9,3 +9,13 @@ char my_char_array[2] = {'a', 'b'};
 
 char my_literal_char[] = "Literal string";
 
+// This causes a problem because it is not 
+// initialzied and Clang doesn't seem to 
+// provide the ability to determine the
+// dimension.
+int my_2d_array[4][4];
+
+int my_other_2d_array[1][2] = {'a', 'b'};
+
+int my_array[];
+

@@ -157,9 +157,12 @@ then
 elif [ -f ../h2m ]
 then
   h2m_command="../h2m"
+elif [ -f ../../h2m ]
+then
+  h2m_command="../h2m"
 else  # We didn't find it. Beg for help
   echo "Autodetection of h2m has not succeeded. To continue, please provide"
-  echo "the command necessary to launch the h2m executable (ie ../../h2m)"
+  echo "the command necessary to launch the h2m executable (ie ../../bin/h2m)"
   echo "Provide an empty response to exit."
   read h2m_command
   if [ "$h2m_command" == "" ]  # The user gave an empty response. Exit.
