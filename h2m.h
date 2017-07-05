@@ -208,7 +208,8 @@ public:
   // Arrays are special and complicated. They must be
   // handled seperately.
   string getFortranArrayDeclASString();
-  void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues, string arrayShapes, bool &evaluatable, bool firstEle);
+  void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues, string arrayShapes,
+      bool &evaluatable, bool firstEle, bool is_char);
 
 private:
   Rewriter &rewriter;

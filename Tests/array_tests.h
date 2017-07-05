@@ -7,11 +7,18 @@ double* my_double_array[200];
 
 char my_char_array[2] = {'a', 'b'};
 
+char my_other_char_array[2][3] =  	{ 
+  {'a', 'b', 'c'},
+  {'c', 'd', 'e'}
+};
+
 char my_literal_char[] = "Literal string";
 
 int my_2d_array[4][4];
 
 int my_other_2d_array[1][2] = {'a', 'b'};
+
+double my_2d_double_array[2][2] = {{2.5, -1.3}, {0, 5.3}};
 
 double my_3d_array[3][5][8];
 

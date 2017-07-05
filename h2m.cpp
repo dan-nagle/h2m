@@ -718,13 +718,24 @@ string VarDeclFormatter::getInitValueASString() {
 
 // This function fetches the type and name of an array element through the 
 // ast context. It then evaluates the elements and returns their values.
+// Special care must be taken to convert a char array into chars rather than
+// integers (the is_char variable sees to this). Note that the strings are
+// passed in by reference so that their values can be assembled in this helper.
+// The "shapes" are the array dimensions (ie (2, 4, 2)). 
 void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
-    string arrayShapes, bool &evaluatable, bool firstEle) {
+    string arrayShapes, bool &evaluatable, bool firstEle, bool is_char) {
   ArrayRef<Expr *> innerElements = ile->inits ();
+  // Assembles the shape of the array to be used
   if (firstEle) {
     size_t numOfInnerEle = innerElements.size();
-    arrayShapes += ", " + to_string(numOfInnerEle);
-    arrayShapes_fin = arrayShapes;
+    // Reverse the index if necessary by putting this size parameter at the front
+    if (args.getArrayTranspose() == true) {
+      arrayShapes = to_string(numOfInnerEle) + ", " + arrayShapes;
+      arrayShapes_fin = arrayShapes;
+    } else {
+      arrayShapes += ", " + to_string(numOfInnerEle);
+      arrayShapes_fin = arrayShapes;
+    }
   }
   // Finds AST context for each array element
   for (auto it = innerElements.begin (); it != innerElements.end(); it++) {
@@ -734,6 +745,17 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
       clang::Expr::EvalResult r;
       innerelement->EvaluateAsRValue(r, varDecl->getASTContext());
       string eleVal = r.Val.getAsString(varDecl->getASTContext(), innerelement->getType());
+      // We must convert this integer string into a char. This is annoying.
+      if (is_char == true) {
+        // This will throw an exception if it fails.
+        int temp_val = std::stoi(eleVal);
+        char temp_char = static_cast<char>(temp_val);
+        // Put the character into place and surround it by quotes
+        eleVal = "'";
+        eleVal += temp_char;
+        eleVal += "'";
+      }
+
       if (arrayValues.empty()) {
         arrayValues = eleVal;
       } else {
@@ -742,8 +764,16 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
     // Recursively calls to find the smallest element of the array
     } else if (isa<InitListExpr> (innerelement)) {
       InitListExpr *innerile = cast<InitListExpr> (innerelement);
-      getFortranArrayEleASString(innerile, arrayValues, arrayShapes, evaluatable, (it == innerElements.begin()) and firstEle);
+      getFortranArrayEleASString(innerile, arrayValues, arrayShapes, evaluatable,
+          (it == innerElements.begin()) and firstEle, is_char);
     } 
+  }
+
+  // We have inadvertently added an extra " ," to the front of this
+  // string during our reversed iteration through the length. This
+  // little erasure takes care of that.
+  if (args.getArrayTranspose() == true) {
+    arrayShapes.erase(arrayShapes.begin(), arrayShapes.begin() + 2);
   }
 };
 
@@ -765,11 +795,12 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     // Check to see whether we have seen this identifier before. If need be, comment
     // out the duplicate declaration.
     // We need to strip off the (###) for the test or we will end up testing
-    // for a repeat of the variable n(4) rather than n if the name is n
+    // for a repeat of the variable n(4) rather than n if the decl is int n[4];
 
     if (RecordDeclFormatter::StructAndTypedefGuard(truncated_id) == false) {
       if (args.getSilent() == false) {
-        errs() << "Warning: skipping duplicate declaration of " << truncated_id << ", array declaration.\n";
+        errs() << "Warning: skipping duplicate declaration of " << truncated_id;
+        errs() << ", array declaration.\n";
         LineError(sloc);
       }
       arrayDecl = "! Skipping duplicate declaration of " + truncated_id + "\n!";
@@ -777,16 +808,20 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
     if (!varDecl->hasInit()) {
       // only declared, no initialization of the array takes place
-      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C) :: ";
+      arrayDecl += tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
     } else {
       // The array is declared and initialized.
       const ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
       QualType e_qualType = at->getElementType ();
       Expr *exp = varDecl->getInit();
+      // Whether this is a char array or not will have to be checked several times.
+      // This checks whether or not the "innermost" type is a char type.
+      bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
       string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc(),
             varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
      // A char array might not be a string literal. A leading { character indicates this case.
-     if (e_qualType.getTypePtr()->isCharType() && arrayText.front() != '{') {
+     if (isChar == true && arrayText.front() != '{') {
         // handle stringliteral case
         // A parameter may not have a bind(c) attribute
         arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public :: " +
@@ -809,14 +844,29 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             Expr *element = (*it);
             if (isa<InitListExpr> (element)) {
               // multidimensional array
-              InitListExpr *innerIle = cast<InitListExpr> (element);
-              getFortranArrayEleASString(innerIle, arrayValues, arrayShapes, evaluatable, it == elements.begin());
+              InitListExpr *innerIle = cast<InitListExpr>(element);
+              // This function will recursively find the dimensions. The arrayValues and
+              // arrayShapes are initialized in the function.
+              getFortranArrayEleASString(innerIle, arrayValues, arrayShapes, evaluatable,
+                  it == elements.begin(), isChar);
             } else {
-              if (element->isEvaluatable (varDecl->getASTContext())) {
+              if (element->isEvaluatable(varDecl->getASTContext())) {
                 // one dimensional array
                 clang::Expr::EvalResult r;
                 element->EvaluateAsRValue(r, varDecl->getASTContext());
                 string eleVal = r.Val.getAsString(varDecl->getASTContext(), e_qualType);
+
+                // In the case of a char array initalized ie {'a', 'b',...} we require a 
+                // check and a conversion of the int value produced into a char value which
+                // is valid in a Fortran character array.
+                if (isChar == true) {
+                  // On a failed conversion, this throws an exception. That shouldn't happen.
+                  int temp_val = std::stoi(eleVal);
+                  char temp_char = static_cast<char>(temp_val);
+                  eleVal = "'";
+                  eleVal += temp_char;
+                  eleVal += "'";
+                }
 
                 if (it == elements.begin()) {
                   // first element
@@ -830,6 +880,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             }
           } //<--end iteration (one pass through the array elements)
           if (!evaluatable) {
+            // We can't translate this array because we can't evaluate its values to
+           // get fortran equivalents. We comment out the declaration.
             string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(varDecl->getSourceRange()),
                 rewriter.getSourceMgr(), LangOptions(), 0);
                 // comment out arrayText
@@ -851,8 +903,9 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     }
   }
   // Check for lines which exceed the Fortran maximum. The helper will warn
-  // if they are found and Silent is false.
-  CheckLength(arrayDecl, CToFTypeFormatter::line_max, args.getSilent(), sloc);
+  // if they are found and Silent is false. The +1 is because of the newline character
+  // which doesn't count towards line length.
+  CheckLength(arrayDecl, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
 
   return arrayDecl;
 };
@@ -2188,7 +2241,7 @@ int main(int argc, const char **argv) {
     // Parse the command line options and create a new database to hold the Clang compilation
     // options.
     cl::HideUnrelatedOptions(h2mOpts); // This hides all the annoying clang options in help output
-    cl::ParseCommandLineOptions(argc, argv, "h2m Autofortran tool\n");
+    cl::ParseCommandLineOptions(argc, argv, "h2m Autofortran Tool\n");
     std::unique_ptr<CompilationDatabase> Compilations;
     SmallString<256> PathBuf;
     sys::fs::current_path(PathBuf);
@@ -2231,6 +2284,11 @@ int main(int argc, const char **argv) {
     // Create a new clang tool to be used to run the frontend actions
     ClangTool Tool(*Compilations, SourcePaths);
     int tool_errors = 0;  // No errors have occurred running the tool yet
+
+
+    // Write some initial text into the file, just boilerplate stuff.
+    OutputFile.os() << "! The following Fortran code was generated by the h2m-Autofortran ";
+    OutputFile.os() << "Tool.\n! See the h2m README file for credits and help information.\n\n";
 
     // Follow the preprocessor's inclusions to generate a recursive 
     // order of hearders to be translated and linked by "USE" statements

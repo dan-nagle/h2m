@@ -9,3 +9,7 @@ h2m
 cmake_install.cmake
 minitest.sh
 install_manifest.txt
+*.swp
+*.mod
+*.gch
+*temp*
