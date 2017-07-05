@@ -149,8 +149,14 @@ static cl::alias Compiler2("c", cl::desc("Alias for -compile"), cl::cat(h2mOpts)
 static cl::opt<bool> Together("together", cl::cat(h2mOpts), cl::desc("Send this entire file and all non-system includes to one module"));
 static cl::alias Together2("t", cl::cat(h2mOpts), cl::desc("Alias for -together"), cl::aliasopt(Together));
 
+// Option to transpose arrays to match Fortran dimensions (C row major
+// ordering is swapped for Fortran column major ordering).
+static cl::opt<bool> Transpose("array-transpose", cl::cat(h2mOpts), cl::desc("Transpose array dimensions"));
+static cl::alias Transpose2("a", cl::cat(h2mOpts), cl::desc("Alias for array-transpose"), cl::aliasopt(Transpose));
+
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
+
 
 
 // -----------initializer RecordDeclFormatter--------------------
@@ -185,13 +191,50 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
 string CToFTypeFormatter::getFortranIdASString(string raw_id) {
   // Determine if it needs to be substituted out
   if (c_qualType.getTypePtr()->isArrayType()) {
-    const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
-    QualType e_qualType = at->getElementType ();
-    int typeSize = ac.getTypeSizeInChars(c_qualType).getQuantity();
-    int elementSize = ac.getTypeSizeInChars(e_qualType).getQuantity();
-    int numOfEle = typeSize / elementSize;
-    string arr_suffix = "(" + to_string(numOfEle) + ")";
-    raw_id += arr_suffix;
+    // In this case, the array bounds are fixed and we can determine the
+    // exact dimensions of the declared array.
+    if (c_qualType.getTypePtr()->isConstantArrayType()) {
+      QualType element_type = c_qualType;  // Element type of the array for looping.
+      std::stack<string> dimensions;  // Holds dimensions so they can be reversed
+      raw_id += "(";
+      // Loop through the array's dimensions, pulling off layers by fetching
+      // the element types and getting their array information.
+      while (element_type.getTypePtr()->isConstantArrayType()) {
+        const ConstantArrayType *cat = ac.getAsConstantArrayType(element_type);
+        // Note that the getSize() function returns an arbitrary precision integer
+        // and a toString method needs the radix (10) and signed status (true).
+        // This if statement either prepares a stack to reverse the
+        // dimensions of the array (if requested) or else adds them
+        // into place without reversal
+        if (args.getArrayTranspose() == true) {
+          dimensions.push(cat->getSize().toString(10, true));
+        } else {
+          raw_id += cat->getSize().toString(10, true) + ", ";
+        }
+        element_type = cat->getElementType();
+        cat = ac.getAsConstantArrayType(element_type);
+      }
+      // Build up the raw ID from the stack, reversing array dimensions      // if requested and the stack was built
+      if (args.getArrayTranspose() == true) {
+        while (dimensions.empty() == false) {
+          raw_id += dimensions.top() + ", ";
+          dimensions.pop(); 
+        }
+      }
+      // Close the Fortran array declaration
+      // First, we erase the extra space and comma from the last loop iteration
+      raw_id.erase(raw_id.end() - 2, raw_id.end());
+      raw_id += ")";
+    } else {  // This is not necessarilly a constant length array.
+      // Only single dimension arrays are handled correctly here.
+      const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
+      QualType e_qualType = at->getElementType ();
+      int typeSize = ac.getTypeSizeInChars(c_qualType).getQuantity();
+      int elementSize = ac.getTypeSizeInChars(e_qualType).getQuantity();
+      int numOfEle = typeSize / elementSize;
+      string arr_suffix = "(" + to_string(numOfEle) + ")";
+      raw_id += arr_suffix;
+    }
   }
   return raw_id;
 };
@@ -674,7 +717,7 @@ string VarDeclFormatter::getInitValueASString() {
 };
 
 // This function fetches the type and name of an array element through the 
-// ast context.
+// ast context. It then evaluates the elements and returns their values.
 void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
     string arrayShapes, bool &evaluatable, bool firstEle) {
   ArrayRef<Expr *> innerElements = ile->inits ();
@@ -696,6 +739,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
       } else {
         arrayValues += ", " + eleVal;
       }
+    // Recursively calls to find the smallest element of the array
     } else if (isa<InitListExpr> (innerelement)) {
       InitListExpr *innerile = cast<InitListExpr> (innerelement);
       getFortranArrayEleASString(innerile, arrayValues, arrayShapes, evaluatable, (it == innerElements.begin()) and firstEle);
@@ -735,15 +779,17 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       // only declared, no initialization of the array takes place
       arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
     } else {
-      // has init
+      // The array is declared and initialized.
       const ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
       QualType e_qualType = at->getElementType ();
-      if (e_qualType.getTypePtr()->isCharType()) {
-        // handle stringliteral case
-        Expr *exp = varDecl->getInit();
-        string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (),
+      Expr *exp = varDecl->getInit();
+      string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc(),
             varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
-        arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public, BIND(C) :: " +
+     // A char array might not be a string literal. A leading { character indicates this case.
+     if (e_qualType.getTypePtr()->isCharType() && arrayText.front() != '{') {
+        // handle stringliteral case
+        // A parameter may not have a bind(c) attribute
+        arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public :: " +
             tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + arrayText + "\n";
       } else {
         bool evaluatable = false;
@@ -754,8 +800,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
           string arrayValues;
           string arrayShapes;
 
-          InitListExpr *ile = cast<InitListExpr> (exp);
-          ArrayRef< Expr * > elements = ile->inits ();
+          InitListExpr *ile = cast<InitListExpr>(exp);
+          ArrayRef<Expr *> elements = ile->inits();
           size_t numOfEle = elements.size();
           arrayShapes = to_string(numOfEle);
           arrayShapes_fin = arrayShapes;
@@ -880,8 +926,8 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } else if (value[0] == '!') {
         vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + " " + value + "\n";
       } else {
-        // TODO: DETERMINE WHETHER OR NOT THE BIND(C) SHOULD BE HERE FOR THE PARAMETER
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public, BIND(C) :: " + identifier + " = " + value + "\n";
+        // A parameter may not have a bind(c) attribute.
+        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
       // We have seen something with this name before. This will be a problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
@@ -912,7 +958,8 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } else if (value[0] == '!') {
         vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + " " + value + "\n";
       } else {
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public, BIND(C) :: " + identifier + " = " + value + "\n";
+        // A parameter may not have a bind(c) attribute
+        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
       }
       // We have seen something with this name before. This will be a problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
@@ -2178,7 +2225,7 @@ int main(int argc, const char **argv) {
       OutputFile.keep();
     }
     // Create an object to pass around arguments
-    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together);
+    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose);
 
 
     // Create a new clang tool to be used to run the frontend actions
