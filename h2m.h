@@ -57,9 +57,10 @@ using namespace std;
 // in the future.
 class Arguments {
 public:
-  Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders, bool t, bool a) :
-     quiet(q), silent(s), output(out), no_system_headers(sysheaders) ,
-     together(t), array_transpose(a) { module_name = ""; }
+  Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders,
+      bool t, bool a, bool b) :
+      quiet(q), silent(s), output(out), no_system_headers(sysheaders) ,
+      together(t), array_transpose(a), auto_bind(b) { module_name = ""; }
   llvm::tool_output_file &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
   bool getSilent() { return silent; }
@@ -68,6 +69,7 @@ public:
   void setModuleName(string newstr) { module_name = newstr; }
   bool getTogether() { return together; }
   bool getArrayTranspose() { return array_transpose; }
+  bool getAutobind() { return auto_bind; }
   
 private:
   // Where to send translated Fortran code
@@ -83,6 +85,8 @@ private:
   // Whether or not to transpose dimensions of encountered arrays of
   // multiple dimensions.
   bool array_transpose;
+  // Should we automatically handle illegal names with BIND(C, name=...)
+  bool auto_bind;
   // The module name may be altered during processing by the action;
   // by default this is an empty string. It is used to pass values out, not in.
   string module_name;

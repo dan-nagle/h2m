@@ -44,6 +44,12 @@ static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc s
 bool RecordDeclFormatter::StructAndTypedefGuard(string name) {
   static std::set<string> seennames;  // Records all identifiers seen.
 
+  // Insurance. The name should always have been prepended prior to this call,
+  // but this makes sure that all names are prepended prior to the check.
+  if (name.front() == '_') { 
+    name = "h2m" + name;
+  }
+
   // Put the name into lowercase. Fortran is not case sensitive.
   std::locale location;  // Determines if a lowercase exists
   for (string::size_type j = 0; j < name.length(); j++) {
@@ -93,7 +99,7 @@ static string GetModuleName(string Filename, Arguments& args) {
   return filename;
 }
 
-// Command line options:
+// Command line options: aliases are also provided. These are all part of one category.
 
 // Apply a custom category to all command-line options so that they are the
 // only ones displayed. This avoids lots of clang options cluttering the
@@ -154,6 +160,9 @@ static cl::alias Together2("t", cl::cat(h2mOpts), cl::desc("Alias for -together"
 static cl::opt<bool> Transpose("array-transpose", cl::cat(h2mOpts), cl::desc("Transpose array dimensions"));
 static cl::alias Transpose2("a", cl::cat(h2mOpts), cl::desc("Alias for array-transpose"), cl::aliasopt(Transpose));
 
+static cl::opt<bool> Autobind("auto-bind", cl::cat(h2mOpts), cl::desc("Use BIND(C, name=...) to handle illegal names"));
+static cl::alias Autobind2("b", cl::cat(h2mOpts), cl::desc("Alias for auto-bind"), cl::aliasopt(Autobind));
+
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
@@ -173,7 +182,7 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
     // True if both are function pointers
     if (c_qualType.getTypePtr()->isFunctionPointerType() and qt2.getTypePtr()->isFunctionPointerType()) {
       return true;
-    // True if both are not functoin pointers
+    // True if both are not function pointers
     } else if ((!c_qualType.getTypePtr()->isFunctionPointerType()) and (!qt2.getTypePtr()->isFunctionPointerType())) {
       return true;
     } else {
@@ -214,7 +223,8 @@ string CToFTypeFormatter::getFortranIdASString(string raw_id) {
         element_type = cat->getElementType();
         cat = ac.getAsConstantArrayType(element_type);
       }
-      // Build up the raw ID from the stack, reversing array dimensions      // if requested and the stack was built
+      // Build up the raw ID from the stack, reversing array dimensions
+      // if requested and the stack was built
       if (args.getArrayTranspose() == true) {
         while (dimensions.empty() == false) {
           raw_id += dimensions.top() + ", ";
@@ -554,13 +564,14 @@ bool CToFTypeFormatter::isType(const string input) {
   return false;
 };
 
-// Returns a string buffer containing the Fortran equivalent of a C macro resembling a typedef.
-// The Arguments and PresumedLoc are used to give information about the location of any
+// Returns a string buffer containing the Fortran equivalent of a C macro resembling a type
+// definition. The Arguments and PresumedLoc are used to give information about the location of any
 // errors that might occur during an attempted translation. The macro is translated into 
 // a Fortran TYPE definition. This only supports int, shorts, chars, and longs. The TYPE
 // will include one field which is [type_name]_C_CHAR/C_INT/C_LONG as appropriate given
 // the type being declared.
-string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args) {
+string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal,
+    PresumedLoc loc, Arguments &args) {
   string ft_buffer;
   string type_id = "typeID_" + macroName ;
   
@@ -578,43 +589,27 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
       errs() << macroName << " renamed h2m" << macroName << "\n";
       LineError(loc);
     }
-
-    // Check the length of these lines to make sure they are legal under Fortran.
-    ft_buffer += CheckLength("TYPE, BIND(C) :: h2m" + macroName+ "\n", CToFTypeFormatter::line_max,
-        args.getSilent(), loc);
-    if (macroVal.find("char") != std::string::npos) {
-      ft_buffer += CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    } else if (macroVal.find("long") != std::string::npos) {
-      ft_buffer += CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    } else if (macroVal.find("short") != std::string::npos) {
-      ft_buffer += CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    } else {
-      ft_buffer += CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    }
-    ft_buffer += "END TYPE h2m" + macroName+ "\n";
-  } else {
-    // The CheckLength function is employed here to make sure lines are acceptable lengths
-    ft_buffer = CheckLength("TYPE, BIND(C) :: " + macroName+ "\n", CToFTypeFormatter::line_max,
-        args.getSilent(), loc);
-    if (macroVal.find("char") != std::string::npos) {
-      ft_buffer += CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    } else if (macroVal.find("long") != std::string::npos) {
-      ft_buffer += CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    } else if (macroVal.find("short") != std::string::npos) {
-      ft_buffer += CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    } else {
-      ft_buffer += CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-          args.getSilent(), loc);
-    }
-    ft_buffer += "END TYPE " + macroName+ "\n";
+    macroName = "h2m" + macroName;
   }
+
+  // The CheckLength function is employed here to make sure lines are acceptable lengths
+  ft_buffer = CheckLength("TYPE, BIND(C) :: " + macroName+ "\n", CToFTypeFormatter::line_max,
+      args.getSilent(), loc);
+  if (macroVal.find("char") != std::string::npos) {
+    ft_buffer += CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+        args.getSilent(), loc);
+  } else if (macroVal.find("long") != std::string::npos) {
+    ft_buffer += CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+        args.getSilent(), loc);
+  } else if (macroVal.find("short") != std::string::npos) {
+    ft_buffer += CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+        args.getSilent(), loc);
+  } else {
+    ft_buffer += CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+        args.getSilent(), loc);
+  }
+  ft_buffer += "END TYPE " + macroName+ "\n";
+
   return ft_buffer;
 };
 
@@ -782,77 +777,99 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 // must be declared and initialization carried out if necessary.
 string VarDeclFormatter::getFortranArrayDeclASString() {
   string arrayDecl = "";
-  // This keeps system header pieces from leaking into the translation
+      // This keeps system header pieces from leaking into the translation
   if (varDecl->getType().getTypePtr()->isArrayType() and !isInSystemHeader) {
     CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
-  
-    string temp_id = tf.getFortranIdASString(varDecl->getNameAsString());
+    // If asked to autobind, this string holds the identifier to bind to
+    // it is initialized as empty but may contain a name later.
+    string bindName = "";
+    string identifier = varDecl->getNameAsString();
 
     // Check for an illegal name length. Warn if it exists.
-    string truncated_id;
-    truncated_id = temp_id.substr(0, temp_id.find_first_of("("));
-    CheckLength(truncated_id, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+
+    // Illegal underscore is found in the array declaration
+    if (identifier.front() == '_') {
+      // If necessary, prepare a bind name to properly link to the C function
+      if (args.getAutobind() == true) {
+        // This is the proper syntax to bind to a C variable: BIND(C, name="cname")
+        bindName = " , name =\"" + identifier + "\"";
+      }
+      if (args.getSilent() == false) {
+        errs() << "Warning: illegal array identifier " << identifier;
+        errs() << " renamed h2m" << identifier << ".\n";
+        LineError(sloc);
+      }
+      identifier = "h2m" + identifier;
+    }
+
     // Check to see whether we have seen this identifier before. If need be, comment
     // out the duplicate declaration.
     // We need to strip off the (###) for the test or we will end up testing
     // for a repeat of the variable n(4) rather than n if the decl is int n[4];
-
-    if (RecordDeclFormatter::StructAndTypedefGuard(truncated_id) == false) {
+    if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
       if (args.getSilent() == false) {
-        errs() << "Warning: skipping duplicate declaration of " << truncated_id;
+        errs() << "Warning: skipping duplicate declaration of " << identifier;
         errs() << ", array declaration.\n";
         LineError(sloc);
       }
-      arrayDecl = "! Skipping duplicate declaration of " + truncated_id + "\n!";
+      arrayDecl = "! Skipping duplicate declaration of " + identifier + "\n!";
     }
 
     if (!varDecl->hasInit()) {
       // only declared, no initialization of the array takes place
-      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C) :: ";
-      arrayDecl += tf.getFortranIdASString(varDecl->getNameAsString()) + "\n";
+      // Note that the bindName will be empty unless certain options are in effect and
+      // the function's actual name is illegal.
+      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindName + ") :: ";
+      arrayDecl += tf.getFortranIdASString(identifier) + "\n";
     } else {
-      // The array is declared and initialized.
+      // The array is declared and initialized. We must tranlate the initialization.
       const ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
       QualType e_qualType = at->getElementType ();
       Expr *exp = varDecl->getInit();
       // Whether this is a char array or not will have to be checked several times.
       // This checks whether or not the "innermost" type is a char type.
       bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
+      // This fetches the actual text initialization, which may be a string literal or {'a', 'b'...}.
       string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc(),
             varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
      // A char array might not be a string literal. A leading { character indicates this case.
      if (isChar == true && arrayText.front() != '{') {
         // handle stringliteral case
-        // A parameter may not have a bind(c) attribute
+        // A parameter may not have a bind(c) attribute (static/dynamic storage do not interoperate)
         arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public :: " +
-            tf.getFortranIdASString(varDecl->getNameAsString()) + " = " + arrayText + "\n";
-      } else {
+            tf.getFortranIdASString(identifier) + " = " + arrayText + "\n";
+      } else {  // This is not a string literal but a standard C array.
         bool evaluatable = false;
         Expr *exp = varDecl->getInit();
         if (isa<InitListExpr> (exp)) {
-          // initialize shape and values
+          // initialize shape (dimensions) and values
           // format: INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/))
           string arrayValues;
           string arrayShapes;
 
+          // Get the initialization values in an array form from the Expr.
           InitListExpr *ile = cast<InitListExpr>(exp);
           ArrayRef<Expr *> elements = ile->inits();
           size_t numOfEle = elements.size();
+          // This will be the first dimension of the array.
           arrayShapes = to_string(numOfEle);
           arrayShapes_fin = arrayShapes;
+          // Set up an iterator to cycle through all the elements.
           for (auto it = elements.begin(); it != elements.end(); it++) {
             Expr *element = (*it);
             if (isa<InitListExpr> (element)) {
-              // multidimensional array
+              // This is a multidimensional array; elements are arrays themselves.
               InitListExpr *innerIle = cast<InitListExpr>(element);
               // This function will recursively find the dimensions. The arrayValues and
-              // arrayShapes are initialized in the function.
+              // arrayShapes are initialized in the function (strings are passed by reference)..
               getFortranArrayEleASString(innerIle, arrayValues, arrayShapes, evaluatable,
                   it == elements.begin(), isChar);
             } else {
               if (element->isEvaluatable(varDecl->getASTContext())) {
-                // one dimensional array
+                // This is a one dimensional array. Elements are scalars.
                 clang::Expr::EvalResult r;
+                // The expression is evaluated (operations are performed) to give the final value.
                 element->EvaluateAsRValue(r, varDecl->getASTContext());
                 string eleVal = r.Val.getAsString(varDecl->getASTContext(), e_qualType);
 
@@ -860,16 +877,19 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
                 // check and a conversion of the int value produced into a char value which
                 // is valid in a Fortran character array.
                 if (isChar == true) {
+                  // Transfering the arbitrary percision int to a string then back to an int is
+                  // easier than trying to get an integer from the arbitrary precision value.
                   // On a failed conversion, this throws an exception. That shouldn't happen.
                   int temp_val = std::stoi(eleVal);
                   char temp_char = static_cast<char>(temp_val);
+                  // Assembles the necessary syntax for a Fortran char array, a component is: 'a'...
                   eleVal = "'";
                   eleVal += temp_char;
                   eleVal += "'";
                 }
 
                 if (it == elements.begin()) {
-                  // first element
+                  // Initialize the string on the first element.
                   evaluatable = true;
                   arrayValues = eleVal;
                 } else {
@@ -878,13 +898,13 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
               }
             }
-          } //<--end iteration (one pass through the array elements)
+          } //<--end iteration (one pass through the array elements) TODO: START HERE!
           if (!evaluatable) {
             // We can't translate this array because we can't evaluate its values to
            // get fortran equivalents. We comment out the declaration.
             string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(varDecl->getSourceRange()),
                 rewriter.getSourceMgr(), LangOptions(), 0);
-                // comment out arrayText
+            // comment out arrayText using the string stream
             std::istringstream in(arrayText);
             for (std::string line; std::getline(in, line);) {
               arrayDecl += "! " + line + "\n";
@@ -893,10 +913,10 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
                 LineError(sloc);
               }
             }
-          } else {
-                //INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/))
-            arrayDecl += tf.getFortranTypeASString(true)+", BIND(C) :: "+ varDecl->getNameAsString() +"("+arrayShapes_fin+")"+" = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
-
+          } else {  // The array is evaluatable and has been evaluated already. We assemble the declaration.
+            //INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/)). bindName may be empty.
+            arrayDecl += tf.getFortranTypeASString(true)+", BIND(C" + bindName +  ") :: "+ identifier +"("+arrayShapes_fin+")";
+            arrayDecl += " = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
           }
         }
       }     
@@ -2278,7 +2298,7 @@ int main(int argc, const char **argv) {
       OutputFile.keep();
     }
     // Create an object to pass around arguments
-    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose);
+    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose, Autobind);
 
 
     // Create a new clang tool to be used to run the frontend actions
