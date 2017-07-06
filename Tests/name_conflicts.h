@@ -25,4 +25,10 @@ struct n {
 
 int n[];
 
+int _v;
 
+struct _v {
+  int placeholder;
+};
+
+int h2m_v;

@@ -1,6 +1,10 @@
 // This is the source code of the h2m autofortran tool
 // envisioned by Dan Nagle, written by Sisi Liu and revised
 // by Michelle Anderson at NCAR.
+// It is safe to assume that all the significant comments in
+// this file and in h2m.h were written by Michelle. Contact her
+// at and04497@umn.edu or michellegecko@gmail.com to request
+// help with the code or an explanation of an unclear comment.
 
 #include "h2m.h"
 //-----------formatter functions----------------------------------------------------------------------------------------------------
@@ -178,12 +182,12 @@ CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc lo
 // Pointer types are only distinguished in terms of function vs data pointers. 
 bool CToFTypeFormatter::isSameType(QualType qt2) {
   // for pointer type, only distinguish between the function pointer from other pointers
-  if (c_qualType.getTypePtr()->isPointerType() and qt2.getTypePtr()->isPointerType()) {
+  if (c_qualType.getTypePtr()->isPointerType() && qt2.getTypePtr()->isPointerType()) {
     // True if both are function pointers
-    if (c_qualType.getTypePtr()->isFunctionPointerType() and qt2.getTypePtr()->isFunctionPointerType()) {
+    if (c_qualType.getTypePtr()->isFunctionPointerType() && qt2.getTypePtr()->isFunctionPointerType()) {
       return true;
     // True if both are not function pointers
-    } else if ((!c_qualType.getTypePtr()->isFunctionPointerType()) and (!qt2.getTypePtr()->isFunctionPointerType())) {
+    } else if ((!c_qualType.getTypePtr()->isFunctionPointerType()) && (!qt2.getTypePtr()->isFunctionPointerType())) {
       return true;
     } else {
       return false;
@@ -284,7 +288,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
         f_type = "C_SIZE_T";
       }
     // Handle integers which are 'chars'
-    } else if (c_qualType.getAsString()== "unsigned char" or c_qualType.getAsString()== "signed char") {
+    } else if (c_qualType.getAsString()== "unsigned char" || c_qualType.getAsString()== "signed char") {
       if (typeWrapper) {
         f_type = "INTEGER(C_SIGNED_CHAR)";
       } else {
@@ -528,7 +532,7 @@ bool CToFTypeFormatter::isString(const string input) {
   while (s[0] == ' ') {
     s = s.substr(1);
   }
-  if (s[0] == '\"' and s[s.size()-1] =='\"') {
+  if (s[0] == '\"' && s[s.size()-1] =='\"') {
     return true;
   }
   return false;
@@ -542,7 +546,7 @@ bool CToFTypeFormatter::isChar(const string input) {
   while (s[0] == ' ') {
     s = s.substr(1);
   }
-  if (s[0] == '\'' and s[s.size()-1] =='\'') {
+  if (s[0] == '\'' && s[s.size()-1] =='\'') {
     return true;
   }
   return false;
@@ -554,10 +558,10 @@ bool CToFTypeFormatter::isChar(const string input) {
 // does not have a type.
 bool CToFTypeFormatter::isType(const string input) {
   // only support int short long char for now
-  if (input == "short" or input == "long" or input == "char" or input == "int" or
-      input.find(" int") != std::string::npos or 
-      input.find(" short") != std::string::npos or
-      input.find(" long") != std::string::npos or 
+  if (input == "short" || input == "long" || input == "char" || input == "int" ||
+      input.find(" int") != std::string::npos || 
+      input.find(" short") != std::string::npos || 
+      input.find(" long") != std::string::npos || 
       input.find(" char") != std::string::npos) {
     return true;
   }
@@ -574,6 +578,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
     PresumedLoc loc, Arguments &args) {
   string ft_buffer;
   string type_id = "typeID_" + macroName ;
+  string temp_macro_name = macroName;  // The macroName string is const
   
   // Create a new name for the transalated type.
   // The name may not include spaces. Erase them if they are there.
@@ -583,17 +588,18 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
     found=type_id.find_first_of(" ");
   }
 
+  // We have found an illegal name. We deal with it as usual by prepending h2m.
   if (macroName[0] == '_') {
     if (args.getSilent() == false) {
       errs() << "Warning: Fortran names may not start with '_' ";
       errs() << macroName << " renamed h2m" << macroName << "\n";
       LineError(loc);
     }
-    macroName = "h2m" + macroName;
+    temp_macro_name = "h2m" + macroName;
   }
 
   // The CheckLength function is employed here to make sure lines are acceptable lengths
-  ft_buffer = CheckLength("TYPE, BIND(C) :: " + macroName+ "\n", CToFTypeFormatter::line_max,
+  ft_buffer = CheckLength("TYPE, BIND(C) :: " + temp_macro_name + "\n", CToFTypeFormatter::line_max,
       args.getSilent(), loc);
   if (macroVal.find("char") != std::string::npos) {
     ft_buffer += CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
@@ -608,7 +614,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
     ft_buffer += CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
         args.getSilent(), loc);
   }
-  ft_buffer += "END TYPE " + macroName+ "\n";
+  ft_buffer += "END TYPE " + temp_macro_name + "\n";
 
   return ft_buffer;
 };
@@ -616,7 +622,8 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
 // -----------initializer VarDeclFormatter--------------------
 VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   varDecl = v;
-  // Because sloc is checked for validity prior to use, this should handle invalid locations
+  // Because sloc is checked for validity prior to use, this should handle invalid locations. If it
+  // isn't initialized, it isn't valid according to the Clang function check.
   if (varDecl->getSourceRange().getBegin().isValid()) {
     isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(varDecl->getSourceRange().getBegin());
     sloc = rewriter.getSourceMgr().getPresumedLoc(varDecl->getSourceRange().getBegin());
@@ -627,12 +634,13 @@ VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : re
 
 // In the event that a variable declaration has an initial value, this function
 // attempts to find that initialization value and return it as a string. It handles
-// poitners, reals, complexes, characters, ints. Arrays are defined here but actually
-// handled elsewhere (I think). Typedefs and structs are not handled here.
+// pointers, reals, complexes, characters, ints. Arrays are defined here but actually
+// handled in their own function. Typedefs and structs are not handled here.
 string VarDeclFormatter::getInitValueASString() {
   string valString;
 
-  if (varDecl->hasInit() and !isInSystemHeader) {
+  // This prevents sytstem files from leaking in to the translation.
+  if (varDecl->hasInit() && !isInSystemHeader) {
     if (varDecl->getType().getTypePtr()->isStructureType()) {
         // structure type skip
     } else if (varDecl->getType().getTypePtr()->isCharType()) {
@@ -677,7 +685,7 @@ string VarDeclFormatter::getInitValueASString() {
           }
         }
 
-      } else {
+      } else {  // We don't recognize and can't handle this declaration.
         valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
         if (args.getSilent() == false && args.getQuiet() == false) {
           errs() << "Variable declaration initialization commented out:\n";
@@ -707,7 +715,7 @@ string VarDeclFormatter::getInitValueASString() {
       }
     }
   }
-  return valString;
+  return valString;  // This is empty if there was no initialization.
 
 };
 
@@ -760,7 +768,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
     } else if (isa<InitListExpr> (innerelement)) {
       InitListExpr *innerile = cast<InitListExpr> (innerelement);
       getFortranArrayEleASString(innerile, arrayValues, arrayShapes, evaluatable,
-          (it == innerElements.begin()) and firstEle, is_char);
+          (it == innerElements.begin()) && firstEle, is_char);
     } 
   }
 
@@ -778,11 +786,11 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 string VarDeclFormatter::getFortranArrayDeclASString() {
   string arrayDecl = "";
       // This keeps system header pieces from leaking into the translation
-  if (varDecl->getType().getTypePtr()->isArrayType() and !isInSystemHeader) {
+  if (varDecl->getType().getTypePtr()->isArrayType() && !isInSystemHeader) {
     CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
     // If asked to autobind, this string holds the identifier to bind to
     // it is initialized as empty but may contain a name later.
-    string bindName = "";
+    string bindname = "";
     string identifier = varDecl->getNameAsString();
 
     // Check for an illegal name length. Warn if it exists.
@@ -793,7 +801,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       // If necessary, prepare a bind name to properly link to the C function
       if (args.getAutobind() == true) {
         // This is the proper syntax to bind to a C variable: BIND(C, name="cname")
-        bindName = " , name =\"" + identifier + "\"";
+        bindname = " , name =\"" + identifier + "\"";
       }
       if (args.getSilent() == false) {
         errs() << "Warning: illegal array identifier " << identifier;
@@ -818,9 +826,9 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
     if (!varDecl->hasInit()) {
       // only declared, no initialization of the array takes place
-      // Note that the bindName will be empty unless certain options are in effect and
+      // Note that the bindname will be empty unless certain options are in effect and
       // the function's actual name is illegal.
-      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindName + ") :: ";
+      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname + ") :: ";
       arrayDecl += tf.getFortranIdASString(identifier) + "\n";
     } else {
       // The array is declared and initialized. We must tranlate the initialization.
@@ -898,7 +906,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
               }
             }
-          } //<--end iteration (one pass through the array elements) TODO: START HERE!
+          } //<--end iteration (one pass through the array elements)
           if (!evaluatable) {
             // We can't translate this array because we can't evaluate its values to
            // get fortran equivalents. We comment out the declaration.
@@ -914,8 +922,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
               }
             }
           } else {  // The array is evaluatable and has been evaluated already. We assemble the declaration.
-            //INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/)). bindName may be empty.
-            arrayDecl += tf.getFortranTypeASString(true)+", BIND(C" + bindName +  ") :: "+ identifier +"("+arrayShapes_fin+")";
+            //INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/)). bindname may be empty.
+            arrayDecl += tf.getFortranTypeASString(true)+", BIND(C" + bindname +  ") :: "+ identifier +"("+arrayShapes_fin+")";
             arrayDecl += " = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
           }
         }
@@ -939,6 +947,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 string VarDeclFormatter::getFortranVarDeclASString() {
   string vd_buffer = "";
   string identifier = "";   // Will eventually hold the variable's name
+  string bindname = "";  // May eventually hold a value to bind to.
   
   if (!isInSystemHeader) {  // This appears to protect local headers from having system
    // headers leak into the definitions
@@ -952,7 +961,22 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // Create a structure defined in the module file.
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
-      vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + "\n";
+
+      if (identifier.front() == '_') {
+         if (args.getSilent() == false) {
+            errs() << "Warning: fortran names may not begin with an underscore. ";
+            errs() << identifier << " renamed h2m" << identifier << "\n";
+            LineError(sloc);
+         }
+         if (args.getAutobind() == true) {  // Set up the bind phrase if requested.
+           // The proper syntax is BIND(C, name="cname").
+           bindname = ", name=\"" + identifier + " \"";
+         }
+         identifier = "h2m" + identifier;
+      }
+      // Assemble the variable declaration, including the bindname if it exists.
+      vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+      vd_buffer +=  ") :: " + identifier + "\n";
 
       // The following are checks for potentially illegal characters which might be
       // at the begining of the anonymous types. These types must be commented out.
@@ -975,29 +999,36 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       }
 
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
-        // handle initialized numeric array specifically
+        // handle initialized numeric array specifically in its own functions.
         // length, name, and identifier repetition checks are carried out in the helper
         vd_buffer = getFortranArrayDeclASString();
-    } else if (varDecl->getType().getTypePtr()->isPointerType() and 
+    } else if (varDecl->getType().getTypePtr()->isPointerType() && 
       varDecl->getType().getTypePtr()->getPointeeType()->isCharType()) {
       // string declaration
       string value = getInitValueASString();
-      CToFTypeFormatter tf(varDecl->getType().getTypePtr()->getPointeeType(), varDecl->getASTContext(), sloc, args);
+      CToFTypeFormatter tf(varDecl->getType().getTypePtr()->getPointeeType(),
+          varDecl->getASTContext(), sloc, args);
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
+      // Check for an illegal character at the string identifier's start.
       if (identifier.front() == '_') {
          if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
             errs() << identifier << " renamed h2m" << identifier << "\n";
             LineError(sloc);
          }
+         if (args.getAutobind() == true) {  // Setup the autobinding buffer if requested
+           bindname = ", name=\"" + identifier + " \"";
+         }
          identifier = "h2m" + identifier;
       }
       // Detrmine the state of the declaration. Is there something declared? Is it commented out?
-      // Create the declaration in correspondence with this.
+      // Create the declaration in correspondence with this. Add in the bindname, which may be empty
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+        vd_buffer +=  ") :: " + identifier + "\n";
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + " " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+        vd_buffer +=  + ") :: " + identifier + " " + value + "\n";
       } else {
         // A parameter may not have a bind(c) attribute.
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
@@ -1024,12 +1055,19 @@ string VarDeclFormatter::getFortranVarDeclASString() {
             errs() << identifier << " renamed h2m" << identifier << "\n";
             LineError(sloc);
          }
+         if (args.getAutobind() == true) {
+           bindname = ", name=\"" + identifier + " \"";
+         }
          identifier = "h2m" + identifier;
       } 
+      // Determine the state of the declaration and assemble the appropriate Fortran equivalent.
+      // Include the bindname, which may be empty.
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+        vd_buffer += ") :: " + identifier + "\n";
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C) :: " + identifier + " " + value + "\n";
+        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+        vd_buffer = ") :: " + identifier + " " + value + "\n";
       } else {
         // A parameter may not have a bind(c) attribute
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
@@ -1075,9 +1113,10 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments 
 // name will be prepended with "h2m" to become legal fortran.
 // This function will check for name duplication. In the case that this is a duplicate identifier,
 // a string containing a comment will be returned (no definition will be provided).
+// Note that no bindname is allowed because BIND(C, name="") is not permitted in a TYPE.
 string TypedefDeclFormater::getFortranTypedefDeclASString() {
-  string typdedef_buffer;
-  if (isLocValid and !isInSystemHeader) {  // Keeps system files from leaking in
+  string typdedef_buffer = "";
+  if (isLocValid && !isInSystemHeader) {  // Keeps system files from leaking in
   // if (typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isStructureType()
   //  or typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isEnumeralType ()) {
   // } else {
@@ -1088,17 +1127,17 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc, args);
     string identifier = typedefDecl->getNameAsString();
     if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining.
-      string old_identifier = identifier;
-      identifier = "h2m" + identifier;  // Prepend h2m to fix the problem.
       if (args.getSilent() == false) {  // Warn about the renaming unless silenced.
-        errs() << "Warning: illegal identifier " << old_identifier << " renamed " << identifier << "\n";
+        errs() << "Warning: illegal identifier " << identifier << " renamed h2m" << identifier << "\n";
         LineError(sloc);
       }
+      identifier = "h2m" + identifier;  // Prepen dh2m to fix the problem.
     }
     
 
     // Check to make sure the identifier is not too lone
     CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    // Include the bindname, which may be empty, when assembling the definition.
     typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
     // Because names in typedefs may collide with the typedef name, 
     // suffixes are appended to the internal member of the typedef.
@@ -1151,16 +1190,42 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) :
 // From a C enumerated type, a fotran ENUM is created. The names are prepended
 // with h2m if they begin with an underscore. The function loops through all 
 // the members in the enumerator and adds them into place. Note that this can
-// resut in serious problems if the enumeration is too large.
+// resut in serious problems if the enumeration is too large. Note that there
+// is no option to use a bind name here because it is not permitted to have
+// a BIND(C, name="") statement in an Enum.
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
+  bool anon = false;  // Lets us know if we need to comment out this declaration.
+
   if (!isInSystemHeader) {  // Keeps definitions in system headers from leaking into the translation
     string enumName = enumDecl->getNameAsString();
+
+    if (enumName.empty() == true) {  // We don't have a proper name. We must get another form of identifier.
+      enumName = enumDecl-> getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      // This checks to make sure that this is not an anonymous enumeration
+      if (enumName.find("anonymous at") != string::npos) {
+        anon = true;  // Sets a bool to let us know that we have no name.
+      }
+    }
+
+    if (enumName.front() == '_') {  // Illegal underscore beginning the name!
+      if (args.getSilent() == false) {  // Warn unless silenced
+        errs() << "Warning: illegal enumeration identifier " << enumName << " renamed h2m" << enumName << "\n";
+        LineError(sloc); 
+      } 
+      enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
+    }
+
     // Check the length of the name to make sure it is valid Fortran
     // Note that it would be impossible for this line to be an illegal length unless
-    // the variable name were hopelessly over the length limit.
+    // the variable name were hopelessly over the length limit. Note bindname may be empty.
     CheckLength(enumName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
-    enum_buffer = "ENUM, BIND( C )\n";
+    if (anon == false) {
+      enum_buffer = "ENUM, BIND(C) ! " + enumName + "\n";
+    } else {  // Handle a nameless enum as best we can.
+      enum_buffer = "ENUM, BIND(C)\n";
+    }
+
     // enum_buffer += "    enumerator :: ";  // Removed when changes were made to allow unlimited enum length
     // Cycle through the pieces of the enum and translate them into fortran
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end (); it++) {
@@ -1174,7 +1239,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
           LineError(sloc);
         }
       }
-      int constVal = (*it)->getInitVal ().getExtValue ();  // Get the initialization value
+      int constVal = (*it)->getInitVal().getExtValue();  // Get the initialization value
       // Check for a valid name length
       CheckLength(constName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
       // Problem! We have seen an identifier with this name before! Comment out the line
@@ -1193,24 +1258,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
     // erase the redundant colon  // This erasing and adding back in of a newline is obsolete with the new format
     // enum_buffer.erase(enum_buffer.size()-2);
     // enum_buffer += "\n";
-    // Put the actual name of the enumerator as an uninitialized member of the enumerated type
-    if (!enumName.empty()) {
-      if (enumName.front() == '_') {  // Illegal underscore beginning the name!
-        string old_enumName = enumName;
-        enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
-        if (args.getSilent() == false) {  // Warn unless silenced
-          errs() << "Warning: illegal enumeration identifier " << old_enumName << " renamed " << enumName << "\n";
-          LineError(sloc); 
-        } 
-      }
-      enum_buffer += "    enumerator " + enumName+"\n";
-    } else {  // I don't think this is actually a problem for potential illegal underscores.
-      string identifier = enumDecl-> getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
-      // This checks to make sure that this is not an anonymous enumeration
-      if (identifier.find("anonymous at") == string::npos) {
-        enum_buffer += "    enumerator " + identifier+"\n";
-      }
-    }
+
     // Check to see whether we have declared something with this identifier before.
     // Skip this duplicate declaration if necessary.
     if (RecordDeclFormatter::StructAndTypedefGuard(enumName) == false) {
@@ -1227,11 +1275,19 @@ string EnumDeclFormatter::getFortranEnumASString() {
         enum_buffer += "! " + line + "\n";
       }
       // Add in a few last details... and return to avoid having END ENUM pasted on the end
-      enum_buffer += "! END ENUM\n";
+      if (anon == false) {  // This should always be the case, but there's no harm in checks.
+        enum_buffer += "! END ENUM !" + enumName + "\n";
+      } else {
+        enum_buffer += "! END ENUM\n";
+      }
       return(enum_buffer);
     }
 
-    enum_buffer += "END ENUM\n";
+    if (anon == false) {  // Put the name after END ENUM unless there is no name.
+      enum_buffer += "END ENUM !" + enumName + "\n";
+    } else {
+      enum_buffer += "END ENUM\n";
+    }
   }
 
   return enum_buffer;
@@ -1296,13 +1352,17 @@ string RecordDeclFormatter::getFortranFields() {
 // similar, but anonymous structs need to be handled specially. This 
 // function puts together the name of the struct as well as the fields fetched
 // from the getFortranFields() function above. All illegal names are prepended
-// with h2m. Checks are made for duplicate names.
+// with h2m. Checks are made for duplicate names. Note that no option for a 
+// bindname is allowed because BIND(C, name="") statements are illegail in
+// a TYPE definition.
 string RecordDeclFormatter::getFortranStructASString() {
   // initalize mode here
   setMode();
+  string identifier = "";  // Holds the Fortran name for this structure.
 
-  string rd_buffer;
-  if (!isInSystemHeader) {  // Prevents system headers from leaking in
+  string rd_buffer;  // Holds the entire declaration.
+
+  if (!isInSystemHeader) {  // Prevents system headers from leaking in to the file
     string fieldsInFortran = getFortranFields();
     if (fieldsInFortran.empty()) {
       rd_buffer = "! struct without fields may cause warnings\n";
@@ -1313,7 +1373,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     }
 
     if (mode == ID_ONLY) {
-      string identifier = recordDecl->getNameAsString();
+      identifier = recordDecl->getNameAsString();
             if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
@@ -1335,7 +1395,8 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         // Comment out the declaration by stepping through and appending ! before newlines
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
+        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
         std::istringstream in(temp_buf);
         for (std::string line; std::getline(in, line);) {
           rd_buffer += "! " + line + "\n";
@@ -1343,9 +1404,11 @@ string RecordDeclFormatter::getFortranStructASString() {
         return rd_buffer;
       }
 
-      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+      // Declare the structure in Fortran. The bindname may be empty.
+      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
+      rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == TAG_ONLY) {
-      string identifier = tag_name;
+      identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
@@ -1367,7 +1430,8 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         // Comment out the declaration by stepping through and appending ! before newlines
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
+        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
         std::istringstream in(temp_buf);
         for (std::string line; std::getline(in, line);) {
           rd_buffer += "! " + line + "\n";
@@ -1375,9 +1439,10 @@ string RecordDeclFormatter::getFortranStructASString() {
         return rd_buffer;
       }
 
-      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
+      rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
-      string identifier = tag_name;
+      identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
@@ -1399,7 +1464,8 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         // Comment out the declaration so that it is present in the output file
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
+        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
         std::istringstream in(temp_buf);
         for (std::string line; std::getline(in, line);) {
           rd_buffer += "! " + line + "\n";
@@ -1407,9 +1473,11 @@ string RecordDeclFormatter::getFortranStructASString() {
         return rd_buffer;
       }
 
-      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";    
+      // Assemble the strucutre in Fortran. Note that bindname may be empty.
+      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
+      rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";    
     } else if (mode == TYPEDEF) {
-      string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid typedef name " << identifier << " renamed h2m" << identifier << "\n";
@@ -1431,7 +1499,8 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         // Comment out the declaration so that it is present in the output file
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
+        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
+        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
         std::istringstream in(temp_buf);
         for (std::string line; std::getline(in, line);) {
           rd_buffer += "! " + line + "\n";
@@ -1439,11 +1508,12 @@ string RecordDeclFormatter::getFortranStructASString() {
         return rd_buffer;
       }
 
-      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
-    } else if (mode == ANONYMOUS) {
+      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
+      rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
+    } else if (mode == ANONYMOUS) {  // No bindname options are specified for anon structs.
       // Note that no length checking goes on here because there's no need. 
       // This will all be commented out anyway.
-      string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // Erase past all the spaces so that only the name remains (ie get rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
       while (found!=string::npos) {
@@ -1491,13 +1561,13 @@ void RecordDeclFormatter::setMode() {
   // int TAG_ONLY = 2;
   // int ID_TAG = 3;
 
-  if (!(recordDecl->getNameAsString()).empty() and !tag_name.empty()) {
+  if (!(recordDecl->getNameAsString()).empty() && !tag_name.empty()) {
     mode = ID_TAG;
-  } else if (!(recordDecl->getNameAsString()).empty() and tag_name.empty()) {
+  } else if (!(recordDecl->getNameAsString()).empty() && tag_name.empty()) {
     mode = ID_ONLY;
-  } else if ((recordDecl->getNameAsString()).empty() and !tag_name.empty()) {
+  } else if ((recordDecl->getNameAsString()).empty() && !tag_name.empty()) {
     mode = TAG_ONLY;
-  } else if ((recordDecl->getNameAsString()).empty() and tag_name.empty()) {
+  } else if ((recordDecl->getNameAsString()).empty() && tag_name.empty()) {
     string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
     if (identifier.find(" ") != string::npos) {
       mode = ANONYMOUS;
@@ -1683,7 +1753,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
       }
       paramsNames += ", " + pname; 
     }
-    index ++;
+    index++;
   }
   return paramsNames;
 };
@@ -1709,10 +1779,11 @@ bool FunctionDeclFormatter::argLocValid() {
 // on an earlier defined function.
 string FunctionDeclFormatter::getFortranFunctDeclASString() {
   string fortranFunctDecl;
-  if (!isInSystemHeader and argLocValid()) {
+  if (!isInSystemHeader && argLocValid()) {
     string funcType;
     string paramsString = getParamsTypesASString();
     string imports;
+    string bindname;  // Used to link to a C function with a different name later.
     if (!paramsString.empty()) {
       // CheckLength just returns the same string, but it will make sure the line is not too
       // long for Fortran and it will warn if needed and not silenced.
@@ -1733,18 +1804,23 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     }
     string funcname = funcDecl->getNameAsString();
     if (funcname.front() == '_') {  // We have an illegal character in the identifier
-      string oldfuncname = funcname;
-      funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
       if (args.getSilent() == false) {
-        errs() << "Warning: invalid function name " << oldfuncname << " renamed " << funcname << "\n";
+        errs() << "Warning: invalid function name " << funcname << " renamed h2m" << funcname << "\n";
         LineError(sloc);
       }
+      // If necessary, prepare a bind name to properly link to the C function
+      if (args.getAutobind() == true) {
+        // This is the proper syntax to bind to a C variable: BIND(C, name="cname")
+        bindname = " , name =\"" + funcname + "\"";
+      }
+      funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
     }
     // Check to make sure the function's name isn't too long. Warn if necessary.
     CheckLength(funcname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Check to make sure this declaration line isn't too long. It well might be.
+    // bindname may be empty or may contain a C function to link to.
     fortranFunctDecl = CheckLength(funcType + " " + funcname + "(" + getParamsNamesASString() + 
-        ")" + " bind (C)\n", CToFTypeFormatter::line_max, args.getSilent(), sloc);
+        ")" + " BIND(C" + bindname + ")\n", CToFTypeFormatter::line_max, args.getSilent(), sloc);
     
     fortranFunctDecl += imports;
     fortranFunctDecl += getParamsDeclASString();
@@ -1980,7 +2056,7 @@ string MacroFormatter::getFortranMacroASString() {
           LineError(sloc);
         }
         if (md->getMacroInfo()->arg_empty()) {
-          fortranMacro += "SUBROUTINE h2m" + macroName + "() bind (C)\n";
+          fortranMacro += "SUBROUTINE h2m" + macroName + "() BIND(C)\n";
         } else {
           fortranMacro += "SUBROUTINE h2m"+ macroName + "(";
           for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
@@ -1998,7 +2074,7 @@ string MacroFormatter::getFortranMacroASString() {
           }
                     // erase the redundant colon
           fortranMacro.erase(fortranMacro.size()-2);
-          fortranMacro += ") bind (C)\n";
+          fortranMacro += ") BIND(C)\n";
           // Check that this line is not too long. Take into account the fact that the
           // characters INTERFACE\n alleady at the begining take up 10 characters and the 
           // newline just added uses another one.
@@ -2020,7 +2096,7 @@ string MacroFormatter::getFortranMacroASString() {
       } else {
         fortranMacro = "INTERFACE\n";
         if (md->getMacroInfo()->arg_empty()) {
-          fortranMacro += "SUBROUTINE "+ macroName + "() bind (C)\n";
+          fortranMacro += "SUBROUTINE "+ macroName + "() BIND(C)\n";
         } else {
           fortranMacro += "SUBROUTINE "+ macroName + "(";
           for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
@@ -2038,7 +2114,7 @@ string MacroFormatter::getFortranMacroASString() {
           }
           // erase the redundant colon
           fortranMacro.erase(fortranMacro.size()-2);
-          fortranMacro += ") bind (C)\n";
+          fortranMacro += ") BIND(C)\n";
           // Check that this line is not too long. Take into account the fact that the
           // characters INTERFACE\n alleady at the begining take up 10 characters and the 
           // newline just added uses another one.
