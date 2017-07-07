@@ -132,10 +132,13 @@ static cl::alias Together2("t", cl::cat(h2mOpts), cl::desc("Alias for -together"
 // Option to transpose arrays to match Fortran dimensions (C row major
 // ordering is swapped for Fortran column major ordering).
 static cl::opt<bool> Transpose("array-transpose", cl::cat(h2mOpts), cl::desc("Transpose array dimensions"));
-static cl::alias Transpose2("a", cl::cat(h2mOpts), cl::desc("Alias for array-transpose"), cl::aliasopt(Transpose));
+static cl::alias Transpose2("a", cl::cat(h2mOpts), cl::desc("Alias for -array-transpose"), cl::aliasopt(Transpose));
 
 static cl::opt<bool> Autobind("auto-bind", cl::cat(h2mOpts), cl::desc("Use BIND(C, name=...) to handle illegal names"));
-static cl::alias Autobind2("b", cl::cat(h2mOpts), cl::desc("Alias for auto-bind"), cl::aliasopt(Autobind));
+static cl::alias Autobind2("b", cl::cat(h2mOpts), cl::desc("Alias for -auto-bind"), cl::aliasopt(Autobind));
+
+static cl::opt<bool> HideMacros("hide-macros", cl::cat(h2mOpts), cl::desc("Comment out all function like macros"));
+static cl::alias HideMacros2("h", cl::cat(h2mOpts), cl::desc("Alias for -hide-macros"), cl::aliasopt(HideMacros));
 
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
@@ -298,7 +301,7 @@ bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef F
 // Executed when a source file is finished. This allows the boiler plate required for the end of
 // a fotran module to be added to the file.
 void TraverseNodeAction::EndSourceFileAction() {
-    //Now emit the rewritten buffer.
+    //Now emit the rewritten buffer. // This approach was abandoned -Michelle
     //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(args.getOutput().os());
 
     string endSourceModle;
@@ -348,7 +351,7 @@ int main(int argc, const char **argv) {
       OutputFile.keep();
     }
     // Create an object to pass around arguments
-    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose, Autobind);
+    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose, Autobind, HideMacros);
 
 
     // Create a new clang tool to be used to run the frontend actions

@@ -51,8 +51,10 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     }
 
     // source text
-    macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(), MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
-    macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(), mi->getDefinitionEndLoc()), SM, LangOptions(), 0);
+    macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(),
+        MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
+    macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(),
+        mi->getDefinitionEndLoc()), SM, LangOptions(), 0);
     
     // strangely there might be a "(" follows the macroName for function macros, remove it if there is
     if (macroName.back() == '(') {
@@ -83,7 +85,8 @@ bool MacroFormatter::isFunctionLike() {
 // Macros which are object like, meaning similar to Chars, Strings, integers, doubles, etc
 // can be translated. Macros which are empty are defined as positive bools. Function-like
 // macros can be translated as functions or subroutines. However, it is not always possible
-// to translate a macro, in which case the line must be commented out.
+// to translate a macro, in which case the line must be commented out. There is also an 
+// option that may be invoked to request that all function-like macros be commented out.
 string MacroFormatter::getFortranMacroASString() {
   string fortranMacro;
   bool duplicateIdentifier = false;
@@ -204,94 +207,115 @@ string MacroFormatter::getFortranMacroASString() {
 
 
     } else {
-        // function macro
-      size_t rParen = macroDef.find(')');
-      string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
-      if (macroName[0] == '_') {
-        fortranMacro += "INTERFACE\n";
-        if (args.getSilent() == false) {
-          errs() << "Warning: fortran names may not start with an underscore ";
-          errs() << macroName << " renamed h2m" << macroName << "\n";
-          LineError(sloc);
+      // function macro
+      // If we have been asked to comment out all function like macros, just fetch
+      // the source text and comment it out.
+      // Length and valid name checks are not carried out because it is commented out
+      // anyway and there doesn't seem to be a point.
+      if (args.getHideMacros() == true) {       
+        string temp_buf = macroDef;
+        fortranMacro = "! Function-like macro commented out.\n";
+        std::istringstream in(temp_buf);
+        // This construct is a common way to comment out a buffer with newlines embedded.
+        for (std::string line; std::getline(in, line);) {
+          fortranMacro += "! " + line + "\n";
         }
-        if (md->getMacroInfo()->arg_empty()) {
-          fortranMacro += "SUBROUTINE h2m" + macroName + "() BIND(C)\n";
-        } else {
-          fortranMacro += "SUBROUTINE h2m"+ macroName + "(";
-          for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
-            string argname = (*it)->getName();
-            if (argname.front() == '_') {  // Illegal character in argument name
-              if (args.getSilent() == false) {
-                errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
-                errs() << argname << " renamed h2m" << argname << "\n";
+        fortranMacro += "\n";  // Add in a final line break.
+      } else {  // Make a graceless translation attempt as requested.
+
+        // macroDef has the entire macro definition in it. Here the body of the macro
+        // is parsed out.
+        size_t rParen = macroDef.find(')');
+        string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
+        if (macroName[0] == '_') {
+          fortranMacro += "INTERFACE\n";
+          if (args.getSilent() == false) {
+            errs() << "Warning: fortran names may not start with an underscore ";
+            errs() << macroName << " renamed h2m" << macroName << "\n";
+            LineError(sloc);
+          }
+          if (md->getMacroInfo()->arg_empty()) {
+            fortranMacro += "SUBROUTINE h2m" + macroName + "() BIND(C)\n";
+          } else {
+            fortranMacro += "SUBROUTINE h2m"+ macroName + "(";
+            for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
+              string argname = (*it)->getName();
+              if (argname.front() == '_') {  // Illegal character in argument name
+                if (args.getSilent() == false) {
+                  errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
+                  errs() << argname << " renamed h2m" << argname << "\n";
+                  LineError(sloc);
+                }
+                argname = "h2m" + argname;  // Fix the problem by prepending h2m
+              }
+              fortranMacro += argname;
+              fortranMacro += ", ";
+            }
+            // erase the redundant colon
+            fortranMacro.erase(fortranMacro.size()-2);
+            fortranMacro += ") BIND(C)\n";
+            // Check that this line is not too long. Take into account the fact that the
+            // characters INTERFACE\n alleady at the begining take up 10 characters and the 
+            // newline just added uses another one.
+            CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
+
+          }
+          if (!functionBody.empty()) {  // Comment out the body of the function-like macro 
+            std::istringstream in(functionBody);
+            for (std::string line; std::getline(in, line);) {
+              if (args.getSilent() == false && args.getQuiet() == false) {
+                errs() << "Warning: line " << line << " commented out.\n";
                 LineError(sloc);
               }
-              argname = "h2m" + argname;  // Fix the problem by prepending h2m
+              fortranMacro += "! " + line + "\n";
             }
-            fortranMacro += argname;
-            fortranMacro += ", ";
           }
-                    // erase the redundant colon
-          fortranMacro.erase(fortranMacro.size()-2);
-          fortranMacro += ") BIND(C)\n";
-          // Check that this line is not too long. Take into account the fact that the
-          // characters INTERFACE\n alleady at the begining take up 10 characters and the 
-          // newline just added uses another one.
-          CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
+          // Close off the name-changed macro.
+          fortranMacro += "END SUBROUTINE h2m" + macroName + "\n";
+          fortranMacro += "END INTERFACE\n";
+        } else {  // We did not need to change the macro's name.
+          fortranMacro = "INTERFACE\n";
+          if (md->getMacroInfo()->arg_empty()) {
+            fortranMacro += "SUBROUTINE "+ macroName + "() BIND(C)\n";
+          } else {
+            fortranMacro += "SUBROUTINE "+ macroName + "(";
+            for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
+              // Assemble the macro arguments in a list and check names for illegal underscores. 
+              string argname = (*it)->getName();
+              if (argname.front() == '_') {
+                if (args.getSilent() == false) { 
+                  errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
+                  errs() << argname << " renamed h2m" << argname << "\n";
+                  LineError(sloc);
+                }
+                argname = "h2m" + argname;  // Fix the illegal name problem by prepending h2m
+              }
+              fortranMacro += argname;
+              fortranMacro += ", ";
+            }
+            // erase the redundant comma and space at the end of the macro
+            fortranMacro.erase(fortranMacro.size()-2);
+            fortranMacro += ") BIND(C)\n";
+            // Check that this line is not too long. Take into account the fact that the
+            // characters INTERFACE\n alleady at the begining take up 10 characters and the 
+            // newline just added uses another one.
+            CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
 
-        }
-        if (!functionBody.empty()) {  // Comment out the body of the function-like macro 
-          std::istringstream in(functionBody);
-          for (std::string line; std::getline(in, line);) {
-            if (args.getSilent() == false && args.getQuiet() == false) {
-              errs() << "Warning: line " << line << " commented out.\n";
-              LineError(sloc);
-            }
-            fortranMacro += "! " + line + "\n";
           }
-        }
-        fortranMacro += "END SUBROUTINE h2m" + macroName + "\n";
-        fortranMacro += "END INTERFACE\n";
-      } else {
-        fortranMacro = "INTERFACE\n";
-        if (md->getMacroInfo()->arg_empty()) {
-          fortranMacro += "SUBROUTINE "+ macroName + "() BIND(C)\n";
-        } else {
-          fortranMacro += "SUBROUTINE "+ macroName + "(";
-          for (auto it = md->getMacroInfo()->arg_begin (); it != md->getMacroInfo()->arg_end (); it++) {
-            string argname = (*it)->getName();
-            if (argname.front() == '_') {
-              if (args.getSilent() == false) { 
-                errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
-                errs() << argname << " renamed h2m" << argname << "\n";
+          // Comment out the body of the function using the standard string-stream idiom.
+          if (!functionBody.empty()) {
+            std::istringstream in(functionBody);
+            for (std::string line; std::getline(in, line);) {
+              if (args.getSilent() == false && args.getQuiet() == false) {
+                errs() << "Warning: line " << line << " commented out.\n";
                 LineError(sloc);
               }
-              argname = "h2m" + argname;  // Fix the problem by prepending h2m
+              fortranMacro += "! " + line + "\n";
             }
-            fortranMacro += argname;
-            fortranMacro += ", ";
           }
-          // erase the redundant colon
-          fortranMacro.erase(fortranMacro.size()-2);
-          fortranMacro += ") BIND(C)\n";
-          // Check that this line is not too long. Take into account the fact that the
-          // characters INTERFACE\n alleady at the begining take up 10 characters and the 
-          // newline just added uses another one.
-          CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
-
+          fortranMacro += "END SUBROUTINE " + macroName + "\n";
+          fortranMacro += "END INTERFACE\n";
         }
-        if (!functionBody.empty()) {
-          std::istringstream in(functionBody);
-          for (std::string line; std::getline(in, line);) {
-            if (args.getSilent() == false && args.getQuiet() == false) {
-              errs() << "Warning: line " << line << " commented out.\n";
-              LineError(sloc);
-            }
-            fortranMacro += "! " + line + "\n";
-          }
-        }
-        fortranMacro += "END SUBROUTINE " + macroName + "\n";
-        fortranMacro += "END INTERFACE\n";
       }
     }
 

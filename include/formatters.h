@@ -60,9 +60,10 @@ using namespace std;
 class Arguments {
 public:
   Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders,
-      bool t, bool a, bool b) :
+      bool t, bool a, bool b, bool h) :
       quiet(q), silent(s), output(out), no_system_headers(sysheaders) ,
-      together(t), array_transpose(a), auto_bind(b) { module_name = ""; }
+      together(t), array_transpose(a), auto_bind(b), hide_macros(h)
+      { module_name = ""; }
   llvm::tool_output_file &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
   bool getSilent() { return silent; }
@@ -72,6 +73,7 @@ public:
   bool getTogether() { return together; }
   bool getArrayTranspose() { return array_transpose; }
   bool getAutobind() { return auto_bind; }
+  bool getHideMacros() { return hide_macros; }
   
 private:
   // Where to send translated Fortran code
@@ -89,6 +91,9 @@ private:
   bool array_transpose;
   // Should we automatically handle illegal names with BIND(C, name=...)
   bool auto_bind;
+  // Whether we should comment out all function like macro definitions or
+  // make approximate tranlsations.
+  bool hide_macros;
   // The module name may be altered during processing by the action;
   // by default this is an empty string. It is used to pass values out, not in.
   string module_name;
