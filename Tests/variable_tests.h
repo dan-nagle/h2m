@@ -9,8 +9,6 @@ void* z;
 
 int (*function_pointer)(int);
 
-bool my_bool;
-
 short my_short;
 
 long my_long;

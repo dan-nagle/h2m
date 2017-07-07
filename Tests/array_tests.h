@@ -1,6 +1,8 @@
 // This is a basic test for array functionality
 // in h2m. It should compile without complaint.
 
+#define array_const  10
+
 int my_int_array[10];
 
 double* my_double_array[200];
@@ -24,4 +26,15 @@ double my_3d_array[3][5][8];
 
 int my_array[];
 
-int my_variable_function(int my_array[*]);
+int my_var_array[array_const];
+
+float my_float_array[array_const+5][array_const+1][array_const+2];
+
+int my_variable_function(int my_array[*], double other[]);
+
+int my_other_function(int my_array[4][5], int x, double other[x+4][x*2-3]);
+
+int other_function(int my_array[array_const], double other[array_const][array_const*2]);
+
+int static_array_func(int my_array[static 5]);
+

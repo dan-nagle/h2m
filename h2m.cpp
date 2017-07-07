@@ -207,38 +207,8 @@ string CToFTypeFormatter::getFortranIdASString(string raw_id) {
     // In this case, the array bounds are fixed and we can determine the
     // exact dimensions of the declared array.
     if (c_qualType.getTypePtr()->isConstantArrayType()) {
-      QualType element_type = c_qualType;  // Element type of the array for looping.
-      std::stack<string> dimensions;  // Holds dimensions so they can be reversed
-      raw_id += "(";
-      // Loop through the array's dimensions, pulling off layers by fetching
-      // the element types and getting their array information.
-      while (element_type.getTypePtr()->isConstantArrayType()) {
-        const ConstantArrayType *cat = ac.getAsConstantArrayType(element_type);
-        // Note that the getSize() function returns an arbitrary precision integer
-        // and a toString method needs the radix (10) and signed status (true).
-        // This if statement either prepares a stack to reverse the
-        // dimensions of the array (if requested) or else adds them
-        // into place without reversal
-        if (args.getArrayTranspose() == true) {
-          dimensions.push(cat->getSize().toString(10, true));
-        } else {
-          raw_id += cat->getSize().toString(10, true) + ", ";
-        }
-        element_type = cat->getElementType();
-        cat = ac.getAsConstantArrayType(element_type);
-      }
-      // Build up the raw ID from the stack, reversing array dimensions
-      // if requested and the stack was built
-      if (args.getArrayTranspose() == true) {
-        while (dimensions.empty() == false) {
-          raw_id += dimensions.top() + ", ";
-          dimensions.pop(); 
-        }
-      }
-      // Close the Fortran array declaration
-      // First, we erase the extra space and comma from the last loop iteration
-      raw_id.erase(raw_id.end() - 2, raw_id.end());
-      raw_id += ")";
+      // The helper fetches the dimensions in the form "x, y, z"
+      raw_id += "(" + getFortranArrayDimsASString() + ")";
     } else {  // This is not necessarilly a constant length array.
       // Only single dimension arrays are handled correctly here.
       const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
@@ -252,6 +222,128 @@ string CToFTypeFormatter::getFortranIdASString(string raw_id) {
   }
   return raw_id;
 };
+
+// This function will return the raw dimensions of an array as a comma separated
+// list. If requested on the command line, the dimensions will be reversed.
+// In the case that the array does not have constant dimensions, proper syntax
+// for an assumed shape array will be employed.
+string  CToFTypeFormatter::getFortranArrayDimsASString() {
+  string dim_str = "";  // String of dimensions to return.
+
+  QualType element_type = c_qualType;  // Element type of the array for looping.
+  std::stack<string> dimensions;  // Holds dimensions so they can be reversed
+  const Type *the_type_ptr = element_type.getTypePtr();
+  // Loop through the array's dimensions, pulling off layers by fetching
+  // the element types and getting their array information. The nullptr
+  // check is just for safety.
+  while (the_type_ptr != nullptr && the_type_ptr->isArrayType() == true) {
+    // A constant array type has specified dimensions.
+    if (the_type_ptr->isConstantArrayType()) {
+      const ConstantArrayType *cat = ac.getAsConstantArrayType(element_type);
+      // Note that the getSize() function returns an arbitrary precision integer
+      // and a toString method needs the radix (10) and signed status (true).
+      // This if statement either prepares a stack to reverse the
+      // dimensions of the array (if requested) or else adds them
+      // into place without reversal
+      if (args.getArrayTranspose() == true) {
+        dimensions.push(cat->getSize().toString(10, true));
+      } else {
+        dim_str += cat->getSize().toString(10, true) + ", ";
+      }
+      element_type = cat->getElementType();  // Iterate to the next dimension.
+      the_type_ptr = element_type.getTypePtr();
+    // A variable type array has an expression making up its size ie "arr[x + 15]"
+    // or is of the form x[*] (which is annoying and requires special handling).
+    } else if (the_type_ptr->isVariableArrayType() == true) {
+      const VariableArrayType *vat = ac.getAsVariableArrayType(element_type); 
+      Expr* size_exp = vat->getSizeExpr();  // Get information about the array size expression.
+       
+      clang::Expr::EvalResult eval_result;
+      // Check whether or not crazy, non-standard techniques can evaluate this value.
+      // If true, the result is returned in 'eval_result'
+      if (size_exp != nullptr && size_exp->EvaluateAsRValue(eval_result, ac) == true) {
+        string eval_str = eval_result.Val.getAsString(ac, vat->getElementType()); 
+        if (args.getArrayTranspose() == true) {
+          dimensions.push(eval_str);
+        } else {
+          dim_str += eval_str + ", ";
+        }
+      // If an array is declared as * size, we can just add "*, ". There are three
+      // possible array size modifiers, Normal, Star, and Static (func decls only)
+      } else if (vat->getSizeModifier() == ArrayType::ArraySizeModifier::Star) {
+        if (args.getArrayTranspose() == true) {
+          dimensions.push("*, ");
+        } else {
+          dim_str += "*, ";
+        }
+      } else {  // We cannot evaluate the expression. We fetch the source text.
+        string expr_text = Lexer::getSourceText(CharSourceRange::getTokenRange(
+            vat->getBracketsRange()), ac.getSourceManager(), LangOptions(), 0);
+        // This will give us the square brackets, so remove those from the ends
+        // because there should be no square brackets in Fortran array dimensions.
+        // This length test is to prevent an exception if something weird
+        // has happened during the evaluation.
+        if (expr_text.length() > 2) {
+          expr_text.erase(expr_text.begin(), expr_text.begin() + 1);
+          expr_text.erase(expr_text.end()-1, expr_text.end());
+        }
+
+        // Put our possibly illegal expression into place with the other dimensions.
+        if (args.getArrayTranspose() == true) {
+          dimensions.push(expr_text);
+        } else {
+          dim_str += expr_text + ", ";
+        }
+        // This is likely a serious issue. It may prevent compilation.
+        if (args.getSilent() == false) {
+          errs() << "Warning: unevaluatable array dimensions: " << expr_text << "\n";
+          LineError(sloc);
+        }
+      }
+    
+      // Get information about the next dimension of the array and repeat.
+      element_type = vat->getElementType();
+      the_type_ptr = element_type.getTypePtr();
+    // An incomplete type array has an unspecified size ie "arr[]"
+    } else if (the_type_ptr->isIncompleteArrayType()) {
+      return "*";  // Return the syntax for a variable size array.
+    }
+  }
+  // There is one other possibility: DependentSizedArrayType, but this is a C++
+  // construct that h2m does not support (DSAT's are template based arrays).
+
+  // Build up the raw ID from the stack, reversing array dimensions
+  // if requested and the stack was built
+  if (args.getArrayTranspose() == true) {
+    while (dimensions.empty() == false) {
+      dim_str += dimensions.top() + ", ";
+      dimensions.pop(); 
+    }
+  }
+  // We erase the extra space and comma from the last loop iteration.
+  dim_str.erase(dim_str.end() - 2, dim_str.end());
+  return dim_str;
+}
+
+// This function will create a specification statement for a Fortran array argument
+// as might appear in a function or subroutine prototype, (ie for "int thing (int x[5])"
+// it returns "INTEGER(C_INT), DIMENSION(5) :: x").
+string CToFTypeFormatter::getFortranArrayArgASString(string dummy_name) {
+  // Start out with the type (ie INTEGER(C_INT))
+  string arg_buff = getFortranTypeASString(true) + ", DIMENSION(";
+  arg_buff += getFortranArrayDimsASString() + ") :: ";
+  arg_buff += dummy_name;
+  return arg_buff;
+}
+
+// This function will determine whether or not the type given is an array
+// of any form. This is necessary to decide how to format function arguments.
+bool CToFTypeFormatter::isArrayType() {
+  if (c_qualType.getTypePtr() != nullptr && c_qualType.getTypePtr()->isArrayType()) {
+    return true;
+  }
+  return false;
+}
 
 // The type in C is found in the c_qualType variable. The type is 
 // determined over a series of if statements and a suitable Fortran 
@@ -746,11 +838,13 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
     if (innerelement->isEvaluatable (varDecl->getASTContext())) {
       evaluatable = true;
       clang::Expr::EvalResult r;
+      // Evaluate the expression as an 'r' value using any crazy technique the Clang designers
+      // want to use. This doesn't necessarilly follow the language standard.
       innerelement->EvaluateAsRValue(r, varDecl->getASTContext());
       string eleVal = r.Val.getAsString(varDecl->getASTContext(), innerelement->getType());
       // We must convert this integer string into a char. This is annoying.
       if (is_char == true) {
-        // This will throw an exception if it fails.
+        // This will throw an exception if it fails but it should succeed.
         int temp_val = std::stoi(eleVal);
         char temp_char = static_cast<char>(temp_val);
         // Put the character into place and surround it by quotes
@@ -1699,9 +1793,15 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     CheckLength(pname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     
     CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
-    // in some cases parameter doesn't have a name
-    paramsDecl += "    " + tf.getFortranTypeASString(true) + ", value" + " :: " + pname + "\n";
-    // need to handle the attribute later - I don't know what this commment means
+
+    // Array arguments must be handled diferently. They need the DIMENSION attribute.
+    if (tf.isArrayType() == true) {
+      paramsDecl += "    " + tf.getFortranArrayArgASString(pname) + "\n";
+    } else {
+      // in some cases parameter doesn't have a name in C, but must have one by the time we get here.
+      paramsDecl += "    " + tf.getFortranTypeASString(true) + ", value" + " :: " + pname + "\n";
+      // need to handle the attribute later - Michelle doesn't know what this (original) commment means 
+    }
     // Similarly, check the length of the declaration line to make sure it is valid Fortran.
     // Note that the + 1 in length is to account for the newline character.
     CheckLength(pname, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
@@ -1718,6 +1818,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
 string FunctionDeclFormatter::getParamsNamesASString() { 
   string paramsNames;
   int index = 1;
+  // We cycle through the parameters, assuming the type by loose binding.
   for (auto it = params.begin(); it != params.end(); it++) {
     if (it == params.begin()) {
       // if the param name is empty, rename it to arg_index

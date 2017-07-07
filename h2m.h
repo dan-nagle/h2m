@@ -107,7 +107,14 @@ public:
   CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc, Arguments &arg);
   string getFortranTypeASString(bool typeWrapper);
   string getFortranIdASString(string raw_id);
+  // Gets the raw dimensions for the array in either regular or reversed order as
+  // requested. The form returned is "dim1, dim2, dim3"
+  string getFortranArrayDimsASString();
+  // The format of the arguments in a function prototype are completely different
+  // from the format of any other array reference. This function creates one.
+  string getFortranArrayArgASString(string dummy_name);
   bool isSameType(QualType qt2);
+  bool isArrayType();  // Used to classify function arguments (decide if we need DIMENSION)
   static bool isIntLike(const string input);
   static bool isDoubleLike(const string input);
   static bool isType(const string input);

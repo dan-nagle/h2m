@@ -250,10 +250,9 @@ and CMake documentation to do this.
 It may be necessary to build CMake, Clang and LLVM, and h2m seperately
 due to complicated problems building the large projects. Troubleshooting
 advice fromt the LLVM and CMake websites should be helpful. The
-h2mbuild.sh script can then be used to build h2m or CMake can be
+h2mbuild.sh script can then be used to build h2m, or CMake can be
 used directly, specifying the directories to search for the CMake config
-files as specified above. Running CMake directly allows greater
-control and special options and variables (if needed) can be specified.
+files as specified above. 
 
 
 Building h2m Without the Script:
@@ -366,6 +365,14 @@ script, make sure that either bash, ksh, or zsh is being used to
 run the script. The build script was written to be run in bash
 and bash should be used if it is available.
 
+9. An old version of CMake cannot handle the build process for Clang and
+LLVM or h2m. Update CMake if necessary. Version 3.2 or later is required.
+Refer to the CMake website for instructions. 
+
+10. It may be more convenient and easier to download CMake from its
+website as a binary release. The script does not provide an option to do
+this, but it is not too difficult to do by hand.
+
 3)   USAGE OF H2M
 
 The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
@@ -417,10 +424,8 @@ or parameters as most appropriate.
 
 Enumerated Types: An enumerated type of arbitrary length can be translated. Because
 Fortran enums do not have their own scope as C enums do, the enumerator's name will
-become a member of the enumerated type with an unspecified value. This will prevent
-exact interoperability (the sizes will not be identical) and user intervention
-will be required.
-#TODO: FIND OUT IF THIS ACTUALLY SUPPORTS INTEROP
+be commented out. Interoperability is supported for the invidual enumerators 
+within the enumerated type.
 
 Typedefs: There is no Fortran type interoperable with a typedef. All typedefs will
 be translated into Fortran TYPE definitions containing exactly one field. This field
@@ -460,6 +465,8 @@ In all cases, comments in the code should point out the problem.
 Names Begining With "_": Names will be prepended with h2m in order to create
 a legal identifier. Warnings will be printed to standard error when a name is
 changed. A user must change names in the C files to allow interoperability.
+Optionally, the -auto-bind or -b option can perform some Fortran to C binding
+automatically.
 
 Unrecognized Types: When h2m does not recognize a type in a header, it will print a
 warning about the problem and surround the questionably translated text with 
@@ -478,6 +485,20 @@ the type to the fiend in the generated structure increases its length.
 
 
 OPTIONS:
+
+-array-transpose
+-a			Automatically reverse the dimensions of an array translated into
+Fortran (ie int x[3][5][9] becomes INTEGER, DIMENSION(9, 5, 3) :: x). Because Fortran
+stores arrays in column major order and C stores arrays in row major order, this will
+preserve C-like access to array members.
+
+-auto-bind
+-b			Where possible, if a C name begins with an underscore, after
+renaming the identifier h2m_c_identifer, insert a name="c_identifier" clause into the
+BIND(C) qualifier to let the processor know that h2m_c_identifier and c_identifier are
+the same entity. Note that name="c_identifier" clauses are illegal in TYPE' (C struct
+translations) and ENUM's (C enumeratred type translations) and will not be inserted.
+To handle illegal names in structs or enumerations, the C name will have to be changed.
 
 -out=<string>
 -o=<string>    		The output file for the tool can be specified here as either a
@@ -574,7 +595,9 @@ that there is necessarilly something wrong with the code in question.
 Name conflicts occur quite frequently becaus C has different scoping rules than fortran.
 Compiler errors such as 'Error: Symbol [symbol] cannot have a type' are likely due to 
 name conflicts between module and function or type names. These name conflicts typically
-lead to cascades of closely following but seemingly unrelated errors.
+lead to cascades of closely following but seemingly unrelated errors. The h2m program
+will attempt to catch and comment out name conflicts, but is not guaranteed to always
+succeed. 
 
 Typedefs defining 'void' will cause undefined type errors. Fortran has no reasonable
 translation for a 'void' type and h2m cannot handle it.

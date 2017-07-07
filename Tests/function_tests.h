@@ -10,7 +10,7 @@ int my_simple_function();
 
 void my_simple_subroutine();
 
-double my_double_function(int x, double* y, char[*] z);
+double my_double_function(int x, double* y, char z[*]);
 
 void my_complex_subroutine(short v, long** c, struct simple* m);
 
@@ -18,4 +18,4 @@ struct simple return_struct();
 
 struct simple* return_struct_pointer();
 
-void (*) int return_function_pointer();
+void  more_arrays_etc(int x, struct simple y, char n[]);
