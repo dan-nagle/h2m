@@ -132,8 +132,11 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11 -fno-rtti -fvisibility=hid
 # get_property(included DIRECTORY PROPERTY INCLUDE_DIRECTORIES) # Debugging message to see included directories
 # message(STATUS ${included})
 
+# The h2m include files are located in this directory.
+include_directories("./include")
+
 # CMake will take care of local include files (and the non-locals now that they are specified)
-add_executable(h2m h2m.cpp)
+add_executable(h2m src/h2m.cpp src/h2m_type_formatter.cpp src/h2m_decl_formatters.cpp)
 
 # Find and map all the given clang libraries and link them to the executable
 # Only invoked if the cmake.config file wasn't found
