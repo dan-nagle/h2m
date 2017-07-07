@@ -136,7 +136,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -std=c++11 -fno-rtti -fvisibility=hid
 include_directories("./include")
 
 # CMake will take care of local include files (and the non-locals now that they are specified)
-add_executable(h2m src/h2m.cpp src/h2m_type_formatter.cpp src/h2m_decl_formatters.cpp)
+add_executable(h2m src/h2m.cpp src/function_decl_formatter.cpp src/decl_formatters.cpp
+    src/var_decl_formatter.cpp src/type_formatter.cpp src/macro_formatter.cpp)
 
 # Find and map all the given clang libraries and link them to the executable
 # Only invoked if the cmake.config file wasn't found
