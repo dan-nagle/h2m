@@ -28,3 +28,10 @@ struct My_Struct {
   double* y;
   char* z[15];
 };
+
+// Usually, h2m will be able to catch these collisions
+// under any circumstances. For example, h2m will 
+// comment out this integer and print a warning.
+#define my_macro_name 45
+
+int My_Macro_Name;

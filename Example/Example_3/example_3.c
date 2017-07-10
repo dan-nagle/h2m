@@ -10,8 +10,10 @@
 void initialize_vars() {
   int i = 0;
   int j = 0;
-  for (i =0; i < 4; i++) {
-    our_global_numbers[i] = i - 2;
+  for (i = 0; i < 4; i++) {
+    for (j = 0; j < 3; j++) {
+      our_global_numbers[i][j] = i * j - 2;
+    }
   }
 
   // Note that initializing this as a string literal, ie
@@ -20,4 +22,5 @@ void initialize_vars() {
   strncpy(my_global_char, "MYLITERAL", 9);
 
   my_global_double = 4.5;
+  _my_global_other = 0;
 } 

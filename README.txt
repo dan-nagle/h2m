@@ -422,10 +422,17 @@ continue. For example, many errors raised by Clang as it processes header files 
 completely irrelevant to h2m. To make sure that the output file is kept despite
 any errors, use the -keep-going or -k option.
 
+Mistakes on the user's part may result in unusual errors. Only provide one
+source file to h2m at a time or the underlying Clang infrastructure will
+raise errors relating to the number of compiler jobs expected.
+
 Module Names: The base file name is prepended with "module_" to create a name
 for the fortran module generated from each file. If identically named header 
 files are found during recursive inclusion, a suffix of _[number of repetition]
 will be appended to create a unique module name.
+A module name is not checked for other illegal characters, which may well be
+present depending on the user's namning scheme. The user will need to rename
+the module by hand.
 
 Macros: Because fortran has no equivalent to the C macro, macros are traslated
 approximately. However, because types often cannot be determined for macros,
@@ -508,8 +515,8 @@ preserve C-like access to array members.
 -b			Where possible, if a C name begins with an underscore, after
 renaming the identifier h2m_c_identifer, insert a name="c_identifier" clause into the
 BIND(C) qualifier to let the processor know that h2m_c_identifier and c_identifier are
-the same entity. Note that name="c_identifier" clauses are illegal in TYPE' (C struct
-translations) and ENUM's (C enumeratred type translations) and will not be inserted.
+the same entity. Note that name="c_identifier" clauses are illegal in TYPE (C struct
+translations) and ENUM (C enumeratred type) translations and will not be inserted.
 To handle illegal names in structs or enumerations, the C name will have to be changed.
 
 -out=<string>
@@ -557,6 +564,12 @@ recursive processing. This option is only valid with the -r/-recursive option. T
 is useful if a C source file includes headers which need to be translated, but the
 C source file should not be translated and should only be used to determine which
 other files to translate.
+
+-hide-macros
+-h			All function like macros will be commented out rather than
+translated into approximate subroutine prototypes. Macros where h2m is able to 
+determine an appropriate parameter type will still be translated in Fortran
+approximations.
 
 -together
 -t			Send all the local (non-system) header files to a single module as
@@ -623,6 +636,3 @@ icc for the C code and gfortran for the Fortran code is not advisable. It might 
 cause problems, but it also might. If you use gcc for the C code, use gfortran for
 the Fortran code. Likewise, if you use icc for the C code, use ifort for the Fortran
 code.
-
-Multidimensional arrays are not translated properly by h2m. It will be necessary
-to adjust their dimensions by hand to support interoperability.

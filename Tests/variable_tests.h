@@ -7,6 +7,8 @@ double y = 3.145;
 
 void* z;
 
+void* z2 = &x;
+
 int (*function_pointer)(int);
 
 short my_short;

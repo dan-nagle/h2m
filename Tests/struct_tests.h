@@ -26,3 +26,5 @@ typedef struct z {
 } z;
 
 z my_z;
+
+y their_y = {45.6};

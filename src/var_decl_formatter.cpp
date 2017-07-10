@@ -27,10 +27,11 @@ string VarDeclFormatter::getInitValueASString() {
   // This prevents sytstem files from leaking in to the translation.
   if (varDecl->hasInit() && !isInSystemHeader) {
     if (varDecl->getType().getTypePtr()->isStructureType()) {
+        // TODO: try to implement this
         // structure type skip
     } else if (varDecl->getType().getTypePtr()->isCharType()) {
         // single CHAR
-      char character = varDecl->evaluateValue ()->getInt().getExtValue ();
+      char character = varDecl->evaluateValue()->getInt().getExtValue ();
       string cString;
       cString += character;
       valString = "\'" + cString + "\'";
@@ -80,8 +81,10 @@ string VarDeclFormatter::getInitValueASString() {
       }
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
       // ARRAY --- won't be used here bc it's handled by getFortranArrayDeclASString()
+      // I'm not sure why this code is here at all in that case -Michelle
       Expr *exp = varDecl->getInit();
-      string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc (),
+      // TODO: HERE'S SOME OF HOW TO DO IT.
+      string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc(),
           varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
       // comment out arrayText
       std::istringstream in(arrayText);
@@ -93,7 +96,8 @@ string VarDeclFormatter::getInitValueASString() {
         valString += "! " + line + "\n";
       }
     } else {
-      valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
+      valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(),
+          varDecl->getType());
       if (args.getSilent() == false && args.getQuiet() == false) {
         errs() << "Variable declaration initialization commented out:\n" << valString << " \n";
         CToFTypeFormatter::LineError(sloc);
@@ -370,6 +374,8 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
       vd_buffer +=  ") :: " + identifier + "\n";
 
+      // TODO: STRUCTURE INITIALIZATION
+
       // The following are checks for potentially illegal characters which might be
       // at the begining of the anonymous types. These types must be commented out.
       // It also looks for the "anonymous at" qualifier which might be present if 
@@ -459,7 +465,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
         vd_buffer += ") :: " + identifier + "\n";
       } else if (value[0] == '!') {
         vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
-        vd_buffer = ") :: " + identifier + " " + value + "\n";
+        vd_buffer += ") :: " + identifier + " " + value + "\n";
       } else {
         // A parameter may not have a bind(c) attribute
         vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";

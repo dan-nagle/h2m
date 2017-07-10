@@ -21,6 +21,8 @@ void too_long_for_fortran(char* long_parameter_one, int long_parameter_two,
 // C does not limit the length of an identifier's name, but a
 // Fortran identifier may not be longer than 63 characters
 // according to the Fortran 2013 standard.
+int my_ridiculous_integer_has_an_unnecessary_and_extremely_long_identifier;
+
 struct my_very_long_type_name_is_problematic {
   int placeholder;
 };
