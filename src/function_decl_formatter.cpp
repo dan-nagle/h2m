@@ -3,32 +3,6 @@
 
 #include "h2m.h"
 
-// A helper function to be used to output error line information
-// If the location is invalid, it returns a message about that.
-static void LineError(PresumedLoc sloc) {
-  if (sloc.isValid()) {
-    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
-  } else {
-    errs() << "Invalid file location \n";
-  }
-}
-
-// A helper function to be used to find lines/names which are too 
-// long to be valid fortran. It returns the string which is passed
-// in, regardless of the outcome of the test. The first argument
-// is the string to be checked. The integer agument is the
-// limit (how many characters are allowed), the boolean is whether
-// or not to warn, and the Presumed location is for passing to 
-// LineError if needed. 
-static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
-  if (tocheck.length() > limit && no_warn == false) {
-    errs() << "Warning: length of '" << tocheck;
-    errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
-    LineError(sloc);
-  }
-  return tocheck;  // Send back the string!
-}
-
 // -----------initializer FunctionDeclFormatter--------------------
 FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   funcDecl = f;
@@ -139,11 +113,11 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       // if (args.getSilent() == false && args.getQuiet() == false) {
       //  errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
       //  errs() << pname << "\n";
-      //  LineError(sloc);
+      //  CToFTypeFormatter::LineError(sloc);
       // }
     }
     // Check for a valid name length for the dummy variable.
-    CheckLength(pname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(pname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     
     CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
 
@@ -157,7 +131,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     }
     // Similarly, check the length of the declaration line to make sure it is valid Fortran.
     // Note that the + 1 in length is to account for the newline character.
-    CheckLength(pname, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(pname, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
     index++;
   }
   return paramsDecl;
@@ -186,7 +160,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
         if (args.getSilent() == false) {
           errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
           errs() << pname << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
       }
       paramsNames += pname;
@@ -202,7 +176,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
         if (args.getSilent() == false) {
           errs() << "Warning: Illegal parameter name " << old_pname << " renamed ";
           errs() << pname << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
       }
       paramsNames += ", " + pname; 
@@ -239,9 +213,9 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     string imports;
     string bindname;  // Used to link to a C function with a different name later.
     if (!paramsString.empty()) {
-      // CheckLength just returns the same string, but it will make sure the line is not too
+      // CToFTypeFormatter::CheckLength just returns the same string, but it will make sure the line is not too
       // long for Fortran and it will warn if needed and not silenced.
-      imports = CheckLength("    USE iso_c_binding, only: " + getParamsTypesASString() + "\n",
+      imports = CToFTypeFormatter::CheckLength("    USE iso_c_binding, only: " + getParamsTypesASString() + "\n",
           CToFTypeFormatter::line_max, args.getSilent(), sloc);
     } else {
       imports = "    USE iso_c_binding\n";
@@ -260,7 +234,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     if (funcname.front() == '_') {  // We have an illegal character in the identifier
       if (args.getSilent() == false) {
         errs() << "Warning: invalid function name " << funcname << " renamed h2m" << funcname << "\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       // If necessary, prepare a bind name to properly link to the C function
       if (args.getAutobind() == true) {
@@ -270,10 +244,10 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
     }
     // Check to make sure the function's name isn't too long. Warn if necessary.
-    CheckLength(funcname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(funcname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Check to make sure this declaration line isn't too long. It well might be.
     // bindname may be empty or may contain a C function to link to.
-    fortranFunctDecl = CheckLength(funcType + " " + funcname + "(" + getParamsNamesASString() + 
+    fortranFunctDecl = CToFTypeFormatter::CheckLength(funcType + " " + funcname + "(" + getParamsNamesASString() + 
         ")" + " BIND(C" + bindname + ")\n", CToFTypeFormatter::line_max, args.getSilent(), sloc);
     
     fortranFunctDecl += imports;
@@ -290,7 +264,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       for (std::string line; std::getline(in, line);) {
         if (args.getQuiet() == false && args.getSilent() == false) {
           errs() << "Warning: line " << line << " commented out \n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         commentedBody += "! " + line + "\n";
       }
@@ -309,7 +283,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     if (RecordDeclFormatter::StructAndTypedefGuard(funcname) == false) { 
       if (args.getSilent() == false) {
         errs() << "Warning: duplicate declaration of " << funcname << ", FUNCTION, skipped.\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       string temp_buf = fortranFunctDecl;
       fortranFunctDecl = "\n! Duplicate declaration of " + funcname + ", FUNCTION, skipped.\n";

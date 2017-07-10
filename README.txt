@@ -71,10 +71,12 @@ with compatible licenses.
 General Information:
 LLVM and Clang are very demanding on compilers and libraries used
 to build them. A recent version of gcc or Clang is recommended for
-the build process.
+the build process. The gcc version must be at least 4.8. 
 The utilities required to build and run h2m are: CMake (preferably
 a very recent version), LLVM, Clang, curl or wget (only if downloads
 of CMake, LLVM, and Clang are needed), bash, and standard unix utilities.
+Utilities required to build LLVM are enumerated on the website
+llvm.org/docs/GettingStarted.html.
 Though it was principally designed for bash shells, h2mbuild.sh may
 run under other shells including ksh and zsh. Other posix compliant
 shells may also work, but they have not been tested.
@@ -83,6 +85,10 @@ script can handle the installation of this software if necessary. In
 fact, it is recommended that Clang and LLVM be downloaded and built
 during the installation process to avoid potential complications and
 avoid the need to determine the locations of their config.cmake files.
+Note that there is no "bootstrapping" involved in the build carried
+out by the script. Its interest is goal is to compile header and library
+files used by h2m as quickly as possible, not to create a reliable
+and thoroughly tested compiler.
 If CMake is not installed, (ie the command 'which cmake' fails) CMake
 will need to be installed. The build script can perform a "bare-bones"
 installation if requested.
@@ -107,6 +113,9 @@ Options:
 interactively. Other options will be ignored. Do not use tilde expansion,
 ie "~/Documents", in interactively specified paths.
 
+-f	When performing tests to assess whether legal compilers exists,
+do not stop or print a warning if the test fails.
+
 -download_cmake		Requests that CMake be downloaded and installed.
 This will likely require administrator privledges. Alternately, CMake 
 can be downloaded from https://cmake.org/download/ as a binary release
@@ -117,6 +126,9 @@ is ./cmake_dir.
 to the desired download location for CMake. CMake files will be extracted
 into the CMake subdirectory of this directory.  This option will be ignored
 if -download_cmake is not specified.
+
+-CMAKE_INSTALL_PREFIX	If CMake is built, set the installation prefix
+to this directory. This allows control over the installation location.
 
 -download	Requests that LLVM and Clang be downloaded and built.
 The default directory if none is specified is ./clang-llvm

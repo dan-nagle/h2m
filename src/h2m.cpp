@@ -12,33 +12,6 @@
 #include "h2m.h"
 //-----------formatter functions----------------------------------------------------------------------------------------------------
 
-// A helper function to be used to output error line information
-// If the location is invalid, it returns a message about that.
-static void LineError(PresumedLoc sloc) {
-  if (sloc.isValid()) {
-    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
-  } else {
-    errs() << "Invalid file location \n";
-  }
-}
-
-// A helper function to be used to find lines/names which are too 
-// long to be valid fortran. It returns the string which is passed
-// in, regardless of the outcome of the test. The first argument
-// is the string to be checked. The integer agument is the
-// limit (how many characters are allowed), the boolean is whether
-// or not to warn, and the Presumed location is for passing to 
-// LineError if needed. 
-static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
-  if (tocheck.length() > limit && no_warn == false) {
-    errs() << "Warning: length of '" << tocheck;
-    errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
-    LineError(sloc);
-  }
-  return tocheck;  // Send back the string!
-}
-
-
 // Fetches the fortran module name from a given filepath Filename
 // IMPORTANT: ONLY call this ONCE for ANY FILE. The static 
 // structure requires this, otherwise you will have all sorts of
@@ -47,7 +20,8 @@ static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc s
 // It keps track of modules seen in a static map and appends a number
 // to the end of duplicates to create unique names. It also adds
 // module_ to the front.
-static string GetModuleName(string Filename, Arguments& args) {
+string Arguments::GenerateModuleName(string Filename) {
+  // Map to keep track of the number of repeats seen.
   static std::map<string, int> repeats;
   size_t slashes = Filename.find_last_of("/\\");
   string filename = Filename.substr(slashes+1);
@@ -59,17 +33,19 @@ static string GetModuleName(string Filename, Arguments& args) {
     string oldfilename = filename;  // Used to report the duplicate, no other purpose
     filename = filename + "_" + std::to_string(append);  // Add _# to the end of the name
     // Note that module_ will be prepended to the name prior to returning the string.
-    if (args.getSilent() == false) {
+    if (silent == false) {
       errs() << "Warning: repeated module name module_" << oldfilename << " found, source is " << Filename;
       errs() << ". Name changed to module_" << filename << "\n";
     }
   } else {  // Record the first appearance of this module name
     repeats[filename] = 2;
   }
-  filename = "module_" + filename;
-  if (filename.length() > 63 && args.getSilent() == false) {
+  filename = "module_" + filename;  // Now check for illegal module name length
+  if (filename.length() > CToFTypeFormatter::name_max  && silent == false) {
     errs() << "Warning: module name, " << filename << " too long.";
   }
+  // Set the filename in the arguments object from which the function was called.
+  module_name = filename;
   return filename;
 }
 
@@ -234,7 +210,7 @@ bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
     // Output warnings about commented out statements only if a loud run is in progress.
     if (args.getQuiet() == false && args.getSilent() == false) {
       errs() << "Warning: statement " << stmtText << " commented out.\n";
-      LineError(TheRewriter.getSourceMgr().getPresumedLoc(x->getLocStart()));
+      CToFTypeFormatter::LineError(TheRewriter.getSourceMgr().getPresumedLoc(x->getLocStart()));
     }
     stmtText += "! " + line + "\n";
   }
@@ -283,7 +259,7 @@ bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef F
 {
   fullPathFileName = Filename;
   // We have to pass this back out to keep track of repeated module names
-  args.setModuleName(GetModuleName(Filename, args));
+  args.GenerateModuleName(Filename);
 
   // initalize Module and imports
   string beginSourceModule;
@@ -366,11 +342,9 @@ int main(int argc, const char **argv) {
     // Follow the preprocessor's inclusions to generate a recursive 
     // order of hearders to be translated and linked by "USE" statements
     if (Recursive) {
-      std::set<string> seenfiles;
       std::stack<string> stackfiles;
-      // CHS means "CreateHeaderStack." The seenfiles is a set used to keep track of what 
-      // has been seen, and the stackfiles is used to keep track of the order to include them.
-      CHSFrontendActionFactory CHSFactory(seenfiles, stackfiles, args);
+      // CHS means "CreateHeaderStack." 
+      CHSFrontendActionFactory CHSFactory(stackfiles, args);
       int initerrs = Tool.run(&CHSFactory);  // Run the first action to follow inclusions
       // If the attempt to find the needed order to translate the headers fails,
       // this effort is probably doomed.
@@ -388,16 +362,37 @@ int main(int argc, const char **argv) {
         }
       }
 
-      // Dig through the created stack of header files we have seen, as prepared by
-      // the first Clang tool which tracks the preprocessor. Translate them each in turn.
-      string modules_list;
+
+      // This set keeps track of which files have been seen so far.
+      std::set<string> setfiles;
+      std::stack<string> sorted_headers;  // Will hold the headers as we sort them.
       while (stackfiles.empty() == false) {
         string headerfile = stackfiles.top();
-        stackfiles.pop(); 
-
-        if (stackfiles.empty() && IgnoreThis == true) {  // We were directed to skip the first file
-          break;  // Leave the while loop. This is cleaner than another level of indentation.
+        stackfiles.pop();
+ 
+        // If this is our first encounter with this file, meaning the "last" time
+        // the file was encountered during our traversal of the inclusion structure...
+        if (setfiles.find(headerfile) == setfiles.end()) {
+          sorted_headers.push(headerfile);  // Add it to the stack to reverse the order.
+          setfiles.insert(headerfile);  // We'll ignore this file if we see it again.
         }
+      }  // We thus reverse the order so that the first file will be last.
+      
+
+      // Dig through the created stack of header files we have seen, as prepared by
+      // the first clang tool and sorted/reversed by the loop above into the proper
+      // order for recursive inclusion. 
+      string modules_list;  // Accumulates module USE statements in string form
+      while (sorted_headers.empty() == false) {
+        string headerfile = sorted_headers.top();
+        sorted_headers.pop(); 
+
+        // We have been asked to skip the last file (which is this file)
+        // so skip. Use a break statement to avoid awkward code.
+        if (sorted_headers.empty() && IgnoreThis == true) {
+          break;  // Leave the module processing while loop.
+        }
+  
 
         ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on each file in turn
         TNAFrontendActionFactory factory(modules_list, args);
@@ -412,7 +407,7 @@ int main(int argc, const char **argv) {
             errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
           }
           // Comment out the use statement becuase the module may be corrupt.
-          modules_list += "!USE " + args.getModuleName() + "\n";
+          modules_list += "! USE " + args.getModuleName() + "\n";
           OutputFile.os()  << "! Warning: Translation Error Occurred on this module\n";
         } else {  // Successful run, no errors
           // Add USE statement to be included in future modules
@@ -425,7 +420,7 @@ int main(int argc, const char **argv) {
         args.setModuleName("");  // For safety, unset the module name passed out of Arguments
 
         args.getOutput().os() << "\n\n";  // Put two lines inbetween modules, even on a trans. failure
-      }  // End looking through the stack and processing all headers (including the original).
+     }  // End looking through the stack and processing all headers (including the original).
 
     } else {  // No recursion, just run the tool on the first input file. No module list string is needed.
       TNAFrontendActionFactory factory("", args);

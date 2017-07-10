@@ -4,32 +4,6 @@
 
 #include "h2m.h"
 
-// A helper function to be used to output error line information
-// If the location is invalid, it returns a message about that.
-static void LineError(PresumedLoc sloc) {
-  if (sloc.isValid()) {
-    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
-  } else {
-    errs() << "Invalid file location \n";
-  }
-}
-
-// A helper function to be used to find lines/names which are too 
-// long to be valid fortran. It returns the string which is passed
-// in, regardless of the outcome of the test. The first argument
-// is the string to be checked. The integer agument is the
-// limit (how many characters are allowed), the boolean is whether
-// or not to warn, and the Presumed location is for passing to 
-// LineError if needed. 
-static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
-  if (tocheck.length() > limit && no_warn == false) {
-    errs() << "Warning: length of '" << tocheck;
-    errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
-    LineError(sloc);
-  }
-  return tocheck;  // Send back the string!
-}
-
 // This function exists to make sure that a type is not declared
 // twice. This frequently happens with typedefs renaming structs.
 // This results in duplicate-name-declaration errors in Fortran
@@ -100,14 +74,14 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining.
       if (args.getSilent() == false) {  // Warn about the renaming unless silenced.
         errs() << "Warning: illegal identifier " << identifier << " renamed h2m" << identifier << "\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       identifier = "h2m" + identifier;  // Prepen dh2m to fix the problem.
     }
     
 
     // Check to make sure the identifier is not too lone
-    CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Include the bindname, which may be empty, when assembling the definition.
     typdedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
     // Because names in typedefs may collide with the typedef name, 
@@ -115,13 +89,13 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     if (args.getSilent() == false) {
       errs() << "Warning: due to name collisions during typdef translation, " << identifier;
       errs() <<  "\nrenamed " << identifier << tf.getFortranTypeASString(false) << "\n";
-      LineError(sloc);
+      CToFTypeFormatter::LineError(sloc);
     }
     string to_add = "    "+ tf.getFortranTypeASString(true) + "::" + identifier+"_"+tf.getFortranTypeASString(false) + "\n";
-    CheckLength(identifier + "_" + tf.getFortranTypeASString(false), CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(identifier + "_" + tf.getFortranTypeASString(false), CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Check for an illegal length. The \n character is the reason for the +1. It doesn't count
     // towards line length.
-    CheckLength(to_add, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(to_add, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
     typdedef_buffer += to_add;
     typdedef_buffer += "END TYPE " + identifier + "\n";
   //  }
@@ -130,7 +104,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
       if (args.getSilent() == false) {
         errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       string temp_buf = typdedef_buffer;
       typdedef_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
@@ -182,7 +156,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
     if (enumName.front() == '_') {  // Illegal underscore beginning the name!
       if (args.getSilent() == false) {  // Warn unless silenced
         errs() << "Warning: illegal enumeration identifier " << enumName << " renamed h2m" << enumName << "\n";
-        LineError(sloc); 
+        CToFTypeFormatter::LineError(sloc); 
       } 
       enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
     }
@@ -190,7 +164,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
     // Check the length of the name to make sure it is valid Fortran
     // Note that it would be impossible for this line to be an illegal length unless
     // the variable name were hopelessly over the length limit. Note bindname may be empty.
-    CheckLength(enumName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(enumName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     if (anon == false) {
       enum_buffer = "ENUM, BIND(C) ! " + enumName + "\n";
     } else {  // Handle a nameless enum as best we can.
@@ -207,18 +181,18 @@ string EnumDeclFormatter::getFortranEnumASString() {
         if (args.getSilent() == false) {
           errs() << "Warning: illegal enumeration identfier " << old_constName << " renamed ";
           errs() << constName << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
       }
       int constVal = (*it)->getInitVal().getExtValue();  // Get the initialization value
       // Check for a valid name length
-      CheckLength(constName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(constName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
       // Problem! We have seen an identifier with this name before! Comment out the line
       // and warn about it.
       if (RecordDeclFormatter::StructAndTypedefGuard(constName) == false) { 
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << constName << ", enum member.\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         enum_buffer += "! Skipping duplicate identifier.";
         enum_buffer +=  "    ! enumerator :: " + constName + "=" + to_string(constVal) + "\n";
@@ -235,7 +209,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
     if (RecordDeclFormatter::StructAndTypedefGuard(enumName) == false) {
       if (args.getSilent() == false) {
         errs() << "Warning: skipping duplicate declaration of " << enumName << "\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       // Comment out the declaration by stepping through and appending ! before newlines
       // to avoid duplicate identifier collisions.
@@ -306,12 +280,12 @@ string RecordDeclFormatter::getFortranFields() {
         if (args.getSilent() == false) {
           errs() << "Warning: invalid struct field name " << identifier;
           errs() << " renamed h2m" << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;
       }
       // Make sure that the field's identifier isn't too long for a fortran name
-      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
       fieldsInFortran += "    " + tf.getFortranTypeASString(true) + " :: " + identifier + "\n";
     }
@@ -339,7 +313,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       rd_buffer = "! struct without fields may cause warnings\n";
       if (args.getSilent() == false && args.getQuiet() == false) {
         errs() << "Warning: struct without fields may cause warnings: \n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
     }
 
@@ -348,13 +322,13 @@ string RecordDeclFormatter::getFortranStructASString() {
             if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
       // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
       // line can be guaranteed not to be too long.
-      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
 
       // Check to see whether we have declared something with this identifier before.
@@ -362,7 +336,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         // Comment out the declaration by stepping through and appending ! before newlines
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
@@ -383,13 +357,13 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
       // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
       // line can be guaranteed not to be too long.
-      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
 
       // Check to see whether we have declared something with this identifier before.
@@ -397,7 +371,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         // Comment out the declaration by stepping through and appending ! before newlines
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
@@ -417,13 +391,13 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
       // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
       // line can be guaranteed not to be too long.
-      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
 
       // Check to see whether we have declared something with this identifier before.
@@ -431,7 +405,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         // Comment out the declaration so that it is present in the output file
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
@@ -452,13 +426,13 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid typedef name " << identifier << " renamed h2m" << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
       // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
       // line can be guaranteed not to be too long.
-      CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
 
       // Check to see whether we have declared something with this identifier before.
@@ -466,7 +440,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         // Comment out the declaration so that it is present in the output file
         rd_buffer = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
@@ -494,7 +468,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
           errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
@@ -503,7 +477,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
       }
 
@@ -515,7 +489,7 @@ string RecordDeclFormatter::getFortranStructASString() {
         rd_buffer += "! " + line + "\n";
         if (args.getQuiet() == false && args.getSilent() == false) {
           errs() << "Warning: line in anonymous struct" << line << " commented out \n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
       }
     }

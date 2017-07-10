@@ -3,6 +3,10 @@
 
 #define array_const  10
 
+struct simple {
+  int x;
+};
+
 int my_int_array[10];
 
 double* my_double_array[200];
@@ -23,6 +27,8 @@ int my_other_2d_array[1][2] = {'a', 'b'};
 double my_2d_double_array[2][2] = {{2.5, -1.3}, {0, 5.3}};
 
 double my_3d_array[3][5][8];
+
+struct simple struct_array[5][2];
 
 int my_array[];
 

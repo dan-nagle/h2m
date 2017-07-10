@@ -41,8 +41,8 @@ private:
 // recursive -r option of h2m.
 class TraceFiles : public PPCallbacks {
 public:
-  TraceFiles(CompilerInstance &ci, std::set<string>& filesseen, std::stack<string>& filesstack, Arguments& arg) :
-  ci(ci), seenfiles(filesseen), stackfiles(filesstack), args(arg) { }
+  TraceFiles(CompilerInstance &ci, std::stack<string>& filesstack, Arguments& arg) :
+  ci(ci), stackfiles(filesstack), args(arg) { }
 
   // Writes into the stack if a new file is entered by the preprocessor and the file does
   // not yet exist in the set, thus creating an exclusive reverse-ordered stack.
@@ -58,25 +58,18 @@ public:
     // This is already guarded by the loc.isValid() above so we know that loc is valid when we ask this
     clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
     string filename = ploc.getFilename();
-    if (seenfiles.find(filename) != seenfiles.end()) {
-      // Place holder: we have seen the file before so we don't add it to the stack.
-      return;
-     } else if (filename.find("<built-in>") != string::npos || filename.find("<command line>") != string::npos) {
+    if (filename.find("<built-in>") != string::npos || filename.find("<command line>") != string::npos) {
        // These are not real files. They may be called something else on other platforms, but
        // this was the best way I could think to try to get rid of them. They should not be
        // translated in a recursive run. They do not actually exist. This doesn't actually fix the problem.
        return;
-     } else {
-      // New file. Add it to the stack and the set.
-      seenfiles.insert(filename);
+     } else {  // Add the file to the stack
       stackfiles.push(filename);
     }
   }
 
 private:
   CompilerInstance &ci;
-  // Recording data structures to keep track of files the preprocessor sees
-  std::set<string>& seenfiles;
   // Order data structure to keep track of the order the files were seen in
   std::stack<string>& stackfiles;
   Arguments &args;
@@ -97,15 +90,15 @@ public:
 // of USE statements in recursive processing.
 class CreateHeaderStackAction : public clang::ASTFrontendAction {
 public:
-  CreateHeaderStackAction(std::set<string>& filesseen, std::stack<string>& filesstack, Arguments &arg) :
-     seenfiles(filesseen), stackfiles(filesstack), args(arg) {} 
+  CreateHeaderStackAction(std::stack<string>& filesstack, Arguments &arg) :
+     stackfiles(filesstack), args(arg) {} 
 
   // When a source file begins, the callback to trace filechanges is registered
   // so that all changes are recorded and the order of includes can be preserved
   // in the stack.
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
     Preprocessor &pp = ci.getPreprocessor();
-    pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, seenfiles, stackfiles, args));
+    pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, stackfiles, args));
     return true;
    }
 
@@ -118,8 +111,6 @@ public:
   }
 
 private:
-  // Keeps track of which headers we have seen
-  std::set<string>& seenfiles;
   // Keeps track of the order the headers were seen in
   std::stack<string>& stackfiles; 
   // Arguments passed in from the action factory
@@ -131,18 +122,16 @@ private:
 // or a set and a stack
 class CHSFrontendActionFactory : public FrontendActionFactory {
 public:
-  CHSFrontendActionFactory(std::set<string>& seenfiles, std::stack<string>& stackfiles, Arguments &arg) :
-     seenfiles(seenfiles), stackfiles(stackfiles), args(arg) {} 
+  CHSFrontendActionFactory(std::stack<string>& stackfiles, Arguments &arg) :
+     stackfiles(stackfiles), args(arg) {} 
 
   // Creates a new action which only attends to file changes in the preprocessor.
   // This allows tracing of the files included.
   CreateHeaderStackAction *create() override {
-    return new CreateHeaderStackAction(seenfiles, stackfiles, args);
+    return new CreateHeaderStackAction(stackfiles, args);
   }
 
 private:
-  // Set to keep track of all the files we have seen
-  std::set<string>& seenfiles;
   // Stack to keep track of the order for translation of files
   std::stack<string>& stackfiles;
   // Additional arguments, including quiet/silent and the module name

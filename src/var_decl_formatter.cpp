@@ -4,32 +4,6 @@
 
 #include "h2m.h"
 
-// A helper function to be used to output error line information
-// If the location is invalid, it returns a message about that.
-static void LineError(PresumedLoc sloc) {
-  if (sloc.isValid()) {
-    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
-  } else {
-    errs() << "Invalid file location \n";
-  }
-}
-
-// A helper function to be used to find lines/names which are too 
-// long to be valid fortran. It returns the string which is passed
-// in, regardless of the outcome of the test. The first argument
-// is the string to be checked. The integer agument is the
-// limit (how many characters are allowed), the boolean is whether
-// or not to warn, and the Presumed location is for passing to 
-// LineError if needed. 
-static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
-  if (tocheck.length() > limit && no_warn == false) {
-    errs() << "Warning: length of '" << tocheck;
-    errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
-    LineError(sloc);
-  }
-  return tocheck;  // Send back the string!
-}
-
 // -----------initializer VarDeclFormatter--------------------
 VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   varDecl = v;
@@ -101,7 +75,7 @@ string VarDeclFormatter::getInitValueASString() {
         if (args.getSilent() == false && args.getQuiet() == false) {
           errs() << "Variable declaration initialization commented out:\n";
           errs() << valString << "\n";
-          LineError(sloc); 
+          CToFTypeFormatter::LineError(sloc); 
         }
       }
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
@@ -114,7 +88,7 @@ string VarDeclFormatter::getInitValueASString() {
       for (std::string line; std::getline(in, line);) {
         if (args.getQuiet() == false && args.getSilent() == false) {
           errs() << "Warning: array contents " << line << " commented out \n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         valString += "! " + line + "\n";
       }
@@ -122,7 +96,7 @@ string VarDeclFormatter::getInitValueASString() {
       valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
       if (args.getSilent() == false && args.getQuiet() == false) {
         errs() << "Variable declaration initialization commented out:\n" << valString << " \n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
     }
   }
@@ -209,7 +183,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     string identifier = varDecl->getNameAsString();
 
     // Check for an illegal name length. Warn if it exists.
-    CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
     // Illegal underscore is found in the array declaration
     if (identifier.front() == '_') {
@@ -221,7 +195,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       if (args.getSilent() == false) {
         errs() << "Warning: illegal array identifier " << identifier;
         errs() << " renamed h2m" << identifier << ".\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       identifier = "h2m" + identifier;
     }
@@ -234,7 +208,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       if (args.getSilent() == false) {
         errs() << "Warning: skipping duplicate declaration of " << identifier;
         errs() << ", array declaration.\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       arrayDecl = "! Skipping duplicate declaration of " + identifier + "\n!";
     }
@@ -333,7 +307,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
               arrayDecl += "! " + line + "\n";
               if (args.getQuiet() == false && args.getSilent() == false) {
                 errs() << "Warning: array text " << line << " commented out.\n";
-                LineError(sloc);
+                CToFTypeFormatter::LineError(sloc);
               }
             }
           } else {
@@ -351,7 +325,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
   // Check for lines which exceed the Fortran maximum. The helper will warn
   // if they are found and Silent is false. The +1 is because of the newline character
   // which doesn't count towards line length.
-  CheckLength(arrayDecl, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+  CToFTypeFormatter::CheckLength(arrayDecl, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
 
   return arrayDecl;
 };
@@ -384,7 +358,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
          if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
             errs() << identifier << " renamed h2m" << identifier << "\n";
-            LineError(sloc);
+            CToFTypeFormatter::LineError(sloc);
          }
          if (args.getAutobind() == true) {  // Set up the bind phrase if requested.
            // The proper syntax is BIND(C, name="cname").
@@ -409,7 +383,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         vd_buffer = "!" + vd_buffer;
         vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
@@ -432,7 +406,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
          if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
             errs() << identifier << " renamed h2m" << identifier << "\n";
-            LineError(sloc);
+            CToFTypeFormatter::LineError(sloc);
          }
          if (args.getAutobind() == true) {  // Setup the autobinding buffer if requested
            bindname = ", name=\"" + identifier + " \"";
@@ -455,7 +429,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         vd_buffer = "!" + vd_buffer;
         vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
@@ -471,7 +445,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
          if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not begin with an underscore. ";
             errs() << identifier << " renamed h2m" << identifier << "\n";
-            LineError(sloc);
+            CToFTypeFormatter::LineError(sloc);
          }
          if (args.getAutobind() == true) {
            bindname = ", name=\"" + identifier + " \"";
@@ -494,7 +468,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         vd_buffer = "!" + vd_buffer;
         vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
@@ -503,10 +477,10 @@ string VarDeclFormatter::getFortranVarDeclASString() {
     }
     
     // Identifier may be initialized to "". This will cause no harm.
-    CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // As we check for valid fortran name and line lengths, we add one to account for the
     // presence of the newline character.
-    CheckLength(vd_buffer, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(vd_buffer, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
   }
   return vd_buffer;
 };

@@ -8,6 +8,11 @@ struct x {
   struct x* my_struct_pointer;
 };
 
+struct complicated {
+  struct x my_x;
+  int my_int;
+};
+
 struct y {
   double place_holder;
 } my_y;

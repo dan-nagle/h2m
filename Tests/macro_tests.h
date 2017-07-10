@@ -5,6 +5,10 @@
 
 #define my_double 34.5
 
+#define my_char 'a'
+
+#define my_string "a string"
+
 #define my_arg_macro(x, y) x + y
 
 #define swap_trick(x, y) {x ^= y; y ^= x; x ^= y;}

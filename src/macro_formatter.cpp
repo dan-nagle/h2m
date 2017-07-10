@@ -4,32 +4,6 @@
 #include "h2m.h"
 //-----------formatter functions----------------------------------------------------------------------------------------------------
 
-// A helper function to be used to output error line information
-// If the location is invalid, it returns a message about that.
-static void LineError(PresumedLoc sloc) {
-  if (sloc.isValid()) {
-    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
-  } else {
-    errs() << "Invalid file location \n";
-  }
-}
-
-// A helper function to be used to find lines/names which are too 
-// long to be valid fortran. It returns the string which is passed
-// in, regardless of the outcome of the test. The first argument
-// is the string to be checked. The integer agument is the
-// limit (how many characters are allowed), the boolean is whether
-// or not to warn, and the Presumed location is for passing to 
-// LineError if needed. 
-static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
-  if (tocheck.length() > limit && no_warn == false) {
-    errs() << "Warning: length of '" << tocheck;
-    errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
-    LineError(sloc);
-  }
-  return tocheck;  // Send back the string!
-}
-
 // -----------initializer MacroFormatter--------------------
 // The preprocessor is used to find the macro names in the source files. The macro is 
 // more difficult to process. Both its name and definition are fetched using the lexer.
@@ -110,7 +84,7 @@ string MacroFormatter::getFortranMacroASString() {
             if (args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
               errs() << macroName << " renamed " << "h2m" << macroName << "\n";
-              LineError(sloc);
+              CToFTypeFormatter::LineError(sloc);
             }
             fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else {
@@ -122,7 +96,7 @@ string MacroFormatter::getFortranMacroASString() {
             if (args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
               errs() << macroName << " renamed " << "h2m" << macroName << "\n";
-              LineError(sloc);
+              CToFTypeFormatter::LineError(sloc);
             }
             fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+"), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else {
@@ -135,14 +109,14 @@ string MacroFormatter::getFortranMacroASString() {
             if (args.getSilent() == false) {
               errs() << "Warning: Macro with value including UL detected. ";
               errs() << macroName << " Is invalid.\n";
-              LineError(sloc);
+              CToFTypeFormatter::LineError(sloc);
             }
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else if (macroName.front() == '_') {  // Invalid underscore as first character
             if (args.getSilent() == false) {
               errs() << "Warning: Fortran name with invalid characters detected. ";
               errs() << macroName << " renamed h2m" << macroName << "\n"; 
-              LineError(sloc);
+              CToFTypeFormatter::LineError(sloc);
             }
             fortranMacro = "INTEGER(C_INT), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else if (macroVal.find("x") != std::string::npos) {
@@ -160,14 +134,14 @@ string MacroFormatter::getFortranMacroASString() {
             if (args.getSilent() == false) {
               errs() << "Warning: macro with value including FUL detected. ";
               errs() << macroName << " Is invalid.\n";
-              LineError(sloc);
+              CToFTypeFormatter::LineError(sloc);
             }
             fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " + macroVal + "\n";
           } else if (macroName.front() == '_') {
              if (args.getSilent() == false) {
               errs() << "Warning: Fortran names may not start with an underscore. ";
               errs() << macroName << " renamed h2m" << macroName << ".\n";
-              LineError(sloc);
+              CToFTypeFormatter::LineError(sloc);
             }
             fortranMacro = "REAL(C_DOUBLE), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
           } else {
@@ -183,26 +157,26 @@ string MacroFormatter::getFortranMacroASString() {
           for (std::string line; std::getline(in, line);) {
             if (args.getQuiet() == false && args.getSilent() == false) {
               errs() << "Warning: line " << line << " commented out\n";
-              LineError(sloc);
+              CToFTypeFormatter::LineError(sloc);
             }
             fortranMacro += "! " + line + "\n";
           }
         }
         // Check the length of the lines of all object like macros prepared.
-        CheckLength(fortranMacro, CToFTypeFormatter::line_max, args.getSilent(), sloc);
+        CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max, args.getSilent(), sloc);
     } else { // macroVal.empty(), make the object a bool positive
       if (macroName[0] == '_') {
         if (args.getSilent() == false) {
           errs() << "Warning: Fortran names may not start with an underscore. ";
           errs() << macroName << " renamed h2m" << macroName << ".\n";
-          LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
         fortranMacro += "INTEGER(C_INT), parameter, public :: h2m" + macroName  + " = 1 \n";
       } else {
         fortranMacro = "INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
       }
       // Check the length of the lines of all the empty macros prepared.
-      CheckLength(fortranMacro, CToFTypeFormatter::line_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max, args.getSilent(), sloc);
     }
 
 
@@ -232,7 +206,7 @@ string MacroFormatter::getFortranMacroASString() {
           if (args.getSilent() == false) {
             errs() << "Warning: fortran names may not start with an underscore ";
             errs() << macroName << " renamed h2m" << macroName << "\n";
-            LineError(sloc);
+            CToFTypeFormatter::LineError(sloc);
           }
           if (md->getMacroInfo()->arg_empty()) {
             fortranMacro += "SUBROUTINE h2m" + macroName + "() BIND(C)\n";
@@ -244,7 +218,7 @@ string MacroFormatter::getFortranMacroASString() {
                 if (args.getSilent() == false) {
                   errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
                   errs() << argname << " renamed h2m" << argname << "\n";
-                  LineError(sloc);
+                  CToFTypeFormatter::LineError(sloc);
                 }
                 argname = "h2m" + argname;  // Fix the problem by prepending h2m
               }
@@ -257,7 +231,7 @@ string MacroFormatter::getFortranMacroASString() {
             // Check that this line is not too long. Take into account the fact that the
             // characters INTERFACE\n alleady at the begining take up 10 characters and the 
             // newline just added uses another one.
-            CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
+            CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
 
           }
           if (!functionBody.empty()) {  // Comment out the body of the function-like macro 
@@ -265,7 +239,7 @@ string MacroFormatter::getFortranMacroASString() {
             for (std::string line; std::getline(in, line);) {
               if (args.getSilent() == false && args.getQuiet() == false) {
                 errs() << "Warning: line " << line << " commented out.\n";
-                LineError(sloc);
+                CToFTypeFormatter::LineError(sloc);
               }
               fortranMacro += "! " + line + "\n";
             }
@@ -286,7 +260,7 @@ string MacroFormatter::getFortranMacroASString() {
                 if (args.getSilent() == false) { 
                   errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
                   errs() << argname << " renamed h2m" << argname << "\n";
-                  LineError(sloc);
+                  CToFTypeFormatter::LineError(sloc);
                 }
                 argname = "h2m" + argname;  // Fix the illegal name problem by prepending h2m
               }
@@ -299,7 +273,7 @@ string MacroFormatter::getFortranMacroASString() {
             // Check that this line is not too long. Take into account the fact that the
             // characters INTERFACE\n alleady at the begining take up 10 characters and the 
             // newline just added uses another one.
-            CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
+            CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11, args.getSilent(), sloc);
 
           }
           // Comment out the body of the function using the standard string-stream idiom.
@@ -308,7 +282,7 @@ string MacroFormatter::getFortranMacroASString() {
             for (std::string line; std::getline(in, line);) {
               if (args.getSilent() == false && args.getQuiet() == false) {
                 errs() << "Warning: line " << line << " commented out.\n";
-                LineError(sloc);
+                CToFTypeFormatter::LineError(sloc);
               }
               fortranMacro += "! " + line + "\n";
             }
@@ -328,12 +302,12 @@ string MacroFormatter::getFortranMacroASString() {
       temp_name = macroName;
     }
     // Check the name's length to make sure that it is valid
-    CheckLength(temp_name, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(temp_name, CToFTypeFormatter::name_max, args.getSilent(), sloc);
     // Now check to see if this is a repeated identifier. This is very uncommon but could occur.
     if (RecordDeclFormatter::StructAndTypedefGuard(temp_name) == false) {
       if (args.getSilent() == false) {
         errs() << "Warning: skipping duplicate declaration of " << temp_name << ", macro definition.\n";
-        LineError(sloc);
+        CToFTypeFormatter::LineError(sloc);
       }
       string temp_buf = fortranMacro;  // Comment out all the lines using an istringstream
       fortranMacro = "\n! Duplicate declaration of " + temp_name + ", MACRO, skipped.\n";
@@ -347,5 +321,4 @@ string MacroFormatter::getFortranMacroASString() {
   }
   return fortranMacro;
 };
-
 

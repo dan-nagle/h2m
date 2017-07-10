@@ -74,6 +74,7 @@ public:
   bool getArrayTranspose() { return array_transpose; }
   bool getAutobind() { return auto_bind; }
   bool getHideMacros() { return hide_macros; }
+  string GenerateModuleName(string Filename);
   
 private:
   // Where to send translated Fortran code
@@ -128,6 +129,10 @@ public:
   static bool isString(const string input);
   static bool isChar(const string input);
   static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args);
+  // Prints an error location.
+  static void LineError(PresumedLoc sloc); 
+  // Can find when a name or long is illegally long for Fortran.
+  static string CheckLength(string tochek, int limit, bool no_warn, PresumedLoc sloc);
   // Constants to be used for length checking when comparing names/lines
   // to see if they are valid Fortran.
   static const int name_max = 63;

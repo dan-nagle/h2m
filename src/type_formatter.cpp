@@ -5,7 +5,7 @@
 
 // A helper function to be used to output error line information
 // If the location is invalid, it returns a message about that.
-static void LineError(PresumedLoc sloc) {
+void CToFTypeFormatter::CToFTypeFormatter::LineError(PresumedLoc sloc) {
   if (sloc.isValid()) {
     errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
   } else {
@@ -19,12 +19,12 @@ static void LineError(PresumedLoc sloc) {
 // is the string to be checked. The integer agument is the
 // limit (how many characters are allowed), the boolean is whether
 // or not to warn, and the Presumed location is for passing to 
-// LineError if needed. 
-static string CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
+// CToFTypeFormatter::CToFTypeFormatter::LineError if needed. 
+string CToFTypeFormatter::CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
   if (tocheck.length() > limit && no_warn == false) {
     errs() << "Warning: length of '" << tocheck;
     errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
-    LineError(sloc);
+    CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
   }
   return tocheck;  // Send back the string!
 }
@@ -154,7 +154,7 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
         // This is likely a serious issue. It may prevent compilation.
         if (args.getSilent() == false) {
           errs() << "Warning: unevaluatable array dimensions: " << expr_text << "\n";
-          LineError(sloc);
+          CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
         }
       }
     
@@ -357,7 +357,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
       if (args.getSilent() == false) {
         errs() << "Warning: fortran names may not begin with an underscore.";
         errs() << f_type << " renamed " << "h2m" << f_type << "\n";
-        LineError(sloc);
+        CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
       }
       f_type = "h2m" + f_type;  // Prepend h2m to fix the naming problem
     }
@@ -380,7 +380,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
     if (typeWrapper) {
       if (args.getSilent() == false) {
         errs() << "Warning: unrecognized type (" << c_qualType.getAsString() << ")\n";
-        LineError(sloc);
+        CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
       }
     }
   }
@@ -542,25 +542,25 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
     if (args.getSilent() == false) {
       errs() << "Warning: Fortran names may not start with '_' ";
       errs() << macroName << " renamed h2m" << macroName << "\n";
-      LineError(loc);
+      CToFTypeFormatter::CToFTypeFormatter::LineError(loc);
     }
     temp_macro_name = "h2m" + macroName;
   }
 
-  // The CheckLength function is employed here to make sure lines are acceptable lengths
-  ft_buffer = CheckLength("TYPE, BIND(C) :: " + temp_macro_name + "\n", CToFTypeFormatter::line_max,
+  // The CToFTypeFormatter::CheckLength function is employed here to make sure lines are acceptable lengths
+  ft_buffer = CToFTypeFormatter::CheckLength("TYPE, BIND(C) :: " + temp_macro_name + "\n", CToFTypeFormatter::line_max,
       args.getSilent(), loc);
   if (macroVal.find("char") != std::string::npos) {
-    ft_buffer += CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+    ft_buffer += CToFTypeFormatter::CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
         args.getSilent(), loc);
   } else if (macroVal.find("long") != std::string::npos) {
-    ft_buffer += CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+    ft_buffer += CToFTypeFormatter::CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
         args.getSilent(), loc);
   } else if (macroVal.find("short") != std::string::npos) {
-    ft_buffer += CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+    ft_buffer += CToFTypeFormatter::CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
         args.getSilent(), loc);
   } else {
-    ft_buffer += CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
+    ft_buffer += CToFTypeFormatter::CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
         args.getSilent(), loc);
   }
   ft_buffer += "END TYPE " + temp_macro_name + "\n";

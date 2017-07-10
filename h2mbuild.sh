@@ -289,6 +289,23 @@ then
     echo "to contain a bug causing a fatal build error."
     read dummy
   fi
+  # This commented out section was a failed attempt to check the gcc version number.
+  # If we have the capability to check the version, check the verison! Some versions don't work.
+  # if [ ! `which gcc>/dev/null` ] && [ ! `which awk>/dev/null`]
+  # then
+    # This command extracts the version field and strips it down to something like "5.4"
+    # vnum= `gcc --version | awk '{if (NR == 1) {print $3}}' | cut -c 1,2,3`
+    # vnumcut= `echo "$vnum" | cut -c 1`
+    # if [ "$vnumcut" -ge 5 ] || [ "$vnum" = "4.8" ] || [ "$vnum" = "4.9" ] || [ "$force" == "true" ]
+    # then  # Everything is fine if one of these versions is found or we are forced. Continue.
+    #  dummy=""
+    #else  # This is a problem. We have an illegal version it seems.
+    #  echo "Warning: LLVM and Clang may not compile properly with a gcc version below 4.8."
+    #  echo "Found version is $vnum. Press enter to continue anyway."
+    #  read dummy
+   # fi
+  #fi
+    
 
   echo "Beginning download to $download_dir of clang and llvm"
   # Autodetect download tool
