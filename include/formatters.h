@@ -119,7 +119,7 @@ public:
   // requested. The form returned is "dim1, dim2, dim3"
   string getFortranArrayDimsASString();
   // The format of the arguments in a function prototype are completely different
-  // from the format of any other array reference. This function creates one.
+  // from the format of any other array reference. This function creates argument format.
   string getFortranArrayArgASString(string dummy_name);
   bool isSameType(QualType qt2);
   bool isArrayType();  // Used to classify function arguments (decide if we need DIMENSION)
@@ -231,11 +231,17 @@ public:
   // Arrays are special and complicated. They must be
   // handled seperately.
   string getFortranArrayDeclASString();
+  // Attempt to get the initialization of a structured type
+  // in fortran. This is also quite complex and specialized.
+  // The name of the structure is passed in to allow the possibility of
+  // recursion.
+  string getFortranStructDeclASString(string struct_name);
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues, string arrayShapes,
       bool &evaluatable, bool firstEle, bool is_char);
 
 private:
   Rewriter &rewriter;
+  // Used to store information about the shape of an array declaration.
   string arrayShapes_fin;
   Arguments &args;
   

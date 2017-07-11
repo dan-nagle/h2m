@@ -9,4 +9,5 @@ typedef enum my_stuff my_stuff_t;
 
 typedef int* integer_pointer;
 
-typedef void (*) int function_pointer_type;
+int takes_type_def (enum their_stuff an_arg, enum my_stuff another_arg);
+

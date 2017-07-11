@@ -12,10 +12,15 @@
 # ./clang/AST/DeclNodes.inc (usually /build/tools/clang/include
 # specify -DCLANG_LIB_PATH on the command line to be the directory containing
 # all .a/.so files for clang. This should be in /build/lib
+# In case of linking errors complaining of something undefined for
+# the hardware, try specifying -DALL=ON to link to all LLVM lib files.
 
 
 cmake_minimum_required(VERSION 3.2)
 project(h2m)
+
+# This is the option to link in all LLVM libraries in case of emergency.
+option(ALL "ALL" OFF)
 
 
 # Find the package for LLVM or else obtain paths to includes and library files
@@ -27,7 +32,13 @@ if(LLVM_FOUND) # We found the config and can use its definitions
   add_definitions(${LLVM_DEFINITIONS})
   include_directories(${LLVM_INCLUDE_DIRS})
   #DEBUGLINE message(STATUS "LLVM include directories are ${LLVM_INCLUDE_DIRS}")
-  llvm_map_components_to_libnames(llvm_libs support core irreader)
+  
+  if(${ALL}) # An option to include all libraries in the build.
+    message(STATUS "Linking all LLVM libraries, as requested.")
+    llvm_map_components_to_libnames(llvm_libs all)
+  else()
+    llvm_map_components_to_libnames(llvm_libs support core irreader)
+  endif()
 elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all must be done by hand
   message(STATUS "Found LLVM directory information")
   message(STATUS "Be aware that Clang directory information must also be specified manually")

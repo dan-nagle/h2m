@@ -45,14 +45,14 @@ then
 fi
 
 # If we have failed to find adequate compilers, beg for the user's help
-if [ "$fortran_compile_command" == "none" ] || [ "$fortran_compiler_driver" == "none" ]
+if [ "$fortran_compile_command" = "none" ] || [ "$fortran_compiler_driver" = "none" ]
 then
   echo "Autodetection of a Fortran compiler has failed. To continue, please"
   echo "provide the following information about your Fortran compiler."
   echo "An empty response will exit the tutorial."
   echo "What is the command to invoke your Fortran compiler?"
   read compiler_name
-  if [ "$compiler_name" == "" ]  # No response was given. We cannot continue.
+  if [ "$compiler_name" = "" ]  # No response was given. We cannot continue.
   then
     error_report "No compiler provided. Exiting."
   else 
@@ -61,14 +61,14 @@ then
   echo "What is the option to compile but not link Fortran files with your compiler?"
   echo "The default, used if none is provided, is -c. This is the case for gfortran and ifort."
   read compile_only_option
-  if [ "$compile_only_option" == "" ]  # No response was given. Use the default -c option.
+  if [ "$compile_only_option" = "" ]  # No response was given. Use the default -c option.
   then
     compile_only_option="-c"
   fi
   echo "What is the option to specify an output file with your compiler?"
   echo "The default, used if none is provided, is -o. This is the case for gfortran and ifort." 
   read output_option
-  if [ "$output_option" == "" ]  # No response was given. Use the default -o option
+  if [ "$output_option" = "" ]  # No response was given. Use the default -o option
   then
     output_option="-o"
   fi
@@ -79,21 +79,21 @@ then
 fi  # End interactive begging for fortran compiler information
 
 # If we have failed to find adequate C compilers, beg for the user's help
-if [ "$c_compile_command" == "none" ]
+if [ "$c_compile_command" = "none" ]
 then
   echo "Autodetection of a C compiler has failed. To continue, please"
   echo "provide the following information about your C compiler."
   echo "An empty response will exit the tutorial."
   echo "What is the name of your C compiler?"
   read c_compiler_name
-  if [ "$c_compiler_name" == "" ]  # No response was given. We cannot continue.
+  if [ "$c_compiler_name" = "" ]  # No response was given. We cannot continue.
   then
     error_report "No compiler provided. Exiting."
   fi
   echo "What is the option to compile but not link C files with your compiler?"
   echo "The default, used if none is provided, is -c. This is the case for icc, clang, and gcc."
   read c_compile_only_option
-  if [ "$c_compile_only_option" == "" ]  # No response was given. Use the default -c option.
+  if [ "$c_compile_only_option" = "" ]  # No response was given. Use the default -c option.
   then
     c_compile_only_option="-c"
   fi
@@ -101,14 +101,14 @@ then
   echo "files with your compiler? The default, used if none is provided, is -I. This is"
   echo "the case for icc, clang, and gcc."
   read c_include_option
-  if [ "$c_include_option" == "" ]
+  if [ "$c_include_option" = "" ]
   then
     c_include_option="-I." 
   fi
   echo "What is the option to specify the output file with your compiler?"
   echo "The default, if none is provided, is -o. This is the case for icc, clang, and gcc."
   read c_output_option
-  if [ "$c_output_option" == "" ]
+  if [ "$c_output_option" = "" ]
   then
     c_output_option="-o"
   fi
@@ -165,7 +165,7 @@ else  # We didn't find it. Beg for help
   echo "the command necessary to launch the h2m executable (ie ../../bin/h2m)"
   echo "Provide an empty response to exit."
   read h2m_command
-  if [ "$h2m_command" == "" ]  # The user gave an empty response. Exit.
+  if [ "$h2m_command" = "" ]  # The user gave an empty response. Exit.
   then
     error_report "Exiting due to lack of provided h2m executable information"
   fi

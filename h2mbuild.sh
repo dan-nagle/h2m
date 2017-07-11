@@ -17,6 +17,7 @@ print_help ()
   echo "h2mbuild options:"
   echo "-i interactive. All variables specified interactively"
   echo "-f force. Do not check that the compiler and version"
+  echo "-a link all. Link all LLVM libraries to the build"
   echo "-download_cmake downloads and installs cmake"
   echo "-download_cmake_dir gives the path to the cmakd download directory"
   echo "-download downloads llvm and clang"
@@ -65,7 +66,8 @@ CLANG_LIB_PATH=
 CLANG_BUILD_PATH=
 CLANG_INCLUDE_PATH=
 CMAKE_INSTALL_PREFIX=
-force=
+force="no"
+all="yes"
 install="no"
 interactive="no"
 LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
@@ -82,6 +84,7 @@ do
     -help) print_help 0;;  # Print help information and exit
     -i) interactive="yes";;  # Obtain options interactively.
     -f) force="yes";;   # Do not check for a legal compiler name and version
+    -a) all="yes";;  # Order CMake to link ALL LLVM libraries
     -download) download=yes;;  # A download is requested
     -download_dir) download_dir="$2"; shift;;  # Location to write clang/llvm
     -LLVM_DIR) LLVM_DIR="$2"; shift;;  # Location of existing llvm information
@@ -446,6 +449,21 @@ then
       read use_clang_config
     done
   fi
+  echo "Do you need to link to all LLVM libraries?"
+  echo "This may be necessary if your hardware is not Intel x86."
+  while [ "$all_temp" != "y" ] && [ "$all_temp" != "n" ]
+  do  # Get information about extra libraries to link.
+    echo "y/n requried"
+    read all_temp
+  done
+  if [ "$all_temp" = "y" ]  # Sort information into the global
+  then
+    all="yes"
+  else
+    all="no"
+  fi
+  
+
   echo "Would you like to install h2m?"
   while [ "$h2m_install_temp" != "y" ] && [ "$h2m_install_temp" != "n" ]
   do
@@ -565,6 +583,12 @@ fi
 if [ "$install_h2m" = "yes" ] 
 then
   cmake_command="$cmake_command -DINSTALL_PATH=$INSTALL_H2M_DIR" 
+fi
+
+# Append extra library link information if requested
+if [ "$all" = "yes" ] 
+then
+  cmake_command="$cmake_command -DALL=ON"
 fi
 
 # To provide more descriptive errors, a specific test for CMake is made.

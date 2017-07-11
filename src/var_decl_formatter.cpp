@@ -27,8 +27,9 @@ string VarDeclFormatter::getInitValueASString() {
   // This prevents sytstem files from leaking in to the translation.
   if (varDecl->hasInit() && !isInSystemHeader) {
     if (varDecl->getType().getTypePtr()->isStructureType()) {
-        // TODO: try to implement this
-        // structure type skip
+        // A Structured type requires a special handling function.
+        // Which occurs elsewhere (special call from getVarDeclAsString).
+        // This should never be called but is here for safety.
     } else if (varDecl->getType().getTypePtr()->isCharType()) {
         // single CHAR
       char character = varDecl->evaluateValue()->getInt().getExtValue ();
@@ -41,17 +42,17 @@ string VarDeclFormatter::getInitValueASString() {
       valString = to_string(intValue);
     } else if (varDecl->getType().getTypePtr()->isRealType()) {
         // REAL
-      valString = varDecl->evaluateValue ()->getAsString(varDecl->getASTContext(), varDecl->getType());
+      valString = varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
     } else if (varDecl->getType().getTypePtr()->isComplexType()) {
         // COMPLEX
-      APValue *apVal = varDecl->evaluateValue ();
-      if (apVal->isComplexFloat ()) {
-        float real = apVal->getComplexFloatReal ().convertToFloat ();
-        float imag = apVal->getComplexFloatImag ().convertToFloat ();
+      APValue *apVal = varDecl->evaluateValue();
+      if (apVal->isComplexFloat()) {
+        float real = apVal->getComplexFloatReal().convertToFloat ();
+        float imag = apVal->getComplexFloatImag().convertToFloat ();
         valString = "(" + to_string(real) + "," + to_string(imag) +")";
-      } else if (apVal->isComplexInt ()) {
-        int real = apVal->getComplexIntReal ().getExtValue ();
-        int imag = apVal->getComplexIntImag ().getExtValue ();
+      } else if (apVal->isComplexInt()) {
+        int real = apVal->getComplexIntReal().getExtValue();
+        int imag = apVal->getComplexIntImag().getExtValue();
         valString = "(" + to_string(real) + "," + to_string(imag) +")";
       } 
     } else if (varDecl->getType().getTypePtr()->isPointerType()) {
@@ -61,11 +62,11 @@ string VarDeclFormatter::getInitValueASString() {
       if (pointeeType.getTypePtr()->isCharType()) {
         // string literal
         Expr *exp = varDecl->getInit();
-        if (isa<ImplicitCastExpr> (exp)) {
+        if (isa<ImplicitCastExpr>(exp)) {
           ImplicitCastExpr *ice = cast<ImplicitCastExpr> (exp);
           Expr *subExpr = ice->getSubExpr();
-          if (isa<clang::StringLiteral> (subExpr)) {
-            clang::StringLiteral *sl = cast<clang::StringLiteral> (subExpr);
+          if (isa<clang::StringLiteral>(subExpr)) {
+            clang::StringLiteral *sl = cast<clang::StringLiteral>(subExpr);
             string str = sl->getString();
             valString = "\"" + str + "\"";
           }
@@ -173,6 +174,109 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
   }
 };
 
+// This function fetches the declaration of the struct and its 
+// inner fields only. The name checks occur elsewhere. This is
+// just a helper for getting the fields. The boolean value is
+// to determine whether or not this is a duplication of some
+// other identifier and should thus be commented out.
+string VarDeclFormatter::getFortranStructDeclASString(string struct_name) {
+  string structDecl = "";
+  // Prevent system headers from leaking into the translation
+  if (varDecl->getType().getTypePtr()->isStructureType() && !isInSystemHeader) {
+    CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);  
+
+    structDecl += " = " + struct_name + "(";
+
+    Expr *exp = varDecl->getInit();  // Fetch the structure init. expression  
+    if (isa<InitListExpr>(exp)) {  // For a struct decl this should be true
+      InitListExpr *ile = cast<InitListExpr>(exp);  // Obtain the list of values
+      ArrayRef<Expr *> elements = ile->inits();
+
+      // Set up a loop to iterate through all the expressions
+      // which are part of the initialization of the structure.
+      for (auto it = elements.begin(); it != elements.end(); it++) {
+        Expr *element = (*it);
+        string eleVal;  // This will hold the value to add to the declaration.
+        QualType e_qualType = element->getType();
+   
+        if (element->isEvaluatable(varDecl->getASTContext())) {
+          // We can, in some weird way, fold this down to a constant.
+          clang::Expr::EvalResult r;  // Holds the result of the evaulation
+          element->EvaluateAsRValue(r, varDecl->getASTContext());
+          eleVal = r.Val.getAsString(varDecl->getASTContext(), e_qualType); 
+          
+          // Char types need to be handled specially so as not to be translated
+          // into integers. Fortran does not like CHARACTER a = 97.
+          if (e_qualType.getTypePtr()->isCharType() == true) {
+              // Transfer the evaluated string to integer
+              int temp_val = std::stoi(eleVal);
+              char temp_char = static_cast<char>(temp_val);
+              eleVal = "'";
+              eleVal += temp_char;
+              eleVal += "'";
+                      
+          // If the field is a pointer, determine if it is a string literal and
+          // handle that, otherwise set it to a void pointer because what else
+          // can we possibly do?
+          } else if (e_qualType.getTypePtr()->isPointerType() == true) {
+            QualType pointeeType = e_qualType.getTypePtr()->getPointeeType();
+
+            // We've found a string literal.
+            if (pointeeType.getTypePtr()->isCharType()) {
+              if (isa<ImplicitCastExpr>(exp)) {
+                ImplicitCastExpr *ice = cast<ImplicitCastExpr> (exp);
+                Expr *subExpr = ice->getSubExpr();
+                // Casts, if possible, the string literal into actual string-y form
+                if (isa<clang::StringLiteral>(subExpr)) {
+                  clang::StringLiteral *sl = cast<clang::StringLiteral>(subExpr);
+                  string str = sl->getString();
+                  eleVal = "\"" + str + "\"" + ", ";
+                }
+              }
+            } else if (e_qualType.getTypePtr()->isFunctionPointerType()) {
+              structDecl += "& ! Initial pointer value: " + eleVal + " set to C_NULL_PTR\n";
+              eleVal = "C_NULL_FUNPTR";
+            } else {
+              structDecl += "& ! Initial pointer value: " + eleVal + " set to C_NULL_PTR\n";
+              eleVal = "C_NULL_PTR";
+            }
+          // We have found an array as a subtype. Currently this only knows
+          // how to handle string literals, but only string literals should
+          // actually be evaluatable
+          } else if (e_qualType.getTypePtr()->isArrayType() == true) {
+            bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
+            // This implies a string literal
+            if (eleVal.front() == '&' && isChar == true) {
+              // Erase up to the beginning of the " symbol.
+              while (eleVal.front() != '"') {
+                eleVal.erase(eleVal.begin(), eleVal.begin() + 1);
+              }
+            }
+          }
+        } else {   // The element is NOT evaluatable.
+          if (e_qualType.getTypePtr()->isArrayType() == true) {
+            eleVal = "C_NULL_PTR";
+          } else if (e_qualType.getTypePtr()->isStructureType() == true) {
+            eleVal = e_qualType.getAsString();
+            //eleVal = e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->getTypeClassName();
+          } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isPointerType() == true) {
+            eleVal = "C_NULL_PTR";      
+          } else {
+            eleVal = "untranslatable component";
+          }
+        }
+      // Paste the generated, evaluated string value into place
+      structDecl += eleVal + ", "; 
+      }
+      // Remove the extra ", " from the last pass and close the declaration.
+      structDecl.erase(structDecl.end() - 2, structDecl.end());
+      structDecl += ")";
+    }
+  }
+
+  return structDecl;
+}
+
 // Much more complicated function used to generate an array declaraion. 
 // Syntax for C and Fortran arrays are completely different. The array 
 // must be declared and initialization carried out if necessary.
@@ -226,7 +330,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     } else {
       // The array is declared and initialized. We must tranlate the initialization.
       const ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
-      QualType e_qualType = at->getElementType ();
+      QualType e_qualType = at->getElementType();
       Expr *exp = varDecl->getInit();
       // Whether this is a char array or not will have to be checked several times.
       // This checks whether or not the "innermost" type is a char type.
@@ -270,6 +374,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
               if (element->isEvaluatable(varDecl->getASTContext())) {
                 // This is a one dimensional array. Elements are scalars.
                 clang::Expr::EvalResult r;
+                QualType e_qualType = element->getType();
                 // The expression is evaluated (operations are performed) to give the final value.
                 element->EvaluateAsRValue(r, varDecl->getASTContext());
                 string eleVal = r.Val.getAsString(varDecl->getASTContext(), e_qualType);
@@ -349,7 +454,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
    // headers leak into the definitions
     // This is a declaration of a TYPE(stuctured_type) variable
     if (varDecl->getType().getTypePtr()->isStructureType()) {
-      // structure type
+      bool duplicate = false;  // Whether this is a duplicate identifier. 
       RecordDecl *rd = varDecl->getType().getTypePtr()->getAsStructureType()->getDecl();
       // RecordDeclFormatter rdf(rd, rewriter, args);
       // rdf.setTagName(varDecl->getNameAsString());  // Done: Experiment with this line
@@ -370,11 +475,6 @@ string VarDeclFormatter::getFortranVarDeclASString() {
          }
          identifier = "h2m" + identifier;
       }
-      // Assemble the variable declaration, including the bindname if it exists.
-      vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
-      vd_buffer +=  ") :: " + identifier + "\n";
-
-      // TODO: STRUCTURE INITIALIZATION
 
       // The following are checks for potentially illegal characters which might be
       // at the begining of the anonymous types. These types must be commented out.
@@ -383,7 +483,10 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       string f_type = tf.getFortranTypeASString(false);
       if (f_type.front() == '/' || f_type.front() == '_' || f_type.front() == '\\' ||
           f_type.find("anonymous at") != string::npos) {
-        vd_buffer = "! " + vd_buffer;
+          // This isn't a duplicate per se, but it still needs to be commented out
+          // and refering to it as a duplicate will do the trick.
+          vd_buffer = " Anonymous struct declaration commented out. \n";
+          duplicate = true;
       }
       // We have seen something with this name before. This will be a problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
@@ -391,9 +494,27 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
           CToFTypeFormatter::LineError(sloc);
         }
-        vd_buffer = "!" + vd_buffer;
-        vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
-        return vd_buffer;  // Skip the name and length checks. It's commented out anyway.
+        // The commenting out is done by a stream later so we don't put the ! at the front yet
+        vd_buffer = " Commenting out name conflict.\n" + vd_buffer;
+        duplicate = true;  // This is indeed a duplicate declaration.
+      }
+
+      // Assemble the variable declaration, including the bindname if it exists.
+      vd_buffer += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+      vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(identifier) + "\n";
+
+      // Whether or not it is a duplicate or just anonymous, it needs to be
+      // commented out.
+      if (duplicate == true) {
+        std::istringstream in(vd_buffer);  // Create a stream out of and empty the buffer
+        vd_buffer = "";
+        // Iterate through the stream, line by line, and comment out the text
+        for (std::string line; std::getline(in, line);) {
+          if (args.getQuiet() == false && args.getSilent() == false) {
+            errs() << "Commenting out duplicate or anonymous structure variable.\n";
+          }
+          vd_buffer += "! " + line + "\n";
+        }
       }
 
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
@@ -419,7 +540,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
          }
          identifier = "h2m" + identifier;
       }
-      // Detrmine the state of the declaration. Is there something declared? Is it commented out?
+      // Determine the state of the declaration. Is there something declared? Is it commented out?
       // Create the declaration in correspondence with this. Add in the bindname, which may be empty
       if (value.empty()) {
         vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
