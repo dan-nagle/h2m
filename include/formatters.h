@@ -235,10 +235,10 @@ public:
   // in fortran. This is also quite complex and specialized.
   // The name of the structure is passed in to allow the possibility of
   // recursion.
-  string getFortranStructDeclASString(string struct_name);
+  string getFortranStructDeclASString(string struct_name, bool &success);
   // This function is set up to do recursion to fetch a structure's
   // fields when that structure is initialized
-  string getFortranStructFieldsASString(Expr *exp);
+  string getFortranStructFieldsASString(Expr *exp, bool &success);
   // Fetches an individual initialized array element.
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
       string &arrayShapes, bool &evaluatable, bool firstEle, bool is_char);

@@ -175,10 +175,19 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 // Fortran string, but was specifically designed to be a recursive
 // helper for fetching structures embeded in structure definitions.
 // Note this function ONLY uses an expression, no information about the
-// VarDecl is requested, so recursive calls are acceptable.
-string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
+// VarDecl is requested, so recursive calls are acceptable. When a fatal
+// error occurs, success is set to "false" to let the caller know it should
+// comment out the declaration.
+string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success) {
   string structDecl = "";  // This will eventually hold all the fields.
 
+  // The nullptr check is for safety.
+  if (exp == nullptr) {
+    success = false;
+    // This is a serious enough problem taht it should always be reported.
+    errs() << "Error: nullpointer in place of expression.\n";
+    return "Internal error: nullpointer in place of expression.";
+  }
   if (isa<InitListExpr>(exp)) {  // For a struct decl this should be true
     InitListExpr *ile = cast<InitListExpr>(exp);  // Obtain the list of values
     ArrayRef<Expr *> elements = ile->inits();
@@ -187,6 +196,12 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
     // which are part of the initialization of the structure.
     for (auto it = elements.begin(); it != elements.end(); it++) {
       Expr *element = (*it);
+      if (element == nullptr) {  // Check for safety.
+        success = false;
+        // This is serious enough that it shoudl always be reported.
+        errs() << "Error: nullpointer in place of InitListExpression element.\n";
+        return "Internal error: nullpointer in place of InitListExpression element.";
+      }
       string eleVal;  // This will hold the value to add to the declaration.
       QualType e_qualType = element->getType();
    
@@ -228,11 +243,19 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           // it is not really feasible to create a proper Fortran translation.
           // Leave a message about this in the declaration.
           } else if (e_qualType.getTypePtr()->isFunctionPointerType()) {
-            structDecl += "& ! Initial pointer value: " + eleVal + " set to C_NULL_PTR\n";
+            structDecl += "& ! Initial pointer value: " + eleVal + " set to C_NULL_FUNPTR\n";
             eleVal = "C_NULL_FUNPTR";
+            if (args.getSilent() == false) {
+              errs() << "Warning: pointer value " << eleVal << " set to C_NULL_FUNPTR\n";
+              CToFTypeFormatter::LineError(sloc);
+            }
           } else {
             structDecl += "& ! Initial pointer value: " + eleVal + " set to C_NULL_PTR\n";
             eleVal = "C_NULL_PTR";
+            if (args.getSilent() == false) {
+              errs() << "Warning: pointer value " << eleVal << " set to C_NULL_PTR\n";
+              CToFTypeFormatter::LineError(sloc);
+            }
           }
         // We have found an array as a subtype. Currently this only knows
         // how to handle string literals, but only string literals should
@@ -245,29 +268,42 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
             while (eleVal.front() != '"') {
               eleVal.erase(eleVal.begin(), eleVal.begin() + 1);
             }
+          } else {  // Not a string literal... so we don't know what it is.
+            // We warn, and arrange for the declaration to be commented out.
+            eleVal = eleVal + " & ! Confusing array not translated.\n";
+            if (args.getSilent() == false) {
+              errs() << "Confusing sub-array initialization, " << eleVal << " not translated\n";
+              CToFTypeFormatter::LineError(sloc);
+            }
+            success = false;
           }
         }
       } else {   // The element is NOT evaluatable.
         // If this is an array, try to make use of the helper function to 
         // parse it down into the base components.
-        if (e_qualType.getTypePtr()->isArrayType() == true) {
+        if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isArrayType() == true) {
           string values = "";
           string shapes = "";
           // This will hold the success value of array evaluation.
-          bool success = false;
+          bool array_success = false;
           if (isa<InitListExpr>(element)) {
             InitListExpr *in_list_exp = cast<InitListExpr>(element);
             // Determine whether this is a char array, needing special
             // evaluation, or not (do we need to cast an int to char?)
             bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
             // Call a helper to get the array in string form.
-            getFortranArrayEleASString(in_list_exp, values, shapes, success,
+            getFortranArrayEleASString(in_list_exp, values, shapes, array_success,
               true, isChar);
           } else {
-            eleVal = "Untranslatable Array , ";
+            eleVal = "UntranslatableArray ! ";
+            success = false;
+            // Get the array text we can't handle and put it in a comment.
+            string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
+                element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+            eleVal += value;
           }
           // If the array was succesfully evaluated, put together the translation
-          if (success == true) {
+          if (array_success == true) {
             // Remove the extra ", " appended on to shapes by the helper from
             // the appropriate end. It will be at the back for the inverted array,
             // and at the front for the normal array dimensions.
@@ -279,18 +315,46 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
             // A ", " is added by the helper function so one isn't appended here.
             eleVal = "RESHAPE((/" + values + "/), (/" + shapes + "/))";
           } else {
-            eleVal = "Untranslatable Array, ";
+            eleVal = "UntranslatableArray ! ";
+            success = false;
+            string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
+                element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+            eleVal += value;
          }
           // Make a recursive call to fill in the sub-structure.
-        } else if (e_qualType.getTypePtr()->isStructureType() == true) {
+        } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isStructureType() == true) {
           eleVal = e_qualType.getAsString() + "(";
-          eleVal += getFortranStructFieldsASString(element) + ")";
+          eleVal += getFortranStructFieldsASString(element, success) + ")";
           // If a pointer or function pointer is found, set it to 
-          // the appropriate corresponding Fotran NULL value.
+          // the appropriate corresponding Fortran NULL value. Warn
+          // if requested.
+        } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isFunctionPointerType()) {
+          eleVal = "C_NULL_FUNPTR";
+          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
+              element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+          eleVal = "& ! Function pointer " + value + " set to C_NULL_FUNPTR\n" + eleVal;
+          if (args.getSilent() == false) {
+            errs() << "Warning: pointer value " << value << " set to C_NULL_FUNPTR\n";
+            CToFTypeFormatter::LineError(sloc);
+          }
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isPointerType() == true) {
           eleVal = "C_NULL_PTR";      
-        } else {
-          eleVal = "untranslatable component";
+          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
+              element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+          eleVal = "& ! Pointer " + value + " set to C_NULL_PTR\n" + eleVal;
+          if (args.getSilent() == false) {
+            errs() << "Warning: pointer value " << value << " set to C_NULL_PTR\n";
+            CToFTypeFormatter::LineError(sloc);
+          }
+        } else {  // We have no idea what this is or how to translate it. Warn and comment out.
+          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
+              element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+          eleVal = "untranslatable component: " + value;
+          if (args.getSilent() == false) {
+            errs() << "Warning: unknown component not translated: " + value + ".\n";
+            CToFTypeFormatter::LineError(sloc);
+          }
+          success = false;
         }
       }
     // Paste the generated, evaluated string value into place
@@ -308,14 +372,17 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
 // to determine whether or not this is a duplication of some
 // other identifier and should thus be commented out.
 // The form returned is "struct_name = (init1, init2...)"
-string VarDeclFormatter::getFortranStructDeclASString(string struct_name) {
+string VarDeclFormatter::getFortranStructDeclASString(string struct_name, bool &success) {
   string structDecl = "";
   // This prevents system headers from leaking into the translation
-  if (varDecl->getType().getTypePtr()->isStructureType() && !isInSystemHeader) {
+  // This also makes sure we have an initialized structured type.
+  if (varDecl->getType().getTypePtr()->isStructureType() && !isInSystemHeader &&
+      varDecl->hasInit()) {  
+    
     Expr *exp = varDecl->getInit();
     structDecl += " = " + struct_name + "(";
     // Make a call to the helper (which may make recursive calls)
-    structDecl += getFortranStructFieldsASString(exp);
+    structDecl += getFortranStructFieldsASString(exp, success);
     structDecl += ")";
   }
 
@@ -547,23 +614,40 @@ string VarDeclFormatter::getFortranVarDeclASString() {
 
       // Assemble the variable declaration, including the bindname if it exists.
       vd_buffer += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
-      vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(f_type) + "\n";
+      bool success = true;
+      vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(f_type, success) + "\n";
 
-      // Whether or not it is a duplicate or just anonymous, it needs to be
-      // commented out.
       std::istringstream in(vd_buffer);  // Create a stream out of and empty the buffer
       vd_buffer = "";
-      // Iterate through the stream, line by line, and comment out the text
-      for (std::string line; std::getline(in, line);) {
-        if (duplicate == true) {  // We need to comment out the declaration.
-          if (args.getQuiet() == false && args.getSilent() == false) {
-            errs() << "Commenting out duplicate or anonymous structure variable.\n";
-          }
-          vd_buffer += "! " + line + "\n";
+
+      // Report the errors
+      // If this is a duplicate (name conflict) it must be commented out.
+      if (duplicate == true) {
+        if (args.getQuiet() == false && args.getSilent() == false) {
+          errs() << "Commenting out duplicate or anonymous structure" << identifier;
+          errs() <<  " variable.\n";
+          CToFTypeFormatter::LineError(sloc);
         }
+      // If this was not translated successfully, comment it out.
+      } else if (success == false) {
+        if (args.getQuiet() == false && args.getSilent() == false) {
+          errs() << "Commenting out unsuccessful structure variable " << identifier;
+          errs() << "translation.\n";
+          CToFTypeFormatter::LineError(sloc);
+        }
+      }
+
+      // Iterate through the stream, line by line, and comment out the text if
+      // needed, or else just check the line length. There's no need to check
+      // lenght on a line commented out.
+      for (std::string line; std::getline(in, line);) {
+        if (duplicate == true || success == false) { 
+          vd_buffer += "! " + line + "\n";
+        } else {
         // Note that the newline takes up one character so we add one to the allowed length
         vd_buffer += CToFTypeFormatter::CheckLength(line + "\n", CToFTypeFormatter::line_max + 1,
             args.getSilent(), sloc);  // We just put it back in, checking the length
+        }
       }
       return vd_buffer;  // Skip the length checks below which won't work for this multiline buffer
 

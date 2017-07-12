@@ -14,6 +14,7 @@ Contents:
      Behavior
      Options
      Example
+     Grooming Produced Files
   4) Known Issues
 
 0)   Quick Start
@@ -611,6 +612,36 @@ gfortran -o example example.f90 c_source.o
 
 Step 6: Enjoy your mixed-language executable.
 ./example
+
+GROOMING PRODUCED FILES
+
+When translating complicated files, such as library or system headers, some problems
+can come up which require human intervertion. 
+1. Unrecognized Types
+Unrecognized types are an unavoidable nuisance in many system headers. Fortran has no
+equivalent to a void type. Some intrinsically defined types such as __va_list_tags
+are also unrecognized. Search for the pattern "unrecognized_type" in the created
+header to find these instances. In many cases, these must be commented out, but other
+times a substitution can be made.
+2. Length Problems
+Extremely long lines may sometimes result from function or initialization translations.
+These must be broken by hand. The h2m tool should warn if such long lines exist. Some
+compilers will also warn about line truncation. Extremely long names require similar
+treatment.
+3. Pointer Initialization
+Pointers in initialization lists will be set to C_NULL_PTR or C_NULL_FUNPTR as 
+appropriate. They will need to be reinitialized by hand.
+4. Macros
+Though h2m will attempt to handle simple macros, it may make mistakes even on these,
+and the translations of function-like macros will need to be filled in or replaced
+completely.
+5. Duplicate Names
+When h2m locates a repeated identifier, it comments the repeat out to avoid problems and
+warns on standard error and in the comments. Names may need to be changed by hand and
+the declaration un-commented, or it may be that this repeated declaration is actually not
+needed (because it is a typedef of a structure which Fortran already recognizes by
+the proper name). Note that capitalization is not significant in Fortran and this often
+leads to duplicate identifiers.
 
 4)   KNOWN ISSUES
 

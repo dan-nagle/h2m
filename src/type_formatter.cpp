@@ -7,7 +7,7 @@
 // If the location is invalid, it returns a message about that.
 void CToFTypeFormatter::CToFTypeFormatter::LineError(PresumedLoc sloc) {
   if (sloc.isValid()) {
-    errs() << sloc.getFilename() << " " << sloc.getLine() << ":" << sloc.getColumn() << "\n";
+    errs() << sloc.getFilename() << " Line " << sloc.getLine() << "\n";
   } else {
     errs() << "Invalid file location \n";
   }
@@ -394,6 +394,14 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
 // type/format specifiers that might be present in an "int."
 bool CToFTypeFormatter::isIntLike(const string input) {
   // "123L" "18446744073709551615ULL" "18446744073709551615UL" 
+  // In the case that an x or X is found in the numeral, we
+  // are likely dealing with a hexadecimal constant, and
+  // there is no interoperable type.
+  if (input.find_first_of("x") != std::string::npos ||
+      input.find_first_of("X") != std::string::npos) {
+    return false;
+  }
+
   if (std::all_of(input.begin(), input.end(), ::isdigit)) {
     return true;
   } else {
