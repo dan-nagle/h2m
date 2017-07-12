@@ -241,7 +241,7 @@ public:
   string getFortranStructFieldsASString(Expr *exp);
   // Fetches an individual initialized array element.
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
-      string arrayShapes, bool &evaluatable, bool firstEle, bool is_char);
+      string &arrayShapes, bool &evaluatable, bool firstEle, bool is_char);
 
 private:
   Rewriter &rewriter;

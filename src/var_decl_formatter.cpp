@@ -84,7 +84,6 @@ string VarDeclFormatter::getInitValueASString() {
       // ARRAY --- won't be used here bc it's handled by getFortranArrayDeclASString()
       // I'm not sure why this code is here at all in that case -Michelle
       Expr *exp = varDecl->getInit();
-      // TODO: HERE'S SOME OF HOW TO DO IT.
       string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc(),
           varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
       // comment out arrayText
@@ -114,9 +113,13 @@ string VarDeclFormatter::getInitValueASString() {
 // Special care must be taken to convert a char array into chars rather than
 // integers (the is_char variable sees to this). Note that the strings are
 // passed in by reference so that their values can be assembled in this helper.
-// The "shapes" are the array dimensions (ie (2, 4, 2)). 
+// The "shapes" are the array dimensions (ie (2, 4, 2)). Initially, evaluatable
+// should be set to false. The function passes informaiton back through it which
+// essentially informs of success or failure. Array shapes will be passed back
+// with an extra ", " either leading (if reversed array dimensions is true) or
+// trailing (if array dimensions are not being reversed.)
 void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
-    string arrayShapes, bool &evaluatable, bool firstEle, bool is_char) {
+    string &arrayShapes, bool &evaluatable, bool firstEle, bool is_char) {
   ArrayRef<Expr *> innerElements = ile->inits ();
   // Assembles the shape of the array to be used
   if (firstEle) {
@@ -165,13 +168,7 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
           (it == innerElements.begin()) && firstEle, is_char);
     } 
   }
-
-  // We have inadvertently added an extra " ," to the front of this
-  // string during our reversed iteration through the length. This
-  // little erasure takes care of that.
-  if (args.getArrayTranspose() == true) {
-    arrayShapes.erase(arrayShapes.begin(), arrayShapes.begin() + 2);
-  }
+  
 };
 
 // This will attempt to boil any Expr down into a corresponding
@@ -251,12 +248,45 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           }
         }
       } else {   // The element is NOT evaluatable.
+        // If this is an array, try to make use of the helper function to 
+        // parse it down into the base components.
         if (e_qualType.getTypePtr()->isArrayType() == true) {
-          eleVal = "C_NULL_PTR";
+          string values = "";
+          string shapes = "";
+          // This will hold the success value of array evaluation.
+          bool success = false;
+          if (isa<InitListExpr>(element)) {
+            InitListExpr *in_list_exp = cast<InitListExpr>(element);
+            // Determine whether this is a char array, needing special
+            // evaluation, or not (do we need to cast an int to char?)
+            bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
+            // Call a helper to get the array in string form.
+            getFortranArrayEleASString(in_list_exp, values, shapes, success,
+              true, isChar);
+          } else {
+            eleVal = "Untranslatable Array , ";
+          }
+          // If the array was succesfully evaluated, put together the translation
+          if (success == true) {
+            // Remove the extra ", " appended on to shapes by the helper from
+            // the appropriate end. It will be at the back for the inverted array,
+            // and at the front for the normal array dimensions.
+            if (args.getArrayTranspose() == true) {
+              shapes.erase(shapes.end() - 2, shapes.end());
+            } else {
+              shapes.erase(shapes.begin(), shapes.begin() + 2);
+            }
+            // A ", " is added by the helper function so one isn't appended here.
+            eleVal = "RESHAPE((/" + values + "/), (/" + shapes + "/))";
+          } else {
+            eleVal = "Untranslatable Array, ";
+         }
           // Make a recursive call to fill in the sub-structure.
         } else if (e_qualType.getTypePtr()->isStructureType() == true) {
           eleVal = e_qualType.getAsString() + "(";
           eleVal += getFortranStructFieldsASString(element) + ")";
+          // If a pointer or function pointer is found, set it to 
+          // the appropriate corresponding Fotran NULL value.
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isPointerType() == true) {
           eleVal = "C_NULL_PTR";      
         } else {
@@ -413,7 +443,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
                   // Initialize the string on the first element.
                   evaluatable = true;
                   arrayValues = eleVal;
-                } else {
+                } else {  // Otherwise append the element
                   arrayValues += ", " + eleVal;
                 }
 
@@ -517,7 +547,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
 
       // Assemble the variable declaration, including the bindname if it exists.
       vd_buffer += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
-      vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(identifier) + "\n";
+      vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(f_type) + "\n";
 
       // Whether or not it is a duplicate or just anonymous, it needs to be
       // commented out.
