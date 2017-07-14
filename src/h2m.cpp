@@ -69,52 +69,83 @@ static cl::extrahelp MoreHelp("\nSee README.txt for more information on h2m beha
 static cl::opt<string> SourcePaths(cl::Positional, cl::cat(h2mOpts), cl::desc("<source0>"));
 
 // Output file, option is -out or -o.
-static cl::opt<string> OutputFile("out", cl::init(""), cl::cat(h2mOpts), cl::desc("Output file"));
-static cl::alias OutputFile2("o", cl::desc("Alias for -out"), cl::cat(h2mOpts), cl::aliasopt(OutputFile));
+static cl::opt<string> OutputFile("out", cl::init(""), cl::cat(h2mOpts),
+    cl::desc("Output file"));
+static cl::alias OutputFile2("o", cl::desc("Alias for -out"), cl::cat(h2mOpts), 
+    cl::aliasopt(OutputFile));
 
 // Boolean option to recursively process includes. The default is not to recursively process.
-static cl::opt<bool> Recursive("recursive", cl::cat(h2mOpts), cl::desc("Include other header files recursively via USE statements"));
-static cl::alias Recrusive2("r", cl::desc("Alias for -recursive"), cl::cat(h2mOpts), cl::aliasopt(Recursive));
+static cl::opt<bool> Recursive("recursive", cl::cat(h2mOpts),
+    cl::desc("Include other header files recursively via USE statements"));
+static cl::alias Recrusive2("r", cl::desc("Alias for -recursive"), cl::cat(h2mOpts), 
+    cl::aliasopt(Recursive));
 
 // Boolean option to silence less critical warnings (ie warnings about statements commented out)
-static cl::opt<bool> Quiet("quiet", cl::cat(h2mOpts), cl::desc("Silence warnings about lines which have been commented out"));
+static cl::opt<bool> Quiet("quiet", cl::cat(h2mOpts), 
+    cl::desc("Silence warnings about lines which have been commented out"));
 static cl::alias Quiet2("q", cl::desc("Alias for -quiet"), cl::cat(h2mOpts), cl::aliasopt(Quiet));
 
 // Boolean option to silence all warnings save those that are absolutely imperative (ie output failure)
-static cl::opt<bool> Silent("silent", cl::cat(h2mOpts), cl::desc("Silence all tool warnings (Clang warnings will still appear)"));
-static cl::alias Silent2("s", cl::cat(h2mOpts), cl::desc("Alias for -silent"), cl::aliasopt(Silent));
+static cl::opt<bool> Silent("silent", cl::cat(h2mOpts),
+    cl::desc("Silence all tool warnings (Clang warnings will still appear)"));
+static cl::alias Silent2("s", cl::cat(h2mOpts), cl::desc("Alias for -silent"), 
+    cl::aliasopt(Silent));
 
 // Boolean option to ignore critical clang errors that would otherwise cause termination
 // during preprocessing and to keep the output file despite any other problems.
-static cl::opt<bool> Optimistic("keep-going", cl::cat(h2mOpts), cl::desc("Continue processing and keep output in spite of errors"));
-static cl::alias Optimistic2("k", cl::desc("Alias for -keep-going"), cl::cat(h2mOpts), cl::aliasopt(Optimistic));
+static cl::opt<bool> Optimistic("keep-going", cl::cat(h2mOpts), 
+    cl::desc("Continue processing and keep output in spite of errors"));
+static cl::alias Optimistic2("k", cl::desc("Alias for -keep-going"), cl::cat(h2mOpts), 
+    cl::aliasopt(Optimistic));
 
 // Boolean option to ignore system header files when processing recursive includes. 
 // The default is to include them.
-static cl::opt<bool> NoHeaders("no-system-headers", cl::cat(h2mOpts), cl::desc("Do not recursively translate system header files"));
-static cl::alias NoHeaders2("n", cl::desc("Alias for -no-system-headers"), cl::cat(h2mOpts), cl::aliasopt(NoHeaders));
+static cl::opt<bool> NoHeaders("no-system-headers", cl::cat(h2mOpts),
+    cl::desc("Do not recursively translate system header files"));
+static cl::alias NoHeaders2("n", cl::desc("Alias for -no-system-headers"), cl::cat(h2mOpts), 
+    cl::aliasopt(NoHeaders));
 
-static cl::opt<bool> IgnoreThis("ignore-this", cl::cat(h2mOpts), cl::desc("Do not translate this file, only its included headers"));
-static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::cat(h2mOpts), cl::aliasopt(IgnoreThis));
+static cl::opt<bool> IgnoreThis("ignore-this", cl::cat(h2mOpts),
+    cl::desc("Do not translate this file, only its included headers"));
+static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::cat(h2mOpts), 
+    cl::aliasopt(IgnoreThis));
 
 // Option to specify the compiler to use to test the output. No specification means no compilation.
-static cl::opt<string> Compiler("compile", cl::cat(h2mOpts), cl::desc("Command to attempt compilation of the output file"));
-static cl::alias Compiler2("c", cl::desc("Alias for -compile"), cl::cat(h2mOpts), cl::aliasopt(Compiler));
+static cl::opt<string> Compiler("compile", cl::cat(h2mOpts), 
+    cl::desc("Command to attempt compilation of the output file"));
+static cl::alias Compiler2("c", cl::desc("Alias for -compile"), cl::cat(h2mOpts), 
+    cl::aliasopt(Compiler));
 
 // Option to send all non-system header information for this file into a single Fortran module
-static cl::opt<bool> Together("together", cl::cat(h2mOpts), cl::desc("Send this entire file and all non-system includes to one module"));
-static cl::alias Together2("t", cl::cat(h2mOpts), cl::desc("Alias for -together"), cl::aliasopt(Together));
+static cl::opt<bool> Together("together", cl::cat(h2mOpts),
+    cl::desc("Send this entire file and all non-system includes to one module"));
+static cl::alias Together2("t", cl::cat(h2mOpts), cl::desc("Alias for -together"), 
+    cl::aliasopt(Together));
 
 // Option to transpose arrays to match Fortran dimensions (C row major
 // ordering is swapped for Fortran column major ordering).
-static cl::opt<bool> Transpose("array-transpose", cl::cat(h2mOpts), cl::desc("Transpose array dimensions"));
-static cl::alias Transpose2("a", cl::cat(h2mOpts), cl::desc("Alias for -array-transpose"), cl::aliasopt(Transpose));
+static cl::opt<bool> Transpose("array-transpose", cl::cat(h2mOpts),
+     cl::desc("Transpose array dimensions"));
+static cl::alias Transpose2("a", cl::cat(h2mOpts), cl::desc("Alias for -array-transpose"),
+    cl::aliasopt(Transpose));
 
-static cl::opt<bool> Autobind("auto-bind", cl::cat(h2mOpts), cl::desc("Use BIND(C, name=...) to handle illegal names"));
-static cl::alias Autobind2("b", cl::cat(h2mOpts), cl::desc("Alias for -auto-bind"), cl::aliasopt(Autobind));
+// Automatically, in the case of an illegal C name, create a statement to bind to that name
+// using the BIND(C, name="") Fortran syntax, if available.
+static cl::opt<bool> Autobind("auto-bind", cl::cat(h2mOpts),
+     cl::desc("Use BIND(C, name=...) to handle illegal names"));
+static cl::alias Autobind2("b", cl::cat(h2mOpts), cl::desc("Alias for -auto-bind"), 
+    cl::aliasopt(Autobind));
 
-static cl::opt<bool> HideMacros("hide-macros", cl::cat(h2mOpts), cl::desc("Comment out all function like macros"));
-static cl::alias HideMacros2("h", cl::cat(h2mOpts), cl::desc("Alias for -hide-macros"), cl::aliasopt(HideMacros));
+// Make all functionlike macros into comments
+static cl::opt<bool> HideMacros("hide-macros", cl::cat(h2mOpts), 
+    cl::desc("Comment out all function like macros"));
+static cl::alias HideMacros2("h", cl::cat(h2mOpts), cl::desc("Alias for -hide-macros"), 
+    cl::aliasopt(HideMacros));
+
+static cl::opt<bool> DetectUnrecognized("detect-unrecognized", cl::cat(h2mOpts),
+    cl::desc("Comment out lines with unrecognized or invalid types"));
+static cl::alias DetectUnrecognized2("d", cl::cat(h2mOpts), 
+    cl::desc("Alias for -detect-unrecognized"), cl::aliasopt(DetectUnrecognized));
 
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
@@ -147,7 +178,9 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     // << fdf.getFortranFunctDeclASString()
     // << "END INTERFACE\n";      
   } else if (isa<TypedefDecl> (d)) {
-    // Keep included header files out of the mix by checking the location
+    // Keep included header files out of the mix by checking the location.
+    // If we are asked to provide all includes together in one module,
+    // do so (the second boolean takes care of this).
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
       TypedefDecl *tdd = cast<TypedefDecl> (d);
@@ -157,6 +190,7 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 
   } else if (isa<RecordDecl> (d)) {
     // Keep included header files out of the mix by checking the location
+    // Record decls are things like structs and unions.
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
       RecordDecl *rd = cast<RecordDecl> (d);
@@ -166,6 +200,8 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 
   } else if (isa<VarDecl> (d)) {
     // Keep included header files out of the mix by checking the location
+    // Any kind of variable (function pointers, structs, ints, etc)
+    // is a vardecl when declared.
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
       VarDecl *varDecl = cast<VarDecl> (d);
@@ -181,7 +217,7 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
       args.getOutput().os() << edf.getFortranEnumASString();
     }
   } else {
-
+    // The program doesn't know what to do with this node yet.
     // Keep included header files out of the mix by checking the location
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
@@ -327,7 +363,8 @@ int main(int argc, const char **argv) {
       OutputFile.keep();
     }
     // Create an object to pass around arguments
-    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose, Autobind, HideMacros);
+    Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose,
+        Autobind, HideMacros, DetectUnrecognized);
 
 
     // Create a new clang tool to be used to run the frontend actions

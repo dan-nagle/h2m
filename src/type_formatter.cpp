@@ -187,7 +187,8 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
 // it returns "INTEGER(C_INT), DIMENSION(5) :: x").
 string CToFTypeFormatter::getFortranArrayArgASString(string dummy_name) {
   // Start out with the type (ie INTEGER(C_INT))
-  string arg_buff = getFortranTypeASString(true) + ", DIMENSION(";
+  bool problem = false;
+  string arg_buff = getFortranTypeASString(true, problem) + ", DIMENSION(";
   arg_buff += getFortranArrayDimsASString() + ") :: ";
   arg_buff += dummy_name;
   return arg_buff;
@@ -207,9 +208,11 @@ bool CToFTypeFormatter::isArrayType() {
 // equivalent is returned as a string. The boolean typeWrapper dictates
 // whether or not the return should be of the form FORTRANTYPE(C_QUALIFIER)
 // or just of the form C_QUALIFIER. True means it needs the FORTRANTYPE(C_QUALIFIER)
-// format.
-string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
-  string f_type;
+// format. In the case of a problem (anonymous or unrecognized type), the bool
+// problem is set to true.
+string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem) {
+  string f_type = "";
+  problem = false;  // Set this for safety. The caller should also set it to false.
 
   // Handle character types
   if (c_qualType.getTypePtr()->isCharType()) {
@@ -346,8 +349,16 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
   } else if (c_qualType.getTypePtr()->isStructureType() ||
 	     c_qualType.getTypePtr()->isUnionType()) {
     f_type = c_qualType.getAsString();
+
+    // We need to somewhat deal with the potential of an anonymous struct
+    // or union. This will determine if that is the case by searching for
+    // the string "anonymous" which is included in anon types.
+    bool anon = false;
+    if (f_type.find("anonymous") != std::string::npos) {
+      anon = true;
+    }
     // We cannot have a space in a fortran type. Erase up
-    // to the space.
+    // to the space. Remember to do this after finding the "anonymous at"
     size_t found = f_type.find_first_of(" ");
     while (found != string::npos) {
       f_type.erase(0, found + 1);  // Erase up to the space
@@ -361,21 +372,35 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper) {
       }
       f_type = "h2m" + f_type;  // Prepend h2m to fix the naming problem
     }
+
     if (typeWrapper) {
       f_type = "TYPE(" + f_type + ")";
     } 
+    // Any usage of an anonymous struct is warned about and highighted
+    if (anon == true) {
+      if (args.getSilent() == false) {
+        errs() << "Warning: anonymous struct or union used " + f_type + "\n";
+        CToFTypeFormatter::LineError(sloc);
+      }
+      problem = true;
+      f_type = "WARNING_ANONYMOUS(" + f_type + ")";
+    }
+
   // Handle an array type declaration
   } else if (c_qualType.getTypePtr()->isArrayType()) {
     const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
     QualType e_qualType = at->getElementType ();
     // Call this function again on the type found inside the array
     // declaration. This recursion will determine the correct type.
+    // There is another way to do this (getBaseElementType) but it works
+    // so let sleeping dogs lie.
     CToFTypeFormatter etf(e_qualType, ac, sloc, args);
-    f_type = etf.getFortranTypeASString(typeWrapper);
+    f_type = etf.getFortranTypeASString(typeWrapper, problem);
   // We do not know what the type is. We print a warning and special
   // text around the type in the output file.
   } else {
-    f_type = "unrecognized_type(" + c_qualType.getAsString()+")";
+    f_type = "WARNING_UNRECOGNIZED(" + c_qualType.getAsString()+")";
+    problem = true;
     // Warning only in the case of a typewrapper avoids repetitive error messages
     if (typeWrapper) {
       if (args.getSilent() == false) {
@@ -417,6 +442,8 @@ bool CToFTypeFormatter::isIntLike(const string input) {
       return false;
     }
 
+    // This erases non-digit characters hoping to weed
+    // down to the number at the core.
     while (found != std::string::npos)
     {
       temp.erase(found, found+1);
@@ -449,6 +476,15 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
   if (found==std::string::npos) {
     return false;
   }
+
+  // This is likely a hexadecimal constant, which we cannot
+  // translate because there is no interoperable fortran
+  // hexadecimal.
+  if (input.find_first_of("x") != std::string::npos ||
+      input.find_first_of("X") != std::string::npos) {
+    return false;
+  }
+
   while (found != std::string::npos)
   {
     temp.erase(found, found+1);

@@ -7,6 +7,7 @@
 // -----------initializer VarDeclFormatter--------------------
 VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   varDecl = v;
+  Okay = true;
   // Because sloc is checked for validity prior to use, this should handle invalid locations. If it
   // isn't initialized, it isn't valid according to the Clang function check.
   if (varDecl->getSourceRange().getBegin().isValid()) {
@@ -99,7 +100,8 @@ string VarDeclFormatter::getInitValueASString() {
       valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(),
           varDecl->getType());
       if (args.getSilent() == false && args.getQuiet() == false) {
-        errs() << "Variable declaration initialization commented out:\n" << valString << " \n";
+        errs() << "Variable declaration initialization commented out:\n" << 
+            valString << " \n";
         CToFTypeFormatter::LineError(sloc);
       }
     }
@@ -134,9 +136,9 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
     }
   }
   // Finds AST context for each array element
-  for (auto it = innerElements.begin (); it != innerElements.end(); it++) {
+  for (auto it = innerElements.begin(); it != innerElements.end(); it++) {
     Expr *innerelement = (*it);
-    if (innerelement->isEvaluatable (varDecl->getASTContext())) {
+    if (innerelement->isEvaluatable(varDecl->getASTContext())) {
       evaluatable = true;
       clang::Expr::EvalResult r;
       // Evaluate the expression as an 'r' value using any crazy technique the Clang designers
@@ -437,7 +439,11 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       // only declared, no initialization of the array takes place
       // Note that the bindname will be empty unless certain options are in effect and
       // the function's actual name is illegal.
-      arrayDecl += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname + ") :: ";
+      bool problem = false;
+      arrayDecl += tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname + ") :: ";
+      if (problem == true) {  // Set the object's problem flag
+        Okay = false;
+      }
       arrayDecl += tf.getFortranIdASString(identifier) + "\n";
     } else {
       // The array is declared and initialized. We must tranlate the initialization.
@@ -454,8 +460,12 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
      if (isChar == true && arrayText.front() != '{') {
         // handle stringliteral case
         // A parameter may not have a bind(c) attribute (static/dynamic storage do not interoperate)
-        arrayDecl += tf.getFortranTypeASString(true) + ", parameter, public :: " +
+        bool problem = false;
+        arrayDecl += tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
             tf.getFortranIdASString(identifier) + " = " + arrayText + "\n";
+        if (problem == true) {  // Set the object's problem flag
+          Okay = false;
+        }
       } else {  // This is not a string literal but a standard C array.
         bool evaluatable = false;
         Expr *exp = varDecl->getInit();
@@ -535,8 +545,12 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             // The array is evaluatable and has been evaluated already. We assemble the
             //  declaration. INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /),
             //  (/2, 3/)). bindname may be empty.
-            arrayDecl += tf.getFortranTypeASString(true)+", BIND(C" + bindname +  ") :: "+
+            bool problem;
+            arrayDecl += tf.getFortranTypeASString(true, problem)+", BIND(C" + bindname +  ") :: "+
                 identifier +"("+arrayShapes_fin+")";
+            if (problem == true) {  // Set the object's problem flag
+              Okay = false;
+            }
             arrayDecl += " = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
           }
         }
@@ -592,7 +606,11 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // at the begining of the anonymous types. These types must be commented out.
       // It also looks for the "anonymous at" qualifier which might be present if 
       // the other tell-tale signs are not.
-      string f_type = tf.getFortranTypeASString(false);
+      bool problem;
+      string f_type = tf.getFortranTypeASString(false, problem);
+      if (problem == true) {  // Set the object's error flag
+        Okay = false;
+      }
       if (f_type.front() == '/' || f_type.front() == '_' || f_type.front() == '\\' ||
           f_type.find("anonymous at") != string::npos) {
           // This isn't a duplicate per se, but it still needs to be commented out
@@ -602,34 +620,44 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           duplicate = true;
       }
       // We have seen something with this name before. This will be a problem.
-      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
+      bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
+      if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
+        // Determine the correct warning under the circumstances
+        string warning = "";
+        if (repeat == false) {
+          duplicate = true;  // This is a duplicate name
+          warning = "Variable declaration with name conflict, " + identifier + 
+              ", commented out.";
+        } else {
+          warning = "Invalid type in " + identifier + ".\n";
+        }
         if (args.getSilent() == false) {
-          errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
+          errs() << warning;
           CToFTypeFormatter::LineError(sloc);
         }
-        // The commenting out is done by a stream later so we don't put the ! at the front yet
+        // The commenting out is done by a stream later so we don't put the ! 
+        // at the front yet
         vd_buffer = " Commenting out name conflict.\n" + vd_buffer;
-        duplicate = true;  // This is indeed a duplicate declaration.
       }
 
       // Assemble the variable declaration, including the bindname if it exists.
-      vd_buffer += tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+      vd_buffer += tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
+      // This flag will tell us whether we had success fetching the struct declaration
       bool success = true;
       vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(f_type, success) + "\n";
-
-      std::istringstream in(vd_buffer);  // Create a stream out of and empty the buffer
-      vd_buffer = "";
-
+      
       // Report the errors
       // If this is a duplicate (name conflict) it must be commented out.
-      if (duplicate == true) {
+      if (duplicate == true ) {
         if (args.getQuiet() == false && args.getSilent() == false) {
           errs() << "Commenting out duplicate or anonymous structure" << identifier;
           errs() <<  " variable.\n";
           CToFTypeFormatter::LineError(sloc);
         }
       // If this was not translated successfully, comment it out.
-      } else if (success == false) {
+      // If this has invalid componenets and we were asked to find them, it
+      // must be commented out..
+      } else if (success == false || (Okay == false && args.getDetectInvalid() == true)) {
         if (args.getQuiet() == false && args.getSilent() == false) {
           errs() << "Commenting out unsuccessful structure variable " << identifier;
           errs() << "translation.\n";
@@ -639,22 +667,37 @@ string VarDeclFormatter::getFortranVarDeclASString() {
 
       // Iterate through the stream, line by line, and comment out the text if
       // needed, or else just check the line length. There's no need to check
-      // lenght on a line commented out.
+      // length on a line commented out.
+      // Create a stream out of and then empty the buffer
+      std::istringstream in(vd_buffer);
+      vd_buffer = "";
       for (std::string line; std::getline(in, line);) {
-        if (duplicate == true || success == false) { 
+        if (duplicate == true || success == false || (Okay == false &&
+            args.getDetectInvalid() == true)) { 
           vd_buffer += "! " + line + "\n";
         } else {
         // Note that the newline takes up one character so we add one to the allowed length
-        vd_buffer += CToFTypeFormatter::CheckLength(line + "\n", CToFTypeFormatter::line_max + 1,
-            args.getSilent(), sloc);  // We just put it back in, checking the length
+         // We just put it back in, checking the length
+        vd_buffer += CToFTypeFormatter::CheckLength(line + "\n", 
+            CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
         }
       }
       return vd_buffer;  // Skip the length checks below which won't work for this multiline buffer
 
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
-        // Handle initialized numeric arrays specifically in the helper function.
-        // Length, name, and identifier repetition checks are carried out in the helper
-        vd_buffer = getFortranArrayDeclASString();
+      // Handle initialized numeric arrays specifically in the helper function.
+      // Length, name, and identifier repetition checks are carried out in the helper
+      vd_buffer = getFortranArrayDeclASString();
+      // An array with an invalid type has been found
+      if (Okay == false && args.getDetectInvalid() == true) {
+        // Create a stream out of and then empty the buffer
+        std::istringstream in(vd_buffer);
+        vd_buffer = "! Invalid array declaration.\n";
+        for (std::string line; std::getline(in, line);) {
+            vd_buffer += "! " + line + "\n";
+        }
+        return(vd_buffer);  // No need for length checks. It's commented out anyway.
+      }
     } else if (varDecl->getType().getTypePtr()->isPointerType() && 
       varDecl->getType().getTypePtr()->getPointeeType()->isCharType()) {
       // string declaration
@@ -677,14 +720,27 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // Determine the state of the declaration. Is there something declared? Is it commented out?
       // Create the declaration in correspondence with this. Add in the bindname, which may be empty
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+        bool problem = false;
+        vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer +=  ") :: " + identifier + "\n";
+        if (problem == true) {  // Set the object's error flag
+          Okay = false;
+        }
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+        bool problem = false;
+        vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer +=  + ") :: " + identifier + " " + value + "\n";
+        if (problem == true) {  // Set the object's error flag
+          Okay = false;
+        }
       } else {
         // A parameter may not have a bind(c) attribute.
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
+        bool problem = false;
+        vd_buffer = tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
+            identifier + " = " + value + "\n";
+        if (problem == true) {  // Set the object's error flag
+          Okay = false;
+        }
       }
       // We have seen something with this name before. This will be a problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
@@ -716,14 +772,27 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // Determine the state of the declaration and assemble the appropriate Fortran equivalent.
       // Include the bindname, which may be empty.
       if (value.empty()) {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+         bool problem = false;
+        vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer += ") :: " + identifier + "\n";
+        if (problem == true) {  // Set the object's error flag
+          Okay = false;
+        }
       } else if (value[0] == '!') {
-        vd_buffer = tf.getFortranTypeASString(true) + ", public, BIND(C" + bindname;
+        bool problem = false;
+        vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer += ") :: " + identifier + " " + value + "\n";
+        if (problem == true) {  // Set the object's error flag
+          Okay = false;
+        }
       } else {
         // A parameter may not have a bind(c) attribute
-        vd_buffer = tf.getFortranTypeASString(true) + ", parameter, public :: " + identifier + " = " + value + "\n";
+        bool problem = false;
+        vd_buffer = tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
+            identifier + " = " + value + "\n";
+        if (problem == true) {  // Set the object's error flag
+          Okay = false;
+        }
       }
       // We have seen something with this name before. This will be a problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
@@ -734,6 +803,20 @@ string VarDeclFormatter::getFortranVarDeclASString() {
         vd_buffer = "!" + vd_buffer;
         vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
         return vd_buffer;  // Skip the name and length checks. It's commented out anyway.
+      }
+    }
+
+    // Make one final check to make sure that the pass through the one-line
+    // declarations has not encountered an invalid type. All of these should
+    // be just one line but this is here for ease of future work.
+    if (Okay == false && args.getDetectInvalid() == true) {
+      // Comment it out! Don't add an ! here or we'll end up with two
+      // after the string stream does its work
+      vd_buffer += "Invalid type detected.\n";
+      std::istringstream in(vd_buffer);
+      vd_buffer = "";
+      for (std::string line; std::getline(in, line);) {
+        vd_buffer += "! " + line + "\n";
       }
     }
     

@@ -60,9 +60,9 @@ using namespace std;
 class Arguments {
 public:
   Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders,
-      bool t, bool a, bool b, bool h) :
-      quiet(q), silent(s), output(out), no_system_headers(sysheaders) ,
-      together(t), array_transpose(a), auto_bind(b), hide_macros(h)
+      bool t, bool a, bool b, bool h, bool u) :
+      quiet(q), silent(s), output(out), no_system_headers(sysheaders) , together(t),
+      array_transpose(a), auto_bind(b), hide_macros(h), detect_invalid(u)
       { module_name = ""; }
   llvm::tool_output_file &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
@@ -74,6 +74,7 @@ public:
   bool getArrayTranspose() { return array_transpose; }
   bool getAutobind() { return auto_bind; }
   bool getHideMacros() { return hide_macros; }
+  bool getDetectInvalid() { return detect_invalid; }
   string GenerateModuleName(string Filename);
   
 private:
@@ -95,6 +96,8 @@ private:
   // Whether we should comment out all function like macro definitions or
   // make approximate tranlsations.
   bool hide_macros;
+  // Whether to comment out invalid types which are detected
+  bool detect_invalid;
   // The module name may be altered during processing by the action;
   // by default this is an empty string. It is used to pass values out, not in.
   string module_name;
@@ -113,7 +116,12 @@ public:
   PresumedLoc sloc;
 
   CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc, Arguments &arg);
-  string getFortranTypeASString(bool typeWrapper);
+  // Get the Fortran "TYPE(type_name)" or "type_name" phrase coresponding
+  // to the current type of declaration under consideration. In the case that
+  // the translation can't be completed, problem is set to FALSE. It must be
+  // true initially.
+  string getFortranTypeASString(bool typeWrapper, bool &problem);
+  // Gets the raw string, except in an array where dimensions are needed.
   string getFortranIdASString(string raw_id);
   // Gets the raw dimensions for the array in either regular or reversed order as
   // requested. The form returned is "dim1, dim2, dim3"
@@ -122,7 +130,9 @@ public:
   // from the format of any other array reference. This function creates argument format.
   string getFortranArrayArgASString(string dummy_name);
   bool isSameType(QualType qt2);
-  bool isArrayType();  // Used to classify function arguments (decide if we need DIMENSION)
+  // Used to classify function arguments (decide if we need DIMENSION atributes)
+  bool isArrayType();
+  // Here are functions to determine whether or not a macro resembles a given type.
   static bool isIntLike(const string input);
   static bool isDoubleLike(const string input);
   static bool isType(const string input);
@@ -145,6 +155,30 @@ private:
 // into Fortran equivalents. 
 class RecordDeclFormatter {
 public:
+  // Member functions declarations
+  RecordDeclFormatter(RecordDecl *rd, Rewriter &r, Arguments &arg);
+  void setMode();
+  void setTagName(string name);
+  bool isStruct();
+  bool isUnion();
+  bool isOkay() { return Okay; }
+  string getFortranStructASString();
+  string getFortranFields();
+
+  // This function exists to make sure that a type is not
+  // declared twice. This frequently happens with typedefs
+  // renaming structs. If the identifier provided already
+  // exists, "false" is returned. Otherwise "true" is returned.
+  static bool StructAndTypedefGuard(string name);
+
+private:
+  // Rewriters are used, typically, to make small changes to the
+  // source code. This one, however, serves a different,
+  // mysterious purpose
+  Rewriter &rewriter;
+  // Arguments passed in from the action factory. This includes
+  // quiet/silent, the module's name etc
+  Arguments &args;
   // An anonymous struct may not have a declared name.
   const int ANONYMOUS = 0;
   const int ID_ONLY = 1;
@@ -165,63 +199,42 @@ public:
   bool isInSystemHeader;
   // Presumed location of this node
   PresumedLoc sloc;
-
-  // Member functions declarations
-  RecordDeclFormatter(RecordDecl *rd, Rewriter &r, Arguments &arg);
-  void setMode();
-  void setTagName(string name);
-  bool isStruct();
-  bool isUnion();
-  string getFortranStructASString();
-  string getFortranFields();
-
-  // This function exists to make sure that a type is not
-  // declared twice. This frequently happens with typedefs
-  // renaming structs. If the identifier provided already
-  // exists, "false" is returned. Otherwise "true" is returned.
-  static bool StructAndTypedefGuard(string name);
-
-private:
-  // Rewriters are used, typically, to make small changes to the
-  // source code. This one, however, serves a different,
-  // mysterious purpose
-  Rewriter &rewriter;
-  // Arguments passed in from the action factory. This includes
-  // quiet/silent, the module's name etc
-  Arguments &args;
-  
+  // Originally set to "true", this reflects whether an 
+  // anonymous or unrecognized type was discovered during
+  // the translation.
+  bool Okay;
 };
 
 // This class is used to translate a C enumeration into a
 // Fortran equivalent.
 class EnumDeclFormatter {
 public:
-  EnumDecl *enumDecl;
-  // This doesn't appear to be used.
-  bool isInSystemHeader;
-  PresumedLoc sloc;
-
-  // Member functions declarations
+   // Member functions declarations
   EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg);
   // The main function to fetch the enumeration as a Fortran
   // string equivalent.
   string getFortranEnumASString();
+  bool isOkay() { return Okay; }
 
 private:
+  EnumDecl *enumDecl;
+  // This doesn't appear to be used.
+  bool isInSystemHeader;
+  PresumedLoc sloc;
   Rewriter &rewriter;
   // Arguments passed in from the action factory.
   Arguments &args;
-  
+  // Originally set to "true", this reflects whether an 
+  // anonymous or unrecognized type was discovered during
+  // the translation.
+  bool Okay;
+ 
 };
 
 // This class is used to translate a variable declaration into
 // a Fortran equivalent.
 class VarDeclFormatter {
 public:
-  VarDecl *varDecl;
-  bool isInSystemHeader;
-  PresumedLoc sloc;
-
   // Member functions declarations
   VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg);
   // Get the initalization value of the variable.
@@ -242,62 +255,91 @@ public:
   // Fetches an individual initialized array element.
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
       string &arrayShapes, bool &evaluatable, bool firstEle, bool is_char);
+  bool isOkay() { return Okay; }
 
 private:
   Rewriter &rewriter;
   // Used to store information about the shape of an array declaration.
   string arrayShapes_fin;
+  // Extra Arguments passed in from the action factory
   Arguments &args;
-  
+  // The variable declaration we are actually looking at.
+  VarDecl *varDecl;
+  bool isInSystemHeader;
+  // The presumed location of this node
+  PresumedLoc sloc;
+  // Originally set to "true", this reflects whether an 
+  // anonymous or unrecognized type was discovered during
+  // the translation.
+  bool Okay;
 };
 
 // This class translates C typedefs into 
 // the closest possible fortran equivalent.
 class TypedefDeclFormater {
 public:
-  TypedefDecl *typedefDecl;
-  bool isInSystemHeader;
-  // The presumed location of the node
-  PresumedLoc sloc;
-
+  bool isOkay() { return Okay; };
   // Member functions declarations
   TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments &args);
   string getFortranTypedefDeclASString();
 
 private:
+  bool isInSystemHeader;
+  // The presumed location of the node
+  PresumedLoc sloc;
+  TypedefDecl *typedefDecl;
   Rewriter &rewriter;
   // Whether or not the location of the node is valid according to clang
   bool isLocValid;
   // Arguments passed in from the action factory
   Arguments &args;
-  
+  // Originally set to "true", this reflects whether an 
+  // anonymous or unrecognized type was discovered during
+  // the translation.
+  bool Okay;
+ 
 };
 
 // Class to translate a C function declaration into either a Fortran
 // function or subroutine as appropriate.
 class FunctionDeclFormatter {
 public:
-  FunctionDecl *funcDecl;
-  bool isInSystemHeader;
-  PresumedLoc sloc;
 
   // Member functions declarations
   FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg);
+  // These are the untyped parameters, used in the first line of the
+  // function declaration.
   string getParamsNamesASString();
+  // This is used to fetch the types as well as the names of the 
+  // parameters to complete the interface.
   string getParamsDeclASString();
   // Fetches the entire declaration using the other helpers seen here
   string getFortranFunctDeclASString();
+  // This helper fetches the types of the parameters for use in the
+  // use iso_c_binding only: <types> statement
   string getParamsTypesASString();
   // Whether or not the argument locations are valid according to clang
   bool argLocValid();
+  bool isOkay() { return Okay; }
 
 private:
+  // The qualified type of the return value of the function 
   QualType returnQType;
-  // The parameters of the function are kept in an array
+  // The parameters of the function are kept in an array ref
   llvm::ArrayRef<ParmVarDecl *> params;
+  // Again, this appears to be included from some previous incarnation
+  // of the h2m software and not actually in use as a "rewriter"
   Rewriter &rewriter;
   // Arguments passed in from the action factory
   Arguments &args;
+  FunctionDecl *funcDecl;
+  bool isInSystemHeader;
+  PresumedLoc sloc;
+  // Originally set to "true", this reflects whether an 
+  // anonymous or unrecognized type was discovered during
+  // the translation.
+  bool Okay;
+
 };
 
 
@@ -307,14 +349,6 @@ private:
 // out instead.
 class MacroFormatter {
 public:
-  const MacroDirective *md;
-  string macroName;
-  string macroVal;
-  string macroDef;
-  bool isInSystemHeader;
-  // Presumed location of the macro's start according to clang
-  PresumedLoc sloc;
-
   MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci, Arguments &arg);
   bool isObjectLike();
   bool isFunctionLike();
@@ -322,6 +356,20 @@ public:
 
 
 private:
+  const MacroDirective *md;
+  // Name of the macro
+  string macroName;
+  // Value of the macro if it has something we can call a "value"
+  string macroVal;
+  // The string definition of the macro
+  string macroDef;
+  bool isInSystemHeader;
+  // Presumed location of the macro's start according to clang
+  PresumedLoc sloc;
+
+  // Whether this is like an object (ie like a Char, Char*, int, double...)
+  // or like a function. Function likes are translated to subroutines but
+  // it's really not a very effective translation.
   bool isObjectOrFunction;
   // Arguments passed in from the action factory
   Arguments &args;
