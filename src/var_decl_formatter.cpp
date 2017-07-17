@@ -405,7 +405,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     string identifier = varDecl->getNameAsString();
 
     // Check for an illegal name length. Warn if it exists.
-    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
+        args.getSilent(), sloc);
 
     // Illegal underscore is found in the array declaration
     if (identifier.front() == '_') {
@@ -574,18 +575,15 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 string VarDeclFormatter::getFortranVarDeclASString() {
   string vd_buffer = "";
   string identifier = "";   // Will eventually hold the variable's name
-  string bindname = "";  // May eventually hold a value to bind to.
+  string bindname = "";  // May eventually hold a value to bind to (BIND (C, name ="...")
+  bool struct_error = false;  // Flag for a special error during struct translation
   
   if (!isInSystemHeader) {  // This appears to protect local headers from having system
    // headers leak into the definitions
     // This is a declaration of a TYPE(stuctured_type) variable
     if (varDecl->getType().getTypePtr()->isStructureType()) {
-      bool duplicate = false;  // Whether this is a duplicate identifier. 
       RecordDecl *rd = varDecl->getType().getTypePtr()->getAsStructureType()->getDecl();
-      // RecordDeclFormatter rdf(rd, rewriter, args);
-      // rdf.setTagName(varDecl->getNameAsString());  // Done: Experiment with this line
-      // vd_buffer = rdf.getFortranStructASString();  // Done: This line is wrong. Fix.
-      // Create a structure defined in the module file.
+      // Create a structure which is initialized in the module file.
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
 
@@ -608,96 +606,48 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // the other tell-tale signs are not.
       bool problem;
       string f_type = tf.getFortranTypeASString(false, problem);
-      if (problem == true) {  // Set the object's error flag
+      if (problem == true) {  // Set the object's error flag for unrecognized types
         Okay = false;
       }
       if (f_type.front() == '/' || f_type.front() == '_' || f_type.front() == '\\' ||
           f_type.find("anonymous at") != string::npos) {
-          // This isn't a duplicate per se, but it still needs to be commented out
-          // and refering to it as a duplicate will do the trick.
           // We don't need an ! here because everything will be commented out below.
           vd_buffer = " Anonymous struct declaration commented out. \n";
-          duplicate = true;
+          struct_error = true;  // Set the special error flag.
       }
-      // We have seen something with this name before. This will be a problem.
-      bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
-      if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
-        // Determine the correct warning under the circumstances
-        string warning = "";
-        if (repeat == false) {
-          duplicate = true;  // This is a duplicate name
-          warning = "Variable declaration with name conflict, " + identifier + 
-              ", commented out.";
-        } else {
-          warning = "Invalid type in " + identifier + ".\n";
-        }
-        if (args.getSilent() == false) {
-          errs() << warning;
-          CToFTypeFormatter::LineError(sloc);
-        }
-        // The commenting out is done by a stream later so we don't put the ! 
-        // at the front yet
-        vd_buffer = " Commenting out name conflict.\n" + vd_buffer;
-      }
-
       // Assemble the variable declaration, including the bindname if it exists.
       vd_buffer += tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
       // This flag will tell us whether we had success fetching the struct declaration
       bool success = true;
       vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(f_type, success) + "\n";
-      
-      // Report the errors
-      // If this is a duplicate (name conflict) it must be commented out.
-      if (duplicate == true ) {
-        if (args.getQuiet() == false && args.getSilent() == false) {
-          errs() << "Commenting out duplicate or anonymous structure" << identifier;
-          errs() <<  " variable.\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
-      // If this was not translated successfully, comment it out.
-      // If this has invalid componenets and we were asked to find them, it
-      // must be commented out..
-      } else if (success == false || (Okay == false && args.getDetectInvalid() == true)) {
-        if (args.getQuiet() == false && args.getSilent() == false) {
-          errs() << "Commenting out unsuccessful structure variable " << identifier;
-          errs() << "translation.\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
+      // This is another kind of error, the source of which we aren't sure of,
+      // during an attempt to translate a structure. It will be checked for and
+      // commented out later.
+      if (success == false) {
+        struct_error = true;
+        // The ! will be added in during the global checks later.
+        vd_buffer = "Unable to get initialization of structure\n" + vd_buffer;
       }
-
-      // Iterate through the stream, line by line, and comment out the text if
-      // needed, or else just check the line length. There's no need to check
-      // length on a line commented out.
-      // Create a stream out of and then empty the buffer
-      std::istringstream in(vd_buffer);
-      vd_buffer = "";
-      for (std::string line; std::getline(in, line);) {
-        if (duplicate == true || success == false || (Okay == false &&
-            args.getDetectInvalid() == true)) { 
-          vd_buffer += "! " + line + "\n";
-        } else {
-        // Note that the newline takes up one character so we add one to the allowed length
-         // We just put it back in, checking the length
-        vd_buffer += CToFTypeFormatter::CheckLength(line + "\n", 
-            CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
-        }
-      }
-      return vd_buffer;  // Skip the length checks below which won't work for this multiline buffer
-
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
       // Handle initialized numeric arrays specifically in the helper function.
-      // Length, name, and identifier repetition checks are carried out in the helper
       vd_buffer = getFortranArrayDeclASString();
-      // An array with an invalid type has been found
-      if (Okay == false && args.getDetectInvalid() == true) {
-        // Create a stream out of and then empty the buffer
+      // Because most of the complicated array information is stored elsewhere,
+      // checks for most errors are done in the helper. Only check for the 
+      // invalid type problem here and comment out as necessary
+      if (Okay == false && args.getDetectInvalid()) {
         std::istringstream in(vd_buffer);
-        vd_buffer = "! Invalid array declaration.\n";
-        for (std::string line; std::getline(in, line);) {
-            vd_buffer += "! " + line + "\n";
+        vd_buffer = "";
+        if (args.getSilent() == false) {
+          errs() << "Warning: illegal type in array.\n";
+          CToFTypeFormatter::LineError(sloc);
         }
-        return(vd_buffer);  // No need for length checks. It's commented out anyway.
+        for (std::string line; std::getline(in, line);) {
+          vd_buffer += "! " + line + "\n";
+        }
       }
+      // The length and Okay checks everyone else does below would be 
+      // repetitive, so skip them.
+      return vd_buffer;
     } else if (varDecl->getType().getTypePtr()->isPointerType() && 
       varDecl->getType().getTypePtr()->getPointeeType()->isCharType()) {
       // string declaration
@@ -742,17 +692,6 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           Okay = false;
         }
       }
-      // We have seen something with this name before. This will be a problem.
-      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
-        if (args.getSilent() == false) {
-          errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
-          CToFTypeFormatter::LineError(sloc);
-        }
-        vd_buffer = "!" + vd_buffer;
-        vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
-        return vd_buffer;  // Skip the name and length checks. It's commented out anyway.
-      }
- 
       // If it is not a structure, pointer, or array, proceed with no special treatment.
     } else {
       string value = getInitValueASString();
@@ -794,37 +733,53 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           Okay = false;
         }
       }
-      // We have seen something with this name before. This will be a problem.
-      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
-        if (args.getSilent() == false) {
-          errs() << "Variable declaration with name conflict, " << identifier << ", commented out.";
-          CToFTypeFormatter::LineError(sloc);
-        }
-        vd_buffer = "!" + vd_buffer;
-        vd_buffer = "! Commenting out name conflict.\n" + vd_buffer;
-        return vd_buffer;  // Skip the name and length checks. It's commented out anyway.
-      }
     }
 
-    // Make one final check to make sure that the pass through the one-line
-    // declarations has not encountered an invalid type. All of these should
-    // be just one line but this is here for ease of future work.
-    if (Okay == false && args.getDetectInvalid() == true) {
-      // Comment it out! Don't add an ! here or we'll end up with two
-      // after the string stream does its work
-      vd_buffer += "Invalid type detected.\n";
+    // Check for repeats or for invalid types within the declaration.
+    // If either is discovered, comment out the entire declaration.
+    // Also check for the special structure error which might occur.
+    bool not_duplicate = RecordDeclFormatter::StructAndTypedefGuard(identifier);
+    if (not_duplicate == false || (Okay == false && args.getDetectInvalid() == true) ||
+        struct_error == true) {
+      string warning = "";  // This warning is printed
+      string intext = "";  // The warning goes in the translated code.
+      if (not_duplicate == false) {
+        warning = "Variable declaration with name conflict, " + identifier + ", commented out.\n";
+        intext = "! Variable with name conflict, " + identifier + ", commented out.\n";
+      // When special errors occur, their warnings are already in the text
+      // but we're not exactly sure what the error was.
+      } else if (struct_error == true) {
+        warning = "Error translating structure, " + identifier + "\n";
+        // The intext warning was already added. Don't include another.
+      } else {
+        warning = "Variable with name conflict, " + identifier + ", commented out.\n";
+        intext = "! Commenting out name conflict.\n";
+      }
+      // Warn about the mishap unless silenced.
+      if (args.getSilent() == false) {
+        errs() << warning;
+        CToFTypeFormatter::LineError(sloc);
+      }
+      // Add the proper warning and comment out the buffer.
       std::istringstream in(vd_buffer);
-      vd_buffer = "";
+      vd_buffer = intext;
       for (std::string line; std::getline(in, line);) {
         vd_buffer += "! " + line + "\n";
+      }
+    } else {  // We are not commenting things out, so we do length checks
+      std::istringstream in(vd_buffer);
+      // If we are not warning about line lengths, skip these checks,
+      // otherwise perform them on every line (use silent==false for all.)
+      if (args.getSilent() == false) {
+        for (std::string line; std::getline(in, line);) {
+          CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::line_max,
+              false, sloc);
+        }
       }
     }
     
     // Identifier may be initialized to "". This will cause no harm.
     CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
-    // As we check for valid fortran name and line lengths, we add one to account for the
-    // presence of the newline character.
-    CToFTypeFormatter::CheckLength(vd_buffer, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
   }
   return vd_buffer;
 };

@@ -13,22 +13,25 @@
 // make sure that no typedef declares an already declared name.
 // If the name has already been seen, it returns false. If it hasn't,
 // it adds it to a set (will return false if called again with that
-// name) and returns true.
+// name) and returns true. It will also return true if the name is ""
 bool RecordDeclFormatter::StructAndTypedefGuard(string name) {
   static std::set<string> seennames;  // Records all identifiers seen.
-
+  // This is insurance against accidental improper calling of
+  // this function. No name is actually empty, so this can't be a
+  // repeated name.
+  if (name.compare("") == 0) {
+    return true;
+  }
   // Insurance. The name should always have been prepended prior to this call,
   // but this makes sure that all names are prepended prior to the check.
   if (name.front() == '_') { 
     name = "h2m" + name;
   }
-
   // Put the name into lowercase. Fortran is not case sensitive.
   std::locale location;  // Determines if a lowercase exists
   for (string::size_type j = 0; j < name.length(); j++) {
     name[j] = std::tolower(name[j], location); 
   }
-
   // If we have already added this file to the set... false
   if (seennames.find(name) != seennames.end()) {
     return false;
@@ -116,24 +119,22 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
     if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
       string warning = "";
+      string intext = "";  // This is the intext warning for the problem
       // Determine the explanatory warning to emit and emit it unless silenced
       if (repeat == false) {
         warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
+        intext = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
       } else {
         warning = "Warning: illegal type in " + identifier + "\n";
+        intext = "\n! Illegal type in " + identifier + " TYPEDEF.\n";
       }
       if (args.getSilent() == false) {
         errs() << warning;
         CToFTypeFormatter::LineError(sloc);
       }
       string temp_buf = typedef_buffer;
-      // Determine the necessary in-text explanation for the commented out section
-      if (repeat == false) {
-        typedef_buffer = "\n! Duplicate declaration of " + identifier + 
-            ", TYPEDEF, skipped. \n";
-      } else {
-        typedef_buffer = "\n! Illegal type in " + identifier + " TYPEDEF.\n";
-      }
+      // Reset the buffer to hold only the in text error warning.
+      typedef_buffer = intext;
       std::istringstream in(temp_buf);
       // Loops through the buffer like a line-buffered stream and comments it out
       for (std::string line; std::getline(in, line);) {
@@ -239,12 +240,15 @@ string EnumDeclFormatter::getFortranEnumASString() {
     if (name_guard  == false || (Okay == false &&
         args.getDetectInvalid() == true)) {
       string warning = "";
+      string intext = "";  // This will be the in text error warning.
       // Determine the appropriate warning to print about why we are commenting
       // out this section and emit it unless silenced.
       if (name_guard == false) {
         warning = "Warning: skipping duplicate declaration of " + enumName + "\n";
+        intext = "\n! Duplicate declaration of " + enumName + ", ENUM, skipped.\n";
       } else {
         warning = "Warning: illegal type in " + enumName + "\n";  
+        intext = "\n! Invalid type in " + enumName + ", ENUM.\n"; 
       }
       if (args.getSilent() == false) {
         errs() << warning;
@@ -254,12 +258,8 @@ string EnumDeclFormatter::getFortranEnumASString() {
       // Comment out the declaration by stepping through and appending ! before newlines
       // to avoid duplicate identifier collisions.
       string temp_buf = enum_buffer;
-      // Determine the proper comment to explain why this section is commented out
-      if (name_guard == false) {
-        enum_buffer = "\n! Duplicate declaration of " + enumName + ", ENUM, skipped.\n";
-      } else {  // Put in a warning about invalid types
-        enum_buffer = "\n! Invalid type in " + enumName + ", ENUM.\n"; 
-      }
+      // Add an explanation in the text for commenting it out
+      enum_buffer = intext;
       std::istringstream in(temp_buf);
       for (std::string line; std::getline(in, line);) {
         enum_buffer += "! " + line + "\n";
@@ -320,6 +320,8 @@ void RecordDeclFormatter::setTagName(string name) {
 string RecordDeclFormatter::getFortranFields() {
   string fieldsInFortran = "";
   if (!recordDecl->field_empty()) {
+    // Guard against an empty declaration and iterate through the fields
+    // in the structured type, checking for invalid names.
     for (auto it = recordDecl->field_begin(); it != recordDecl->field_end(); it++) {
       CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext(), sloc, args);
       string identifier = tf.getFortranIdASString((*it)->getNameAsString());
@@ -357,6 +359,9 @@ string RecordDeclFormatter::getFortranStructASString() {
   setMode();
   Okay = true;
   string identifier = "";  // Holds the Fortran name for this structure.
+  // A value of TRUE indicates that this declaration is okay. A value
+  // of false indicates that this is a repeated name and needs to be
+  // commented out.
 
   string rd_buffer;  // Holds the entire declaration.
 
@@ -383,40 +388,6 @@ string RecordDeclFormatter::getFortranStructASString() {
       // line can be guaranteed not to be too long.
       CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
 
-
-      // Check to see whether we have declared something with this identifier before.
-      // Skip this duplicate declaration if necessary. Also skip if it has an invalid
-      // type in it and we've been asked to comment those out.
-      bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier);
-      if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
-        // Determine and emit the proper warning for the circumstances.
-        string warning;
-        if (repeat == false) {
-          warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
-        } else {
-          warning = "Warning: invalid type in " + identifier + "\n";
-        }
-        if (args.getSilent() == false) {
-          errs() << warning;
-          CToFTypeFormatter::LineError(sloc);
-        }
-        // Comment out the declaration by stepping through and appending ! before newlines
-        // Also put in the correct explanation for the commented section
-        if (repeat == false) { 
-          rd_buffer = "\n! Duplicate declaration of " + identifier + 
-              ", TYPEDEF, skipped. \n";
-        } else {
-          rd_buffer = "\n! Invalid type in " + identifier + ", TYPEDEF.\n";
-        }
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
-        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
-        std::istringstream in(temp_buf);
-        for (std::string line; std::getline(in, line);) {
-          rd_buffer += "! " + line + "\n";
-        }
-        return rd_buffer;
-      }
-
       // Declare the structure in Fortran. The bindname may be empty.
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
@@ -435,40 +406,6 @@ string RecordDeclFormatter::getFortranStructASString() {
       CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
           args.getSilent(), sloc);
 
-
-      // Check to see whether we have declared something with this identifier before.
-      // Skip this duplicate declaration if necessary. Also comment it out if invalid 
-      // types have been detected and we've been asked to comment those out.
-      bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier);
-      if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
-        // Determine the proper warning for the circumstances, either an invalid
-        // type or a repeated name
-        string warning = "";
-        if (repeat == false) {
-          warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
-        } else {
-          warning = "Warning: invalid type in " + identifier + "\n";
-        }
-        if (args.getSilent() == false) {
-          errs() << warning;
-          CToFTypeFormatter::LineError(sloc);
-        }
-        // Comment out the declaration by stepping through and appending ! before newlines
-        if (repeat == false) { 
-          rd_buffer = "\n! Duplicate declaration of " + identifier + 
-              ", TYPEDEF, skipped. \n";
-        } else { 
-          rd_buffer = "\n! Invalid type in " + identifier + "\n";
-        }
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
-        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
-        std::istringstream in(temp_buf);
-        for (std::string line; std::getline(in, line);) {
-          rd_buffer += "! " + line + "\n";
-        }
-        return rd_buffer;
-      }
-
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ID_TAG) {
@@ -484,40 +421,6 @@ string RecordDeclFormatter::getFortranStructASString() {
       // line can be guaranteed not to be too long.
       CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
           args.getSilent(), sloc);
-
-
-      // Check to see whether we have declared something with this identifier before.
-      // Skip this duplicate declaration if necessary.
-      bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
-      if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
-        // Determine the proper warning based on the circumstances
-        string warning = "";
-        if (repeat == false) {
-          warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
-        } else {
-          warning = "Warning: invalid type in " + identifier + "\n";
-        }
-        if (args.getSilent() == false) {
-          errs() << warning;
-          CToFTypeFormatter::LineError(sloc);
-        }
-        // Comment out the declaration so that it is present in the output file
-        // Determine the proper in text warning.
-        if (repeat == false) {
-          rd_buffer = "\n! Duplicate declaration of " + identifier + 
-              ", TYPEDEF, skipped. \n";
-        } else {
-          rd_buffer = "\n! Invalid type in " + identifier + ", TYPEDEF.\n";
-        }
-        // Do the actual job of commenting out using a string stream.
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
-        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
-        std::istringstream in(temp_buf);
-        for (std::string line; std::getline(in, line);) {
-          rd_buffer += "! " + line + "\n";
-        }
-        return rd_buffer;
-      }
 
       // Assemble the strucutre in Fortran. Note that bindname may be empty.
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
@@ -537,40 +440,6 @@ string RecordDeclFormatter::getFortranStructASString() {
       // line can be guaranteed not to be too long.
       CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
           args.getSilent(), sloc);
-
-
-      // Check to see whether we have declared something with this identifier before.
-      // Skip this duplicate declaration if necessary. Also skip it if we have
-      // detected an invalid type and been asked to comment those out
-      bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier);
-      if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
-        // Detemine the proper warning to print based on the circumstances
-        string warning = "";
-        if (repeat == false) {
-          warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
-        } else {
-          warning = "Warning: invalid type in " + identifier + "\n";
-        }
-        if (args.getSilent() == false) {
-          errs() << warning;
-          CToFTypeFormatter::LineError(sloc);
-        }
-        // Comment out the declaration so that it is present in the output file
-        // First determine the proper in text warning
-        if (repeat == false) {
-          rd_buffer = "\n! Duplicate declaration of " + identifier + 
-              ", TYPEDEF, skipped. \n";
-        } else {
-          rd_buffer = "\n! Invalid type in " + identifier + ", TYPEDEF.\n";
-        }
-        string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n";
-        temp_buf += fieldsInFortran + "END TYPE " + identifier +"\n";
-        std::istringstream in(temp_buf);
-        for (std::string line; std::getline(in, line);) {
-          rd_buffer += "! " + line + "\n";
-        }
-        return rd_buffer;
-      }
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
@@ -610,6 +479,40 @@ string RecordDeclFormatter::getFortranStructASString() {
           errs() << "Warning: line in anonymous struct" << line << " commented out \n";
           CToFTypeFormatter::LineError(sloc);
         }
+      }
+      // Avoid any potential double-commenting problems below by returning the
+      // already commented out buffer now.
+      return rd_buffer;  
+    }
+    // Now that we are through processing structs of all types, we must check for the problems
+    // require us to comment the struct out: duplicate names or invalid types.
+
+    // Check to see whether we have declared something with this identifier before.
+    // Skip this duplicate declaration if necessary. Also skip if it has an invalid
+    // type in it and we've been asked to comment those out.
+    bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
+    if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
+      // Determine and emit the proper warning for the circumstances.
+      string warning;
+      string intext;  // This will be the warning in the translated code
+      if (repeat == false) {
+        warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
+        intext = "\n! Duplicate declaration of " + identifier +
+            ", structured type, skipped.\n";
+      } else {
+        warning = "Warning: invalid type in " + identifier + "\n";
+        intext = "\n! Invalid type in " + identifier + ", TYPEDEF.\n";
+      }
+      if (args.getSilent() == false) {
+        errs() << warning;
+        CToFTypeFormatter::LineError(sloc);
+      }
+      // Comment out the declaration by stepping through and appending ! before newlines
+      // Also put in the correct explanation for the commented section
+      std::istringstream in(rd_buffer);
+      rd_buffer = intext;
+      for (std::string line; std::getline(in, line);) {
+        rd_buffer += "! " + line + "\n";
       }
     }
   }

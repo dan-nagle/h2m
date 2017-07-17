@@ -5,6 +5,7 @@
 
 // -----------initializer FunctionDeclFormatter--------------------
 FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
+  Okay = true;
   funcDecl = f;
   returnQType = funcDecl->getReturnType();
   params = funcDecl->parameters();
@@ -27,35 +28,51 @@ string FunctionDeclFormatter::getParamsTypesASString() {
   QualType prev_qt;
   std::vector<QualType> qts;
   bool first = true;
-  // loop through all arguments
+  // loop through all arguments of the function
   for (auto it = params.begin(); it != params.end(); it++) {
     if (first) {
       prev_qt = (*it)->getOriginalType();
       qts.push_back(prev_qt);
       CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
-      if (tf.getFortranTypeASString(false).find("C_") != std::string::npos) {
-        paramsType = tf.getFortranTypeASString(false);
+      bool problem = false;
+      string type_no_wrapper = tf.getFortranTypeASString(false, problem);
+      if (problem == true) {
+        Okay = false;  // If an invalid type was found, set the error flag
+      }
+      // If we have a valid type to add, begin the argument list!
+      if (type_no_wrapper.find("C_") != std::string::npos) {
+        paramsType = type_no_wrapper;
       }
       first = false;
 
-      // add the return type too
+      // Now that we have found the type of the arguments, find the return
+      // type, too. Deal with the potential of a void (subroutine) return. 
+      // Add the type to the vector for iso_c_binding only : <vector> if it
+      // is not already present. 
       CToFTypeFormatter rtf(returnQType, funcDecl->getASTContext(), sloc, args);
       if (!returnQType.getTypePtr()->isVoidType()) {
-        if (rtf.isSameType(prev_qt)) {
+        if (rtf.isSameType(prev_qt)) {  // Then there is no need to add a new type
         } else {
-          // check if type is in the vector
           bool add = true;
+          // check if the return type is in the vector
           for (auto v = qts.begin(); v != qts.end(); v++) {
             if (rtf.isSameType(*v)) {
               add = false;
             }
           }
           if (add) {
-            if (rtf.getFortranTypeASString(false).find("C_") != std::string::npos) {
+            bool problem = false;
+            string return_type = rtf.getFortranTypeASString(false, problem);
+            if (problem == true) {
+              Okay = false;  // Set the error flag because there is an invalid type
+            }  
+            // If the return type is valid, add it into the list with
+            // the appropriate syntax. 
+            if (return_type.find("C_") != std::string::npos) {
               if (paramsType.empty()) {
-                paramsType += rtf.getFortranTypeASString(false);
+                paramsType += return_type;
               } else {
-                paramsType += (", " + rtf.getFortranTypeASString(false));
+                paramsType += (", " + return_type); 
               }
               
             }
@@ -68,9 +85,9 @@ string FunctionDeclFormatter::getParamsTypesASString() {
 
     } else {
       CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
-      if (tf.isSameType(prev_qt)) {
+      if (tf.isSameType(prev_qt)) {  // Then there is no need to add a new type.
       } else {
-          // check if type is in the vector
+        // check if the return type is in the vector
         bool add = true;
         for (auto v = qts.begin(); v != qts.end(); v++) {
           if (tf.isSameType(*v)) {
@@ -78,8 +95,13 @@ string FunctionDeclFormatter::getParamsTypesASString() {
           }
         }
         if (add) {
-          if (tf.getFortranTypeASString(false).find("C_") != std::string::npos) {
-            paramsType += (", " + tf.getFortranTypeASString(false));
+          bool problem = false;
+          string return_type = tf.getFortranTypeASString(false, problem); 
+          if (problem == true) {
+            Okay = false;  // Set the error flag due to an invalid type
+          }
+          if (return_type.find("C_") != std::string::npos) {
+            paramsType += (", " + return_type);
           }
         }
       }
@@ -126,7 +148,12 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       paramsDecl += "    " + tf.getFortranArrayArgASString(pname) + "\n";
     } else {
       // in some cases parameter doesn't have a name in C, but must have one by the time we get here.
-      paramsDecl += "    " + tf.getFortranTypeASString(true) + ", value" + " :: " + pname + "\n";
+      bool problem = false;
+      string type_wrapped = tf.getFortranTypeASString(true, problem);
+      if (problem == true) {
+        Okay = false;  // Set the global error flag due to an unrecognized type
+      }
+      paramsDecl += "    " + type_wrapped + ", value" + " :: " + pname + "\n";
       // need to handle the attribute later - Michelle doesn't know what this (original) commment means 
     }
     // Similarly, check the length of the declaration line to make sure it is valid Fortran.
@@ -228,7 +255,11 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       funcType = "SUBROUTINE";
     } else {
       CToFTypeFormatter tf(returnQType, funcDecl->getASTContext(), sloc, args);
-      funcType = tf.getFortranTypeASString(true) + " FUNCTION";
+      bool problem = false;
+      funcType = tf.getFortranTypeASString(true, problem) + " FUNCTION";
+      if (problem == true) {  // An invalid type of some sort has been found
+        Okay = false;  // Set the error flag
+      }
     }
     string funcname = funcDecl->getNameAsString();
     if (funcname.front() == '_') {  // We have an illegal character in the identifier
@@ -280,13 +311,26 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     // The guard function checks for duplicate identifiers. This might 
     // happen because C is case sensitive. It shouldn't happen often, but if
     // it does, the duplicate declaration needs to be commented out.
-    if (RecordDeclFormatter::StructAndTypedefGuard(funcname) == false) { 
+    // This also handles the case of an invlaid type in the function declaration
+    // when the arguments have requested that we comment such problems out.
+    bool duplicate = RecordDeclFormatter::StructAndTypedefGuard(funcname); 
+    if (duplicate == false ||  // It is infact a duplicate name
+        (Okay == false && args.getDetectInvalid() == true)) {
+      string warning = "";  // We determine what warning to provide.
+      string intext = "";  // This warning goes in the translated text
+      if (duplicate == false) {  // Provide a warning about a duplicate
+        warning = "Warning: duplicate declaration of " + funcname + ", FUNCTION, skipped.\n";
+        intext = "! Duplicate declaration of " + funcname + ", FUNCTION, skipped.\n"; 
+      } else {
+        warning = "Warning: invalid type in " + funcname + ", FUNCTION.\n";
+        intext = "! Invalid type detected in " + funcname + "function declaration";
+      }
       if (args.getSilent() == false) {
-        errs() << "Warning: duplicate declaration of " << funcname << ", FUNCTION, skipped.\n";
+        errs() << warning;  // Print the warning.
         CToFTypeFormatter::LineError(sloc);
       }
       string temp_buf = fortranFunctDecl;
-      fortranFunctDecl = "\n! Duplicate declaration of " + funcname + ", FUNCTION, skipped.\n";
+      fortranFunctDecl = intext;  // Put in the in text warning.
       std::istringstream in(temp_buf);
       // Loops through the buffer like a line-buffered stream and comments it out
       for (std::string line; std::getline(in, line);) {

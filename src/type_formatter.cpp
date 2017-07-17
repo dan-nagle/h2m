@@ -357,6 +357,14 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
     if (f_type.find("anonymous") != std::string::npos) {
       anon = true;
     }
+
+    // This, and it seems all associated types, are C builtins
+    // with no Fortran equivalent. In the case that we are to
+    // eliminate bad types, we had best deal with these.
+    if (f_type.find("__va_list_tag") != std::string::npos) {
+      problem = true;
+    }
+
     // We cannot have a space in a fortran type. Erase up
     // to the space. Remember to do this after finding the "anonymous at"
     size_t found = f_type.find_first_of(" ");

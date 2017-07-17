@@ -136,16 +136,25 @@ static cl::opt<bool> Autobind("auto-bind", cl::cat(h2mOpts),
 static cl::alias Autobind2("b", cl::cat(h2mOpts), cl::desc("Alias for -auto-bind"), 
     cl::aliasopt(Autobind));
 
-// Make all functionlike macros into comments
+// Make all functionlike macros into comments. Do not attempt to translate.
 static cl::opt<bool> HideMacros("hide-macros", cl::cat(h2mOpts), 
     cl::desc("Comment out all function like macros"));
 static cl::alias HideMacros2("h", cl::cat(h2mOpts), cl::desc("Alias for -hide-macros"), 
     cl::aliasopt(HideMacros));
 
+// When unrecognized types are seen, or __va_list_tag, comment out
+// the entire declaration it is involved with.
 static cl::opt<bool> DetectUnrecognized("detect-unrecognized", cl::cat(h2mOpts),
     cl::desc("Comment out lines with unrecognized or invalid types"));
 static cl::alias DetectUnrecognized2("d", cl::cat(h2mOpts), 
     cl::desc("Alias for -detect-unrecognized"), cl::aliasopt(DetectUnrecognized));
+
+// Ignore all the clang tool errors and just link all the translated modules
+// together when working with a recursive run.
+static cl::opt<bool> LinkAll("link-all", cl::cat(h2mOpts),
+    cl::desc("Link all modules with USE regardless of translation errors"));
+static cl::alias LinkAll2("l", cl::cat(h2mOpts), cl::desc("Alias for -link-all"),
+    cl::aliasopt(LinkAll));
 
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
@@ -443,8 +452,14 @@ int main(int argc, const char **argv) {
             errs() <<  ". Output may be corrupted or missing.\n";
             errs() << "\n\n\n\n";  // Put four lines between files to help keep track of errors
           }
-          // Comment out the use statement becuase the module may be corrupt.
-          modules_list += "! USE " + args.getModuleName() + "\n";
+          // Comment out the use statement becuase the module may be corrupt, unless
+          // the option to link-all modules was specified, in which case connect it up
+          // anyway.
+          if (LinkAll == true) {
+            modules_list += "USE " + args.getModuleName() + "\n";
+          } else {
+            modules_list += "! USE " + args.getModuleName() + "\n";
+          }
           OutputFile.os()  << "! Warning: Translation Error Occurred on this module\n";
         } else {  // Successful run, no errors
           // Add USE statement to be included in future modules
