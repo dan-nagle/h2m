@@ -92,6 +92,7 @@ private:
   // multiple dimensions.
   bool array_transpose;
   // Should we automatically handle illegal names with BIND(C, name=...)
+  // or just prepend h2m and have the user fix them?
   bool auto_bind;
   // Whether we should comment out all function like macro definitions or
   // make approximate tranlsations.
@@ -138,6 +139,9 @@ public:
   static bool isType(const string input);
   static bool isString(const string input);
   static bool isChar(const string input);
+  static bool isHex(const string in_str);
+  static bool isBinary(const string in_str);
+  static bool isOctal(const string in_str);
   static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args);
   // Prints an error location.
   static void LineError(PresumedLoc sloc); 

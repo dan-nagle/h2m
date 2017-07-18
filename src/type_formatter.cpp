@@ -30,7 +30,8 @@ string CToFTypeFormatter::CheckLength(string tocheck, int limit, bool no_warn, P
 }
 
 // -----------initializer RecordDeclFormatter--------------------
-CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc loc, Arguments &arg): ac(ac), args(arg) {
+CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc loc,
+    Arguments &arg): ac(ac), args(arg) {
   c_qualType = qt;
   sloc = loc;
 };
@@ -56,26 +57,13 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
 };
 
 // Typically this returns the raw id, but in the case of an array, it must 
-// determine an array suffix by determining the type of the array, the element
-// size, and the length in order to provide a declaration.
+// determine an array suffix by calling a helper.
 string CToFTypeFormatter::getFortranIdASString(string raw_id) {
-  // Determine if it needs to be substituted out
+  // Determine if it needs to be substituted out because
+  // it is an array and needs size information.
   if (c_qualType.getTypePtr()->isArrayType()) {
-    // In this case, the array bounds are fixed and we can determine the
-    // exact dimensions of the declared array.
-    if (c_qualType.getTypePtr()->isConstantArrayType()) {
-      // The helper fetches the dimensions in the form "x, y, z"
-      raw_id += "(" + getFortranArrayDimsASString() + ")";
-    } else {  // This is not necessarilly a constant length array.
-      // Only single dimension arrays are handled correctly here.
-      const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
-      QualType e_qualType = at->getElementType ();
-      int typeSize = ac.getTypeSizeInChars(c_qualType).getQuantity();
-      int elementSize = ac.getTypeSizeInChars(e_qualType).getQuantity();
-      int numOfEle = typeSize / elementSize;
-      string arr_suffix = "(" + to_string(numOfEle) + ")";
-      raw_id += arr_suffix;
-    }
+    // The helper fetches the dimensions in the form "x, y, z"
+    raw_id += "(" + getFortranArrayDimsASString() + ")";
   }
   return raw_id;
 };
@@ -88,7 +76,6 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
   string dim_str = "";  // String of dimensions to return.
 
   QualType element_type = c_qualType;  // Element type of the array for looping.
-  std::stack<string> dimensions;  // Holds dimensions so they can be reversed
   const Type *the_type_ptr = element_type.getTypePtr();
   // Loop through the array's dimensions, pulling off layers by fetching
   // the element types and getting their array information. The nullptr
@@ -99,11 +86,10 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
       const ConstantArrayType *cat = ac.getAsConstantArrayType(element_type);
       // Note that the getSize() function returns an arbitrary precision integer
       // and a toString method needs the radix (10) and signed status (true).
-      // This if statement either prepares a stack to reverse the
-      // dimensions of the array (if requested) or else adds them
-      // into place without reversal
+      // The if statement decides where to put dimensions to properly reverse
+      // them if requested.
       if (args.getArrayTranspose() == true) {
-        dimensions.push(cat->getSize().toString(10, true));
+        dim_str = cat->getSize().toString(10, true) + ", " +  dim_str;
       } else {
         dim_str += cat->getSize().toString(10, true) + ", ";
       }
@@ -121,18 +107,15 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
       if (size_exp != nullptr && size_exp->EvaluateAsRValue(eval_result, ac) == true) {
         string eval_str = eval_result.Val.getAsString(ac, vat->getElementType()); 
         if (args.getArrayTranspose() == true) {
-          dimensions.push(eval_str);
+          dim_str = eval_str + ", " + dim_str;
         } else {
           dim_str += eval_str + ", ";
         }
       // If an array is declared as * size, we can just add "*, ". There are three
       // possible array size modifiers, Normal, Star, and Static (func decls only)
       } else if (vat->getSizeModifier() == ArrayType::ArraySizeModifier::Star) {
-        if (args.getArrayTranspose() == true) {
-          dimensions.push("*");
-        } else {
-          dim_str += "*, ";
-        }
+        return "*";  // The approximation is as an assumed size array.
+        // Fortran does not allow syntax such as int(*,*,*) or double(5,*).
       } else {  // We cannot evaluate the expression. We fetch the source text.
         string expr_text = Lexer::getSourceText(CharSourceRange::getTokenRange(
             vat->getBracketsRange()), ac.getSourceManager(), LangOptions(), 0);
@@ -147,14 +130,15 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
 
         // Put our possibly illegal expression into place with the other dimensions.
         if (args.getArrayTranspose() == true) {
-          dimensions.push(expr_text);
+          dim_str = expr_text + ", " + dim_str;
         } else {
           dim_str += expr_text + ", ";
         }
-        // This is likely a serious issue. It may prevent compilation.
+        // This is likely a serious issue. It may prevent compilation. There is
+        // no guarantee that this expression is evaluatable in Fortran.
         if (args.getSilent() == false) {
           errs() << "Warning: unevaluatable array dimensions: " << expr_text << "\n";
-          CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
+          CToFTypeFormatter::LineError(sloc);
         }
       }
     
@@ -163,22 +147,15 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
       the_type_ptr = element_type.getTypePtr();
     // An incomplete type array has an unspecified size ie "arr[]"
     } else if (the_type_ptr->isIncompleteArrayType()) {
-      return "*";  // Return the syntax for a variable size array.
+      return "*";  // Again, the approximate equivalent is as an 
+      // assumed shape array.
     }
   }
   // There is one other possibility: DependentSizedArrayType, but this is a C++
   // construct that h2m does not support (DSAT's are template based arrays).
 
-  // Build up the raw ID from the stack, reversing array dimensions
-  // if requested and the stack was built
-  if (args.getArrayTranspose() == true) {
-    while (dimensions.empty() == false) {
-      dim_str += dimensions.top() + ", ";
-      dimensions.pop(); 
-    }
-  }
-  // We erase the extra space and comma from the last loop iteration. This
-  // is needed regardless of whether we reversed dimensions with a stack or not.
+  // We erase the extra space and comma from the last loop iteration, or the
+  // first iteration (if bounds were reversed). Regardless, erase them.
   dim_str.erase(dim_str.end() - 2, dim_str.end());
   return dim_str;
 }
@@ -187,9 +164,10 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
 // as might appear in a function or subroutine prototype, (ie for "int thing (int x[5])"
 // it returns "INTEGER(C_INT), DIMENSION(5) :: x").
 string CToFTypeFormatter::getFortranArrayArgASString(string dummy_name) {
-  // Start out with the type (ie INTEGER(C_INT))
-  bool problem = false;
+  bool problem = false;  // Flag that determines helper's success
   string arg_buff = getFortranTypeASString(true, problem) + ", DIMENSION(";
+  // We ignore the result of problem becuase it will be checked by
+  // the calling function, too, and woudl be inconvenient to check here.
   arg_buff += getFortranArrayDimsASString() + ") :: ";
   arg_buff += dummy_name;
   return arg_buff;
@@ -210,7 +188,7 @@ bool CToFTypeFormatter::isArrayType() {
 // whether or not the return should be of the form FORTRANTYPE(C_QUALIFIER)
 // or just of the form C_QUALIFIER. True means it needs the FORTRANTYPE(C_QUALIFIER)
 // format. In the case of a problem (anonymous or unrecognized type), the bool
-// problem is set to true.
+// problem is set to true. It also catches any type mentioning "va_list".
 string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem) {
   string f_type = "";
   problem = false;  // Set this for safety. The caller should also set it to false.
@@ -426,17 +404,17 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
 // Useful in determining how to translate a C macro because macros
 // do not have types. It looks for pure numbers and for various
 // type/format specifiers that might be present in an "int."
+// Binary, hex, and octal numbers are checked for specially
+// using helper functions.
 bool CToFTypeFormatter::isIntLike(const string input) {
   // "123L" "18446744073709551615ULL" "18446744073709551615UL" 
-  // In the case that an x or X is found in the numeral, we
-  // are likely dealing with a hexadecimal constant, and
-  // there is no interoperable type.
-  if (input.find_first_of("x") != std::string::npos ||
-      input.find_first_of("X") != std::string::npos) {
-    return false;
-  }
-
   if (std::all_of(input.begin(), input.end(), ::isdigit)) {
+    return true;
+  } else if (isHex(input) == true) {  // This is a hexadecimal.
+    return true;
+  } else if (isBinary(input) == true) {  // This is a binary number.
+    return true;
+  } else if (isOctal(input) == true) {  // This is an octal number.
     return true;
   } else {
     string temp = input;
@@ -445,7 +423,8 @@ bool CToFTypeFormatter::isIntLike(const string input) {
       return false;
     }    
     
-    // If there are no digits, it is not a number.
+    // If there are no digits, it is not a number. Hex numbers might
+    // have no digits, but those are dealt with above.
     size_t found = temp.find_first_of("01234567890");
     if (found==std::string::npos) {
       return false;
@@ -458,14 +437,18 @@ bool CToFTypeFormatter::isIntLike(const string input) {
       temp.erase(found, found+1);
       found=temp.find_first_of("01234567890");
     }
-    
+    // We have erased all the digits and now see the suffixes. 
+    // Hexadecimals have already been dealt with, so an x is
+    // not acceptable in the string.
     if (!temp.empty()) {
-      found = temp.find_first_of("xUL()- ");
+      found = temp.find_first_of("UuLl()- ");
       while (found != std::string::npos)
       {
         temp.erase(found, found+1);
-        found=temp.find_first_of("xUL()- ");
+        found=temp.find_first_of("UuLl()- ");
       }
+      // If it is empty after erasing suffixes, it is int like
+      // because it just contained digits and suffixes.
       return temp.empty();
     } else {
       return false;
@@ -486,20 +469,12 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
     return false;
   }
 
-  // This is likely a hexadecimal constant, which we cannot
-  // translate because there is no interoperable fortran
-  // hexadecimal.
-  if (input.find_first_of("x") != std::string::npos ||
-      input.find_first_of("X") != std::string::npos) {
-    return false;
-  }
-
   while (found != std::string::npos)
   {
     temp.erase(found, found+1);
     found=temp.find_first_of("01234567890");
   }
-  // no digit anymore
+  // Now that all the digits are erased, we look at the suffixes.
   if (!temp.empty()) {
     size_t doubleF = temp.find_first_of(".eFUL()+- ");
     while (doubleF != std::string::npos)
@@ -507,6 +482,8 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
       temp.erase(doubleF, doubleF+1);
       doubleF=temp.find_first_of(".eFUL()+- ");
     }
+    // If nothing remains after erasing the suffixes, we
+    // have found a double like entity.
     return temp.empty();
   } else {
     return false;
@@ -524,6 +501,111 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
     return false;
   }
 };
+
+// Returns true if the string under consideration is
+// a hexadecimal constant. A hex constant has the form
+// 0xa12edf or 0XA12Edf with unsigned or long specifiers,
+// potentially. Note that a - sign is not allowed.
+bool CToFTypeFormatter::isHex(const string in_str) {
+  string input = in_str;
+  if (input[0] == '0' && (input[1] == 'x' || input[1] == 'X')) {
+    // Erase the 0x or 0X from the begining.
+    input.erase(input.begin(), input.begin() + 2);
+    size_t found = input.find_first_of("01234567890abcdefABCDEF");
+    while (found != std::string::npos) {
+      if (found != 0) {  // The first digit should always be hex.
+        return false;
+      } 
+      // Continue the iteration. It may be a hexadecimal.
+      input.erase(found, found + 1);
+      found = input.find_first_of("01234567890abcdefABCDEF");
+    }
+  } else {
+    return false;
+  }
+  // Strip of unsigned or long specifiers
+  if (input.empty() == false) {
+    size_t found = input.find_first_of("UuLl() ");
+      while (found != std::string::npos)
+      {
+        input.erase(found, found+1);
+        found=input.find_first_of("UuLl() ");
+      }
+   }
+  // If the string was all hex constants and modifiers, we are good.
+  return input.empty();
+}
+
+// Returns true if the string under consideration is
+// a binary constant. These are of the form 0b01101
+// or 0B011011 and may have long or unsigned specifiers.
+// Note a - sign is not allowed.
+bool CToFTypeFormatter::isBinary(const string in_str) {
+  string input = in_str;
+  if (input[0] == '0' && (input[1] == 'b' || input[1] == 'B')) {
+    // Erase the 0b or 0B from the begining.
+    input.erase(input.begin(), input.begin() + 2);
+    size_t found = input.find_first_of("01");
+    while (found != std::string::npos) {
+      if (found != 0) {  // The first digit should always be binary.
+        return false;
+      } 
+      // Continue the iteration. It may be binary.
+      input.erase(found, found + 1);
+      found = input.find_first_of("01");
+    }
+  } else {
+    return false;
+  }
+  // Strip of unsigned or long specifiers
+  if (input.empty() == false) {
+    size_t found = input.find_first_of("UuLl() ");
+      while (found != std::string::npos)
+      {
+        input.erase(found, found+1);
+        found=input.find_first_of("UuLl() ");
+      }
+   }
+
+  // If the string was all binary, we are good.
+  return input.empty();
+}
+
+// Returns true if the string under consideration is an
+// octal constant. These are of the form 0123843
+// with potentially unsigned or long specifiers.
+// Note a - sign is not allowed.
+bool CToFTypeFormatter::isOctal(const string in_str) {
+  string input = in_str;
+  if (input[0] == '0') {
+    // Erase the 0 from the begining.
+    input.erase(input.begin(), input.begin() + 1);
+    size_t found = input.find_first_of("01234567");
+    while (found != std::string::npos) {
+      if (found != 0) {  // The first digit should always be octal..
+        return false;
+      } 
+      // Continue the iteration. It may be a octal..
+      input.erase(found, found + 1);
+      found = input.find_first_of("01234567");
+    }
+  } else {
+    return false;
+  }
+  // Strip of unsigned or long specifiers
+  if (input.empty() == false) {
+    size_t found = input.find_first_of("UuLl() ");
+      while (found != std::string::npos)
+      {
+        input.erase(found, found+1);
+        found=input.find_first_of("UuLl() ");
+      }
+   }
+
+
+  // If the string was all octal, we are good.
+  return input.empty();
+}
 
 // Determines whether or not an input string can be
 // treated as a string constant ("abc"). Useful 

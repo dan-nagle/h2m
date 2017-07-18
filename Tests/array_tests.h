@@ -38,6 +38,8 @@ float my_float_array[array_const+5][array_const+1][array_const+2];
 
 int my_variable_function(int my_array[*], double other[]);
 
+void my_scary_var_subroutine(char my_array[], double my_array_2[*][*][*]);
+
 int my_other_function(int my_array[4][5], int x, double other[x+4][x*2-3]);
 
 int other_function(int my_array[array_const], double other[array_const][array_const*2]);

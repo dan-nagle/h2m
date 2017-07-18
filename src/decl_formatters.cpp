@@ -183,7 +183,8 @@ string EnumDeclFormatter::getFortranEnumASString() {
 
     if (enumName.front() == '_') {  // Illegal underscore beginning the name!
       if (args.getSilent() == false) {  // Warn unless silenced
-        errs() << "Warning: illegal enumeration identifier " << enumName << " renamed h2m" << enumName << "\n";
+        errs() << "Warning: illegal enumeration identifier " << enumName << 
+            " renamed h2m" << enumName << "\n";
         CToFTypeFormatter::LineError(sloc); 
       } 
       enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
@@ -232,29 +233,17 @@ string EnumDeclFormatter::getFortranEnumASString() {
     // enum_buffer.erase(enum_buffer.size()-2);
     // enum_buffer += "\n";
 
-    // Check to see whether we have declared something with this identifier before.
-    // Skip this duplicate declaration if necessary. With the current set up, this
-    // isn't actually needed because the enum name is commented out, but the second
-    // check (of Okay's status) is very important and this is here for consistency
-    bool name_guard = RecordDeclFormatter::StructAndTypedefGuard(enumName);
-    if (name_guard  == false || (Okay == false &&
-        args.getDetectInvalid() == true)) {
+    // Because the actual enum name is commented out, we don't check it for a repeat. 
+    // However, we check Okay, the object's error flag, and comment out if necessary.
+    if (Okay == false && args.getDetectInvalid() == true) {
       string warning = "";
       string intext = "";  // This will be the in text error warning.
-      // Determine the appropriate warning to print about why we are commenting
-      // out this section and emit it unless silenced.
-      if (name_guard == false) {
-        warning = "Warning: skipping duplicate declaration of " + enumName + "\n";
-        intext = "\n! Duplicate declaration of " + enumName + ", ENUM, skipped.\n";
-      } else {
-        warning = "Warning: illegal type in " + enumName + "\n";  
-        intext = "\n! Invalid type in " + enumName + ", ENUM.\n"; 
-      }
+      warning = "Warning: illegal type in " + enumName + "\n";  
+      intext = "\n! Invalid type in " + enumName + ", ENUM.\n"; 
       if (args.getSilent() == false) {
         errs() << warning;
         CToFTypeFormatter::LineError(sloc);
       }
-
       // Comment out the declaration by stepping through and appending ! before newlines
       // to avoid duplicate identifier collisions.
       string temp_buf = enum_buffer;
