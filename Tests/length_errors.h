@@ -41,7 +41,7 @@ enum this_enum_name_is_exactly_one_character_too_long_for_fortran____{
 };
 
 enum this_enum_name_is_exactly_63_characters_long_thus_should_be_ok{
-  this_enum_vari_is_exactly_63_characters_long_thus_should_be_ok;
+  this_enum_vari_is_exactly_63_characters_long_thus_should_be_ok
 };
 
 

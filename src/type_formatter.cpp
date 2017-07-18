@@ -129,7 +129,7 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
       // possible array size modifiers, Normal, Star, and Static (func decls only)
       } else if (vat->getSizeModifier() == ArrayType::ArraySizeModifier::Star) {
         if (args.getArrayTranspose() == true) {
-          dimensions.push("*, ");
+          dimensions.push("*");
         } else {
           dim_str += "*, ";
         }
@@ -139,7 +139,7 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
         // This will give us the square brackets, so remove those from the ends
         // because there should be no square brackets in Fortran array dimensions.
         // This length test is to prevent an exception if something weird
-        // has happened during the evaluation.
+        // has happened during the evaluation and the expressions is too small.
         if (expr_text.length() > 2) {
           expr_text.erase(expr_text.begin(), expr_text.begin() + 1);
           expr_text.erase(expr_text.end()-1, expr_text.end());
@@ -177,7 +177,8 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
       dimensions.pop(); 
     }
   }
-  // We erase the extra space and comma from the last loop iteration.
+  // We erase the extra space and comma from the last loop iteration. This
+  // is needed regardless of whether we reversed dimensions with a stack or not.
   dim_str.erase(dim_str.end() - 2, dim_str.end());
   return dim_str;
 }

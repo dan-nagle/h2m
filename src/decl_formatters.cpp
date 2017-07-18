@@ -501,7 +501,7 @@ string RecordDeclFormatter::getFortranStructASString() {
             ", structured type, skipped.\n";
       } else {
         warning = "Warning: invalid type in " + identifier + "\n";
-        intext = "\n! Invalid type in " + identifier + ", TYPEDEF.\n";
+        intext = "\n! Invalid type in " + identifier + ", STRUCT.\n";
       }
       if (args.getSilent() == false) {
         errs() << warning;
@@ -510,7 +510,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       // Comment out the declaration by stepping through and appending ! before newlines
       // Also put in the correct explanation for the commented section
       std::istringstream in(rd_buffer);
-      rd_buffer = intext;
+      rd_buffer = intext;  // Put the intext warning in first.
       for (std::string line; std::getline(in, line);) {
         rd_buffer += "! " + line + "\n";
       }
@@ -519,8 +519,8 @@ string RecordDeclFormatter::getFortranStructASString() {
   return rd_buffer;    
 };
 
-// Determines what sort of struct we are dealing with. The differences
-// are subtle. If you need to understand what these modes are, you will
+// Determines what sort of struct we are dealing with. The differences seem
+// subtle to me. If you need to understand what these modes are, you will
 // have to play around with some structs. 
 void RecordDeclFormatter::setMode() {
   // int ANONYMOUS = 0;

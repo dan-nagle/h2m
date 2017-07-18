@@ -1,3 +1,10 @@
+! This program must be linked to the curl
+! library and to the C object file where
+! the C function data_write is compiled.
+! This requires a compilation line something
+! like:
+! gfortran curl_download.f90 write_c.o -lcurl.
+
 PROGRAM use_curl
 use, intrinsic :: iso_c_binding
 use module_curl

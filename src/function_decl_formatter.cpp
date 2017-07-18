@@ -123,7 +123,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
   string paramsDecl;
   int index = 1;
   for (auto it = params.begin(); it != params.end(); it++) {
-    // if the param name is empty, rename it to arg_index
+    // If the param name is empty, rename it to arg_index
     string pname = (*it)->getNameAsString();
     if (pname.empty()) {
       pname = "arg_" + to_string(index);
@@ -147,7 +147,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     if (tf.isArrayType() == true) {
       paramsDecl += "    " + tf.getFortranArrayArgASString(pname) + "\n";
     } else {
-      // in some cases parameter doesn't have a name in C, but must have one by the time we get here.
+      // In some cases parameter doesn't have a name in C, but must have one by the time we get here.
       bool problem = false;
       string type_wrapped = tf.getFortranTypeASString(true, problem);
       if (problem == true) {
@@ -213,6 +213,8 @@ string FunctionDeclFormatter::getParamsNamesASString() {
   return paramsNames;
 };
 
+// This simply determines whether or not the location of
+// an argument is valid and returns true if it is.
 bool FunctionDeclFormatter::argLocValid() {
   for (auto it = params.begin(); it != params.end(); it++) {
     if ((*it)->getSourceRange().getBegin().isValid()) {
@@ -231,14 +233,17 @@ bool FunctionDeclFormatter::argLocValid() {
 // an entire C function into either a Fotran function or subroutine
 // depending on the return value (void return means subroutine). It
 // must also decide what sorts of iso_c_binding to use and relies
-// on an earlier defined function.
+// on helpers to obtain names and types of arguments.
 string FunctionDeclFormatter::getFortranFunctDeclASString() {
   string fortranFunctDecl;
+  // This prevents sytem headers from leaking into the translation. It also
+  // keeps out invalid arugment locations.
   if (!isInSystemHeader && argLocValid()) {
     string funcType;
     string paramsString = getParamsTypesASString();
     string imports;
-    string bindname;  // Used to link to a C function with a different name later.
+    string bindname;  // This is used to link to a C function with a different name.
+    // This determines what types to be included in the iso_c_binding.
     if (!paramsString.empty()) {
       // CToFTypeFormatter::CheckLength just returns the same string, but it will make sure the line is not too
       // long for Fortran and it will warn if needed and not silenced.
@@ -249,7 +254,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     }
     imports +="    import\n";
     
-    // check if the return type is void or not
+    // Check if the return type is void or not
     // A void type means we create a subroutine. Otherwise a function is written.
     if (returnQType.getTypePtr()->isVoidType()) {
       funcType = "SUBROUTINE";
@@ -268,6 +273,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
         CToFTypeFormatter::LineError(sloc);
       }
       // If necessary, prepare a bind name to properly link to the C function
+      // because we have been forced to change this function's declared name.
       if (args.getAutobind() == true) {
         // This is the proper syntax to bind to a C variable: BIND(C, name="cname")
         bindname = " , name =\"" + funcname + "\"";
@@ -292,6 +298,8 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
           sm, LangOptions(), 0);
       string commentedBody;
       std::istringstream in(bodyText);
+      // Unless told to be silent or quiet, inform the user that the
+      // lines have been commented out.
       for (std::string line; std::getline(in, line);) {
         if (args.getQuiet() == false && args.getSilent() == false) {
           errs() << "Warning: line " << line << " commented out \n";

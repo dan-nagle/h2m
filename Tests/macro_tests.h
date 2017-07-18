@@ -5,6 +5,10 @@
 
 #define my_double 34.5
 
+#define my_hex 0x345
+
+#define my_long 123L
+
 #define my_char 'a'
 
 #define my_string "a string"
