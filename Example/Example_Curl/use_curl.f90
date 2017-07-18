@@ -16,23 +16,22 @@ if (.NOT. C_ASSOCIATED(handle)) then
   WRITE(*,*) "You have no pointer."
 else
   WRITE(*,*) "You have a pointer."
-  WRITE(*,*) C_LOC(handle)
-endif
-! This actually is getting a handle.
-  
-! Attempt to set the URL to google.
-url = "http://google.com" // C_NULL_CHAR
-errors = curl_easy_setopt(handle, CURLOPT_URL, C_LOC(url))
+  ! Attempt to set the URL to google.
+  url = "http://google.com" // C_NULL_CHAR
+  errors = curl_easy_setopt(handle, CURLOPT_URL, C_LOC(url))
 
-if (errors .NE. 0) then
-  WRITE(*,*) "Error for you sir:", errors
-endif
-! Attempt to do the curl thing.
-errors = curl_easy_perform(handle)
-if (errors .NE. 0) then
-  WRITE(*,*) curl_easy_strerror(errors)
-else
-  WRITE(*,*) "Well, it did a thing."
+  if (errors .NE. 0) then
+    WRITE(*,*) "Error for you sir:", errors
+  else
+    ! Attempt to do the curl thing.
+    errors = curl_easy_perform(handle)
+    if (errors .NE. 0) then
+      WRITE(*,*) curl_easy_strerror(errors)
+    else
+      WRITE(*,*) "Well, it did a thing."
+    endif
+  endif
+
 endif
 
 
