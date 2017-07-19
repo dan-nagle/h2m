@@ -109,6 +109,9 @@ private:
 // This class holds a variety of functions used to transform C syntax into Fortran.
 class CToFTypeFormatter {
 public:
+  enum status {OKAY, BAD_LINE_LENGTH, BAD_TYPE, BAD_STRUCT_TRANS, BAD_STAR_ARRAY};
+  typedef enum status status;
+
   // QualTypes contain modifiers like "static" or "volatile"
   QualType c_qualType;
   // ASTContext contains detailed information not held in the AST node
@@ -125,7 +128,7 @@ public:
   // Gets the raw string, except in an array where dimensions are needed.
   string getFortranIdASString(string raw_id);
   // Gets the raw dimensions for the array in either regular or reversed order as
-  // requested. The form returned is "dim1, dim2, dim3"
+  // requested. The form returned is "dim1, dim2, dim3". 
   string getFortranArrayDimsASString();
   // The format of the arguments in a function prototype are completely different
   // from the format of any other array reference. This function creates argument format.
@@ -142,6 +145,8 @@ public:
   static bool isHex(const string in_str);
   static bool isBinary(const string in_str);
   static bool isOctal(const string in_str);
+  static void emitErrorMessage(status current_status);
+
   static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args);
   // Prints an error location.
   static void LineError(PresumedLoc sloc); 

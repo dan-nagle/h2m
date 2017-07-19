@@ -20,7 +20,8 @@ void CToFTypeFormatter::CToFTypeFormatter::LineError(PresumedLoc sloc) {
 // limit (how many characters are allowed), the boolean is whether
 // or not to warn, and the Presumed location is for passing to 
 // CToFTypeFormatter::CToFTypeFormatter::LineError if needed. 
-string CToFTypeFormatter::CheckLength(string tocheck, int limit, bool no_warn, PresumedLoc sloc) {
+string CToFTypeFormatter::CheckLength(string tocheck, int limit,
+    bool no_warn, PresumedLoc sloc) {
   if (tocheck.length() > limit && no_warn == false) {
     errs() << "Warning: length of '" << tocheck;
     errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
@@ -42,10 +43,12 @@ bool CToFTypeFormatter::isSameType(QualType qt2) {
   // for pointer type, only distinguish between the function pointer from other pointers
   if (c_qualType.getTypePtr()->isPointerType() && qt2.getTypePtr()->isPointerType()) {
     // True if both are function pointers
-    if (c_qualType.getTypePtr()->isFunctionPointerType() && qt2.getTypePtr()->isFunctionPointerType()) {
+    if (c_qualType.getTypePtr()->isFunctionPointerType() && 
+        qt2.getTypePtr()->isFunctionPointerType()) {
       return true;
     // True if both are not function pointers
-    } else if ((!c_qualType.getTypePtr()->isFunctionPointerType()) && (!qt2.getTypePtr()->isFunctionPointerType())) {
+    } else if ((!c_qualType.getTypePtr()->isFunctionPointerType()) &&
+         (!qt2.getTypePtr()->isFunctionPointerType())) {
       return true;
     } else {
       return false;
@@ -68,6 +71,7 @@ string CToFTypeFormatter::getFortranIdASString(string raw_id) {
   return raw_id;
 };
 
+// This function is for use with arrays which are not initialized (usually).
 // This function will return the raw dimensions of an array as a comma separated
 // list. If requested on the command line, the dimensions will be reversed.
 // In the case that the array does not have constant dimensions, proper syntax
@@ -577,6 +581,10 @@ bool CToFTypeFormatter::isBinary(const string in_str) {
 // Note a - sign is not allowed.
 bool CToFTypeFormatter::isOctal(const string in_str) {
   string input = in_str;
+  // If the string is empty or just '0', it is not octal.
+  if (input.length() <= 1) {
+    return false;
+  }
   if (input[0] == '0') {
     // Erase the 0 from the begining.
     input.erase(input.begin(), input.begin() + 1);

@@ -53,42 +53,49 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r,
   if (isLocValid) {
     isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(
         typedefDecl->getSourceRange().getBegin());
-    sloc = rewriter.getSourceMgr().getPresumedLoc(typedefDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(
+        typedefDecl->getSourceRange().getBegin());
   }  
   
 };
 
-// From a C typedef, a string representing a Fortran pseudo-typedef is created. The fortran equivalent
-// is a type with only one field. The name of this field is name_type (ie name_C_INT), depending
-// on the type. Note that this function will be called for Structs and Enums as well, but that they
-// will be skipped and handled elsewhere (in recordDeclFormatter). A typedef with an illegal 
-// name will be prepended with "h2m" to become legal fortran.
-// This function will check for name duplication. In the case that this is a duplicate identifier,
-// a string containing a comment will be returned (no definition will be provided).
-// Note that no bindname is allowed because BIND(C, name="") is not permitted in a TYPE.
+// From a C typedef, a string representing a Fortran pseudo-typedef
+// is created. The fortran equivalent is a type with only one field. 
+// The name of this field is name_type (ie name_C_INT), depending 
+// on the type. Note that this function will be called for Structs
+// and Enums as well, but that they will be skipped and handled 
+// elsewhere (in recordDeclFormatter). A typedef with an illegal name 
+// will be prepended with "h2m" to become legal fortran. This function 
+// will check for name duplication. In the case that this is a
+// duplicate identifier, a string containing a comment will be returned
+// (no definition will be provided). Note that no bindname is allowed
+// because BIND(C, name="") is not permitted in a TYPE.
 string TypedefDeclFormater::getFortranTypedefDeclASString() {
   string typedef_buffer = "";
   if (isLocValid && !isInSystemHeader) {  // Keeps system files from leaking in
-  // if (typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isStructureType()
-  //  or typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isEnumeralType ()) {
-  // } else {
-  // The above commented out section appeared with a comment indicating that struct/enum
-  // typedefs would be handled in the RecordDeclFormatter section. This does not appear
-  // to be the case.
+    // if (typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isStructureType()
+    //  or typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isEnumeralType ()) {
+    // } else {
+    // The above commented out section appeared with a comment indicating
+    // that struct/enum typedefs would be handled in the RecordDeclFormatter
+    //  section. This does not appear to be the case. -Michelle
     TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
-    CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(), sloc, args);
+    CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(),
+        sloc, args);
     string identifier = typedefDecl->getNameAsString();
     if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining.
       if (args.getSilent() == false) {  // Warn about the renaming unless silenced.
-        errs() << "Warning: illegal identifier " << identifier << " renamed h2m" << identifier << "\n";
+        errs() << "Warning: illegal identifier " << identifier << 
+            " renamed h2m" << identifier << "\n";
         CToFTypeFormatter::LineError(sloc);
       }
-      identifier = "h2m" + identifier;  // Prepen dh2m to fix the problem.
+      identifier = "h2m" + identifier;  // Prependdh2m to fix the problem.
     }
     
 
     // Check to make sure the identifier is not too lone
-    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
+        args.getSilent(), sloc);
     // Include the bindname, which may be empty, when assembling the definition.
     typedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
     // Because names in typedefs may collide with the typedef name, 
@@ -100,16 +107,19 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       Okay = false;
     }
     if (args.getSilent() == false) {
-      errs() << "Warning: due to name collisions during typdef translation, " << identifier;
+      errs() << "Warning: due to name collisions during typdef translation, " <<
+          identifier;
       errs() <<  "\nrenamed " << identifier << "_" << type_no_wrapper << "\n";
       CToFTypeFormatter::LineError(sloc);
     }
-    string to_add = "    "+ type_wrapper_name + "::" + identifier+"_"+ type_no_wrapper + "\n";
+    string to_add = "    "+ type_wrapper_name + "::" + identifier+"_" +
+        type_no_wrapper + "\n";
     CToFTypeFormatter::CheckLength(identifier + "_" + type_no_wrapper,
         CToFTypeFormatter::name_max, args.getSilent(), sloc);
-    // Check for an illegal length. The \n character is the reason for the +1. It doesn't count
-    // towards line length.
-    CToFTypeFormatter::CheckLength(to_add, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+    // Check for an illegal length. The \n character is the reason for the +1.
+    //  It doesn't count towards line length.
+    CToFTypeFormatter::CheckLength(to_add, CToFTypeFormatter::line_max + 1,
+      args.getSilent(), sloc);
     typedef_buffer += to_add;
     typedef_buffer += "END TYPE " + identifier + "\n";
   //  }
@@ -147,14 +157,18 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
 };
 
 // -----------initializer EnumDeclFormatter--------------------
-EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
+EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, 
+    Arguments &arg) : rewriter(r), args(arg) {
   enumDecl = e;
   Okay = true;
-  // Becasue sloc is only ever passed to a function which checks its validity, this should be a fine
-  // way to deal with an invalid location. An empty sloc is an invalid location.
+  // Becasue sloc is only ever passed to a function which checks its validity,
+  // this should be a fine/ way to deal with an invalid location. An empty
+  //  sloc is an invalid location.
   if (enumDecl->getSourceRange().getBegin().isValid()) {
-    sloc = rewriter.getSourceMgr().getPresumedLoc(enumDecl->getSourceRange().getBegin());
-    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(enumDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(
+        enumDecl->getSourceRange().getBegin());
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(
+        enumDecl->getSourceRange().getBegin());
   } else {
     isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
   }
@@ -168,13 +182,16 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, Arguments &arg) :
 // a BIND(C, name="") statement in an Enum.
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
-  bool anon = false;  // Lets us know if we need to comment out this declaration.
+  bool anon = false;  // The flag for an anonymous type to comment out
 
-  if (!isInSystemHeader) {  // Keeps definitions in system headers from leaking into the translation
+   // Keeps definitions in system headers from leaking into the translation.
+   if (!isInSystemHeader) { 
     string enumName = enumDecl->getNameAsString();
 
-    if (enumName.empty() == true) {  // We don't have a proper name. We must get another form of identifier.
-      enumName = enumDecl-> getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+    // We don't have a proper name. We must get another form of identifier.
+    if (enumName.empty() == true) {
+      enumName = enumDecl-> getTypeForDecl()->
+          getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // This checks to make sure that this is not an anonymous enumeration
       if (enumName.find("anonymous at") != string::npos) {
         anon = true;  // Sets a bool to let us know that we have no name.
@@ -191,45 +208,53 @@ string EnumDeclFormatter::getFortranEnumASString() {
     }
 
     // Check the length of the name to make sure it is valid Fortran
-    // Note that it would be impossible for this line to be an illegal length unless
-    // the variable name were hopelessly over the length limit. Note bindname may be empty.
-    CToFTypeFormatter::CheckLength(enumName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    // Note that it would be impossible for this line to be an illegal
+    // length unless the variable name were hopelessly over the length
+    // limit. Note bindname may be empty.
+    CToFTypeFormatter::CheckLength(enumName, CToFTypeFormatter::name_max,
+        args.getSilent(), sloc);
     if (anon == false) {
       enum_buffer = "ENUM, BIND(C) ! " + enumName + "\n";
     } else {  // Handle a nameless enum as best we can.
       enum_buffer = "ENUM, BIND(C)\n";
     }
 
-    // enum_buffer += "    enumerator :: ";  // Removed when changes were made to allow unlimited enum length
+    // enum_buffer += "    enumerator :: ";
+    // Removed when changes were made to allow unlimited enum length
     // Cycle through the pieces of the enum and translate them into fortran
-    for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end (); it++) {
+    for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end(); it++) {
       string constName = (*it)->getNameAsString ();
       if (constName.front() == '_') {  // The name begins with an illegal underscore.
         string old_constName = constName;
         constName = "h2m" + constName;
         if (args.getSilent() == false) {
-          errs() << "Warning: illegal enumeration identfier " << old_constName << " renamed ";
-          errs() << constName << "\n";
+          errs() << "Warning: illegal enumeration identfier " << old_constName <<
+          " renamed " << constName << "\n";
           CToFTypeFormatter::LineError(sloc);
         }
       }
       int constVal = (*it)->getInitVal().getExtValue();  // Get the initialization value
       // Check for a valid name length
-      CToFTypeFormatter::CheckLength(constName, CToFTypeFormatter::name_max, args.getSilent(), sloc);
-      // Problem! We have seen an identifier with this name before! Comment out the line
-      // and warn about it.
+      CToFTypeFormatter::CheckLength(constName, CToFTypeFormatter::name_max,
+          args.getSilent(), sloc);
+      // We have seen this same name before, so we must comment out
+      //  the line and warn about it.
       if (RecordDeclFormatter::StructAndTypedefGuard(constName) == false) { 
         if (args.getSilent() == false) {
-          errs() << "Warning: skipping duplicate declaration of " << constName << ", enum member.\n";
+          errs() << "Warning: skipping duplicate declaration of " << constName << 
+              ", enum member.\n";
           CToFTypeFormatter::LineError(sloc);
         }
         enum_buffer += "! Skipping duplicate identifier.";
-        enum_buffer +=  "    ! enumerator :: " + constName + "=" + to_string(constVal) + "\n";
+        enum_buffer +=  "    ! enumerator :: " + constName + "=" + 
+            to_string(constVal) + "\n";
       } else {  // Otherwise, just add it on the buffer
-        enum_buffer += "    enumerator :: " + constName + "=" + to_string(constVal) + "\n";
+        enum_buffer += "    enumerator :: " + constName + "=" +
+            to_string(constVal) + "\n";
       }
     }
-    // erase the redundant colon  // This erasing and adding back in of a newline is obsolete with the new format
+    // erase the redundant colon
+    // This erasing and adding back in of a newline is obsolete with the new format
     // enum_buffer.erase(enum_buffer.size()-2);
     // enum_buffer += "\n";
 
@@ -275,14 +300,17 @@ string EnumDeclFormatter::getFortranEnumASString() {
 
 // -----------initializer RecordDeclFormatter--------------------
 
-RecordDeclFormatter::RecordDeclFormatter(RecordDecl* rd, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
+RecordDeclFormatter::RecordDeclFormatter(RecordDecl* rd, Rewriter &r, 
+    Arguments &arg) : rewriter(r), args(arg) {
   recordDecl = rd;
   Okay = true;
-  // Because sloc is checked for validity prior to use, this should be a fine way to deal with
-  // an invalid source location
+  // Because sloc is checked for validity prior to use, this should be a
+  // fine way to deal with an invalid source location
   if (recordDecl->getSourceRange().getBegin().isValid()) {
-    sloc = rewriter.getSourceMgr().getPresumedLoc(recordDecl->getSourceRange().getBegin());
-    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(recordDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(
+        recordDecl->getSourceRange().getBegin());
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(
+        recordDecl->getSourceRange().getBegin());
   } else {
     isInSystemHeader = false;  // If it's not anywhere, it isn't in a system header
   }
@@ -311,10 +339,14 @@ string RecordDeclFormatter::getFortranFields() {
   if (!recordDecl->field_empty()) {
     // Guard against an empty declaration and iterate through the fields
     // in the structured type, checking for invalid names.
+    int iterations = 0;  // Used to come up with a name for empty fields.
     for (auto it = recordDecl->field_begin(); it != recordDecl->field_end(); it++) {
       CToFTypeFormatter tf((*it)->getType(), recordDecl->getASTContext(), sloc, args);
       string identifier = tf.getFortranIdASString((*it)->getNameAsString());
-      if (identifier.front() == '_') {
+      if (identifier.empty() == true) {  // There is no identifier. We make one.
+        identifier = "field_" + std::to_string(iterations);
+      } 
+      if (identifier.front() == '_') {  // There is an illegal identifier.
         if (args.getSilent() == false) {
           errs() << "Warning: invalid struct field name " << identifier;
           errs() << " renamed h2m" << identifier << "\n";
@@ -323,14 +355,16 @@ string RecordDeclFormatter::getFortranFields() {
         identifier = "h2m" + identifier;
       }
       // Make sure that the field's identifier isn't too long for a fortran name
-      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
+          args.getSilent(), sloc);
 
-      bool problem = false;
+      bool problem = false;  // The helper function will set this error flag
       fieldsInFortran += "    " + tf.getFortranTypeASString(true, problem) +
           " :: " + identifier + "\n";
       if (problem == true) {  // Set the object's error flag
         Okay = false;
       }
+      ++iterations;
     }
   }
   return fieldsInFortran;
@@ -341,7 +375,7 @@ string RecordDeclFormatter::getFortranFields() {
 // function puts together the name of the struct as well as the fields fetched
 // from the getFortranFields() function above. All illegal names are prepended
 // with h2m. Checks are made for duplicate names. Note that no option for a 
-// bindname is allowed because BIND(C, name="") statements are illegail in
+// bindname is allowed because BIND(C, name="") statements are illegal in
 // a TYPE definition.
 string RecordDeclFormatter::getFortranStructASString() {
   // initalize mode here
@@ -368,14 +402,16 @@ string RecordDeclFormatter::getFortranStructASString() {
       identifier = recordDecl->getNameAsString();
             if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
+          errs() << "Warning: invalid structure name " << identifier << 
+              " renamed h2m" << identifier << "\n";
           CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
-      // line can be guaranteed not to be too long.
-      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+      // Check for a name which is too long. Note that if the name isn't hopelessly
+      // too long, the line can be guaranteed not to be too long.
+      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
+          args.getSilent(), sloc);
 
       // Declare the structure in Fortran. The bindname may be empty.
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
@@ -390,8 +426,8 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
-      // line can be guaranteed not to be too long.
+      // Check for a name which is too long. Note that if the name isn't hopelessly too
+      // long, the line can be guaranteed not to be too long.
       CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
           args.getSilent(), sloc);
 
@@ -401,13 +437,14 @@ string RecordDeclFormatter::getFortranStructASString() {
       identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
+          errs() << "Warning: invalid structure name " << identifier << " renamed h2m"
+              << identifier << "\n";
           CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
-      // line can be guaranteed not to be too long.
+      // Check for a name which is too long. Note that if the name isn't hopelessly
+      // too long, the line can be guaranteed not to be too long.
       CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
           args.getSilent(), sloc);
 
@@ -425,8 +462,8 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly too long, the
-      // line can be guaranteed not to be too long.
+      // Check for a name which is too long. Note that if the name isn't hopelessly
+      // too long, the line can be guaranteed not to be too long.
       CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
           args.getSilent(), sloc);
 
@@ -435,8 +472,10 @@ string RecordDeclFormatter::getFortranStructASString() {
     } else if (mode == ANONYMOUS) {  // No bindname options are specified for anon structs.
       // Note that no length checking goes on here because there's no need. 
       // This will all be commented out anyway.
-      identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
-      // Erase past all the spaces so that only the name remains (ie get rid of the "struct" part)
+      identifier = recordDecl->getTypeForDecl()
+          ->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      // Erase past all the spaces so that only the name remains (ie get 
+      // rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
       while (found!=string::npos) {
         identifier.erase(0, found + 1);
@@ -444,13 +483,14 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
       if (identifier.front() == '_') {  // Illegal underscore detected
         if (args.getSilent() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" << identifier << "\n";
+          errs() << "Warning: invalid structure name " << identifier <<
+              " renamed h2m" << identifier << "\n";
           CToFTypeFormatter::LineError(sloc);
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // We have previously seen a declaration with this name. This shouldn't be possible, so don't 
-      // worry about commenting it out. It's commented out anyway.
+      // We have previously seen a declaration with this name. This shouldn't be possible.
+      // It's commented out anyway.
       if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
         if (args.getSilent() == false) {
           errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
@@ -459,8 +499,10 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
 
       rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
-      string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + "END TYPE " + identifier +"\n";
-      // Comment out the concents of the anonymous struct. There is no good way to guess at a name for it.
+      string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + 
+          "END TYPE " + identifier +"\n";
+      // Comment out the concents of the anonymous struct. There is no good way to
+      //  guess at a name for it.
       std::istringstream in(temp_buf);
       for (std::string line; std::getline(in, line);) {
         rd_buffer += "! " + line + "\n";
@@ -524,7 +566,8 @@ void RecordDeclFormatter::setMode() {
   } else if ((recordDecl->getNameAsString()).empty() && !tag_name.empty()) {
     mode = TAG_ONLY;
   } else if ((recordDecl->getNameAsString()).empty() && tag_name.empty()) {
-    string identifier = recordDecl->getTypeForDecl ()->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+    string identifier = recordDecl->getTypeForDecl()
+        ->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
     if (identifier.find(" ") != string::npos) {
       mode = ANONYMOUS;
     } else {

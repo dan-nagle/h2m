@@ -75,12 +75,14 @@ string MacroFormatter::getFortranMacroASString() {
     // remove all tabs
     macroVal.erase(std::remove(macroVal.begin(), macroVal.end(), '\t'), macroVal.end());
     // Warn about the presence of an illegal underscore at the beginning of a name.
+    string actual_macroName = macroName;  // We may need to prepend h2m to the beginning.
     if (macroName[0] == '_') {
       if (args.getSilent() == false) {
         errs() << "Warning: Fortran names may not start with an underscore. ";
         errs() << macroName << " renamed " << "h2m" << macroName << "\n";
         CToFTypeFormatter::LineError(sloc);
       }
+      actual_macroName = "h2m" + macroName;
     }
 
     // handle object first, this means definitions of parameters of int, char, double... types
@@ -88,23 +90,11 @@ string MacroFormatter::getFortranMacroASString() {
       // analyze type
       if (!macroVal.empty()) {
         if (CToFTypeFormatter::isString(macroVal)) {
-          if (macroName[0] == '_') {
-            fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+
-                "), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
-          } else {
-            fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+
-                "), parameter, public :: " + macroName + " = " + macroVal + "\n";
-          }
-        
+          fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+
+              "), parameter, public :: " + actual_macroName + " = " + macroVal + "\n";
         } else if (CToFTypeFormatter::isChar(macroVal)) {
-          if (macroName[0] == '_') {
-            fortranMacro += "CHARACTER("+ to_string(macroVal.size()-2)+
-                "), parameter, public :: h2m"+ macroName + " = " + macroVal + "\n";
-          } else {
-            fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+
-                "), parameter, public :: "+ macroName + " = " + macroVal + "\n";
-          }
-        
+          fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+
+              "), parameter, public :: "+ macroName + " = " + macroVal + "\n";
         } else if (CToFTypeFormatter::isIntLike(macroVal)) {
           // Unsigned or longs are not handled by h2m, so these lines are commented out
           if (macroVal.find_first_of("UL") != std::string::npos) {
@@ -113,11 +103,8 @@ string MacroFormatter::getFortranMacroASString() {
               errs() << macroName << " Is invalid.\n";
               CToFTypeFormatter::LineError(sloc);
             }
-            fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ macroName + " = " +
+            fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ actual_macroName + " = " +
                 macroVal + "\n";
-          } else if (macroName.front() == '_') {  // Invalid underscore as first character
-            fortranMacro = "INTEGER(C_INT), parameter, public :: h2m"+ macroName + 
-                " = " + macroVal + "\n";
           // Handle hexadecimal constants (0x or 0X is discovered in the number)
           } else if (CToFTypeFormatter::isHex(macroVal) == true) {
             size_t x = macroVal.find_last_of("xX");
@@ -125,8 +112,8 @@ string MacroFormatter::getFortranMacroASString() {
             // Erases hypothetical parenthesis.
             val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
             val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ macroName +
-                " = z\'" + val + "\'\n";
+            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName +
+                " = Z\'" + val + "\'\n";
           // Handle a binary constant (0B or 0b is discovered in the number)
           } else if (CToFTypeFormatter::isBinary(macroVal) == true) {
             size_t b = macroVal.find_last_of("bB");
@@ -134,7 +121,7 @@ string MacroFormatter::getFortranMacroASString() {
             // Erases hypothetical parenthesis.
             val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
             val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-            fortranMacro = "INTEGER(C_INT), parameter, public :: " + macroName + " = B\'" +
+            fortranMacro = "INTEGER(C_INT), parameter, public :: " + actual_macroName + " = B\'" +
                 val + "\'\n";
           // We have found an octal number: 0####
           } else if (CToFTypeFormatter::isOctal(macroVal) == true) {
@@ -143,35 +130,38 @@ string MacroFormatter::getFortranMacroASString() {
             val.erase(val.begin(), val.begin() + 1);
             val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
             val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-            fortranMacro = "INTEGER(C_INT), parameter, public :: " + macroName + " = O\'" +
+            fortranMacro = "INTEGER(C_INT), parameter, public :: " + actual_macroName + " = O\'" +
                 val + "\'\n";
-          } else {
-            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ macroName +
-                " = " + macroVal + "\n";
+          } else {  // This is some other kind of integer like number.
+            string val = macroVal;  // Create a mutable temporary string.
+            // Erase parenthesis if they are present.
+            val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
+            val.erase(std::remove(val.begin(), val.end(), '('), val.end());
+            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName +
+                " = " + val + "\n";
           }
-
         } else if (CToFTypeFormatter::isDoubleLike(macroVal)) {
           // Letters F, U, or L indicate a type not easily translated
           if (macroVal.find_first_of("FUL") != std::string::npos) {
             if (args.getSilent() == false) {
-              errs() << "Warning: macro with value including F/U/L detected. ";
+              errs() << "Warning: macro with value including F/U/L modifier detected. ";
               errs() << macroName << " Is invalid.\n";
               CToFTypeFormatter::LineError(sloc);
             }
-            fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " +
+            fortranMacro = "!REAL(C_DOUBLE), parameter, public :: "+ actual_macroName + " = " +
                 macroVal + "\n";
           } else if (macroName.front() == '_') {
-            fortranMacro = "REAL(C_DOUBLE), parameter, public :: h2m"+ macroName + 
+            fortranMacro = "REAL(C_DOUBLE), parameter, public :: h2m"+ actual_macroName + 
                 " = " + macroVal + "\n";
           } else {
-            fortranMacro = "REAL(C_DOUBLE), parameter, public :: "+ macroName + " = " +
+            fortranMacro = "REAL(C_DOUBLE), parameter, public :: "+ actual_macroName + " = " +
                 macroVal + "\n";
           }
         // This line never seems to come into play, and I'm not sure whether having it
         // at all is really a good idea -Michelle 
         } else if (CToFTypeFormatter::isType(macroVal)) {
           // only support int short long char for now
-          fortranMacro = CToFTypeFormatter::createFortranType(macroName, macroVal, sloc, args);
+          fortranMacro = CToFTypeFormatter::createFortranType(actual_macroName, macroVal, sloc, args);
         } else {  // We do not know what to do with this object like macro, so we comment it out.
           std::istringstream in(macroDef);
           for (std::string line; std::getline(in, line);) {
@@ -188,11 +178,7 @@ string MacroFormatter::getFortranMacroASString() {
         CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max + 1,
             args.getSilent(), sloc);
       } else { // The macro is empty, so, make the object a bool positive
-        if (macroName[0] == '_') {
-          fortranMacro += "INTEGER(C_INT), parameter, public :: h2m" + macroName  + " = 1 \n";
-        } else {
-          fortranMacro = "INTEGER(C_INT), parameter, public :: "+ macroName  + " = 1 \n";
-        }
+        fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName  + " = 1\n";
         // Check the length of the lines of all the empty macros prepared.
         CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max,
             args.getSilent(), sloc);
@@ -218,12 +204,6 @@ string MacroFormatter::getFortranMacroASString() {
         // is parsed out.
         size_t rParen = macroDef.find(')');
         string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
-        // Handle an illegal name in a macro
-        string actual_macroName = macroName;  // This will be modified as needed.
-        if (macroName[0] == '_') {
-          fortranMacro += "INTERFACE\n";
-          actual_macroName = "h2m" + macroName;
-        }
         fortranMacro = "INTERFACE\n";
         if (md->getMacroInfo()->arg_empty()) {
           fortranMacro += "SUBROUTINE "+ actual_macroName + "() BIND(C)\n";
@@ -265,31 +245,25 @@ string MacroFormatter::getFortranMacroASString() {
             fortranMacro += "! " + line + "\n";
           }
         }
-        fortranMacro += "END SUBROUTINE " + macroName + "\n";
+        fortranMacro += "END SUBROUTINE " + actual_macroName + "\n";
         fortranMacro += "END INTERFACE\n";
       }
     }
 
     // Here checks for illegal name lengths and repeated names occur. It seemed best to do this
     // in one place. I surrender to the strange structure of this function already in place.
-    string temp_name;
-    if (macroName.front() == '_') {
-      temp_name = "h2m" + macroName;
-    } else {
-      temp_name = macroName;
-    }
     // Check the name's length to make sure that it is valid
-    CToFTypeFormatter::CheckLength(temp_name, CToFTypeFormatter::name_max, 
+    CToFTypeFormatter::CheckLength(actual_macroName, CToFTypeFormatter::name_max, 
         args.getSilent(), sloc);
     // Now check to see if this is a repeated identifier. This is very uncommon but could occur.
-    if (RecordDeclFormatter::StructAndTypedefGuard(temp_name) == false) {
+    if (RecordDeclFormatter::StructAndTypedefGuard(actual_macroName) == false) {
       if (args.getSilent() == false) {
-        errs() << "Warning: skipping duplicate declaration of " << temp_name << 
+        errs() << "Warning: skipping duplicate declaration of " << actual_macroName << 
             ", macro definition.\n";
         CToFTypeFormatter::LineError(sloc);
       }
       string temp_buf = fortranMacro;  // Comment out all the lines using an istringstream
-      fortranMacro = "\n! Duplicate declaration of " + temp_name + ", MACRO, skipped.\n";
+      fortranMacro = "\n! Duplicate declaration of " + actual_macroName + ", MACRO, skipped.\n";
       std::istringstream in(temp_buf);
       for (std::string line; std::getline(in, line);) {
         fortranMacro += "! " + line + "\n";

@@ -110,7 +110,8 @@ string VarDeclFormatter::getInitValueASString() {
 
 };
 
-// This function fetches the type and name of an array element through the 
+// In order to handle initialization of arrays initialized on the spot,
+// this function fetches the type and name of an array element through the 
 // ast context. It then evaluates the elements and returns their values.
 // Special care must be taken to convert a char array into chars rather than
 // integers (the is_char variable sees to this). Note that the strings are
@@ -409,15 +410,28 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
   // This keeps system header pieces from leaking into the translation
   if (varDecl->getType().getTypePtr()->isArrayType() && !isInSystemHeader) {
     CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
+    
     // If asked to autobind, this string holds the identifier to bind to;
     // it is initialized as empty but may contain a name later.
     // The syntax used is name 'BIND(C, name="c_name")'.
     string bindname = "";
     string identifier = varDecl->getNameAsString();
 
+    // This boolean decides whether or not there array dimensions
+    // contain *, a variable size array, which is only legal in
+    // Fortran in a function declaration.
+    bool is_star = (tf.getFortranArrayDimsASString().find("*") !=
+        std::string::npos);
+    Okay = false;
+    if (args.getSilent() != false) {
+      errs() << "Warning: variable size array detected: " <<
+          identifier <<".\n";
+    }
+
     // Check for an illegal name length. Warn if it exists.
     CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
         args.getSilent(), sloc);
+
 
     // Illegal underscore is found in the array declaration
     if (identifier.front() == '_') {
@@ -502,8 +516,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
               InitListExpr *innerIle = cast<InitListExpr>(element);
               // This function will recursively find the dimensions. The arrayValues and
               // arrayShapes are initialized in the function (strings are passed by reference)..
-              getFortranArrayEleASString(innerIle, arrayValues, arrayShapes, evaluatable,
-                  it == elements.begin(), isChar);
+              getFortranArrayEleASString(innerIle, arrayValues, arrayShapes, 
+                  evaluatable, it == elements.begin(), isChar);
             } else {
               if (element->isEvaluatable(varDecl->getASTContext())) {
                 // This is a one dimensional array. Elements are scalars.
@@ -573,6 +587,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
   // Check for lines which exceed the Fortran maximum. The helper will warn
   // if they are found and Silent is false. The +1 is because of the newline character
   // which doesn't count towards line length.
+
   CToFTypeFormatter::CheckLength(arrayDecl, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
 
   return arrayDecl;
@@ -649,9 +664,9 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // invalid type problem here and comment out as necessary
       if (Okay == false && args.getDetectInvalid()) {
         std::istringstream in(vd_buffer);
-        vd_buffer = "";
+        vd_buffer = "! Illegal size or type in array.\n";
         if (args.getSilent() == false) {
-          errs() << "Warning: illegal type in array.\n";
+          errs() << "Warning: illegal type or size in array.\n";
           CToFTypeFormatter::LineError(sloc);
         }
         for (std::string line; std::getline(in, line);) {
