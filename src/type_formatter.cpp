@@ -30,6 +30,126 @@ string CToFTypeFormatter::CheckLength(string tocheck, int limit,
   return tocheck;  // Send back the string!
 }
 
+// This complicated function determines from status and arguments what errors
+// should be emitted and whether a buffer should be commented out after a 
+// translation. The error string and a call to LineError will be emitted if
+// the argument's value of quite and silent requires it. The error string should
+// be the text of the problem. A description will be added in.
+string CToFTypeFormatter::EmitTranslationAndErrors(status current_status, string
+    error_string, string translation_string, PresumedLoc sloc, Arguments &args) {
+  bool silent = args.getSilent();  // This is for ease of access.
+  bool emit_errors = false;  // Boolean to decide whether to print errors.
+  bool comment_out = false;  // Boolean to decide whether to comment out text.
+
+  // From the status code, determine what kind of warnings to give
+  // and whether to comment out the text.
+  if (current_status == OKAY) {  // No problem. Send the string right back.
+    return translation_string; 
+  // Under certain options, we comment out function like macros.
+  } else if (current_status == FUNC_MACRO) {
+    if (args.getHideMacros() == false) {
+      return translation_string;  // No problem. Send the string right back.
+    }
+    translation_string = "! Commenting out function like macro.\n" + 
+        translation_string;
+    error_string = "Warning: function like macro commented out: " + error_string;
+    emit_errors = !silent;  // If not silent, emit errors.
+    comment_out = true; 
+  // If there is an unknown type we may want to comment it out.
+  } else if (current_status == BAD_TYPE) {
+    if (args.getDetectInvalid() == false) {
+     emit_errors = !silent;  // Warn unless silenced. 
+     comment_out = false;
+     translation_string = "! Found illegal type in declaration.\n" + translation_string;
+    } else {  // We have been asked to comment these out in this case.
+      emit_errors = !silent; 
+      comment_out = true;
+      translation_string = "Commenting out illegal type.\n" + translation_string;
+    } 
+    // The error string should be the same.
+    error_string = "Warning: Unrecognized or illegal type found: " + error_string;
+  } else if (current_status == BAD_ANON) {
+    error_string = "Warning: anonymous type found:" + error_string;
+    translation_string = "Commenting out anonymous type.\n" + translation_string;
+    comment_out = true;  // Comment this out and usually warn about it.
+    emit_errors = !silent;
+  } else if (current_status == BAD_LINE_LENGTH) {
+    comment_out = true;  // Comment this out and usually warn about it
+    emit_errors = !silent;
+    error_string = "Warning: line exceeding length maximum found: " + error_string;
+    translation_string = "Commenting out excessively long line.\n" + translation_string;
+  } else if (current_status == BAD_NAME_LENGTH) {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "Warning: name exceeding length maximum fuound: " + error_string;
+    translation_string = "Commenting out excessively long name.\n" + translation_string;
+  } else if (current_status == BAD_STRUCT_TRANS) {
+    comment_out = true;
+    emit_errors = !silent;  
+    error_string = "Warning: stucture translation failure: " + error_string;
+    translation_string = "Commenting out structure translation failure.\n" +
+        translation_string;
+  } else if (current_status == BAD_STAR_ARRAY) {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "Warning: bad use of variable size array: " + error_string;
+    translation_string = "Commenting out bad use of variable size array\n" +
+        translation_string; 
+  } else if (current_status == UNKNOWN_VAR) {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "Warning: failed variable translation: " + error_string;
+    translation_string = "Commenting out bad variable translation.\n" + translation_string;
+  } else if (current_status == CRIT_ERROR) {
+    comment_out = true;
+    emit_errors = true;
+    error_string = "Error during translation: " + error_string;
+    translation_string = "Error during translation.\n" + translation_string;
+  } else if (current_status == U_OR_L_MACRO) {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "Warning: unsupported type in macro: " + error_string;
+    translation_string = "Commenting out unsupported macro type\n" + translation_string;
+  } else if (current_status == DUPLICATE) {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "Warning: duplicate identifier commented out: " + error_string;
+    translation_string = "Commenting out duplicate identifier.\n" + translation_string;
+  } else if (current_status == BAD_ARRAY) {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "Warning: failed translation of array: " + error_string;
+    translation_string = "Commenting out failed array translation.\n" + translation_string;
+  } else if (current_status == BAD_MACRO) {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "Warning: unrecognized macro type not translated: " + error_string;
+    translation_string = "Commenting out unrecongnized macro.\n";
+  } else {
+    comment_out = true;
+    emit_errors = !silent;
+    error_string = "ERROR: unrecognized error code: " + error_string;
+    translation_string = "Unknown error\n" + translation_string;
+  } 
+
+  // Emit the errors if requested. Add in a newline for readabiilty.
+  if (emit_errors == true) {
+    errs() << error_string << "\n";
+    CToFTypeFormatter::LineError(sloc);
+  }
+
+  // Use a string stream to iterature through the lines of the declaration
+  // and comment it all out if necessary.
+  if (comment_out == true) {  // Comment out the declaration
+    std::istringstream in(translation_string);
+    translation_string = "";  // Zero out the string and put in commented text.
+    for (std::string line; std::getline(in, line);) {
+      translation_string += "! " + line + "\n";
+    }
+  }
+  return translation_string;
+}
+
 // -----------initializer RecordDeclFormatter--------------------
 CToFTypeFormatter::CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc loc,
     Arguments &arg): ac(ac), args(arg) {

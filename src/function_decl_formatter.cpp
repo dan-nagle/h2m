@@ -6,6 +6,8 @@
 // -----------initializer FunctionDeclFormatter--------------------
 FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   Okay = true;
+  current_status = CToFTypeFormatter::OKAY;
+  error_string = "";
   funcDecl = f;
   returnQType = funcDecl->getReturnType();
   params = funcDecl->parameters();
@@ -35,9 +37,11 @@ string FunctionDeclFormatter::getParamsTypesASString() {
       qts.push_back(prev_qt);
       CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
       bool problem = false;
+      // The flag will indicate a bad type.
       string type_no_wrapper = tf.getFortranTypeASString(false, problem);
       if (problem == true) {
-        Okay = false;  // If an invalid type was found, set the error flag
+        current_status = CToFTypeFormatter::BAD_TYPE;
+        error_string = type_no_wrapper + ", function argument.";
       }
       // If we have a valid type to add, begin the argument list!
       if (type_no_wrapper.find("C_") != std::string::npos) {
@@ -63,8 +67,9 @@ string FunctionDeclFormatter::getParamsTypesASString() {
           if (add) {
             bool problem = false;
             string return_type = rtf.getFortranTypeASString(false, problem);
-            if (problem == true) {
-              Okay = false;  // Set the error flag because there is an invalid type
+            if (problem == true) {  // We have found an invalid type
+              current_status = CToFTypeFormatter::BAD_TYPE;
+              error_string = return_type + ", function return type.";
             }  
             // If the return type is valid, add it into the list with
             // the appropriate syntax. 
@@ -84,7 +89,8 @@ string FunctionDeclFormatter::getParamsTypesASString() {
       }
 
     } else {
-      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
+      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(),
+          sloc, args);
       if (tf.isSameType(prev_qt)) {  // Then there is no need to add a new type.
       } else {
         // check if the return type is in the vector
@@ -97,8 +103,9 @@ string FunctionDeclFormatter::getParamsTypesASString() {
         if (add) {
           bool problem = false;
           string return_type = tf.getFortranTypeASString(false, problem); 
-          if (problem == true) {
-            Okay = false;  // Set the error flag due to an invalid type
+          if (problem == true) {  // We have found an invalid type
+            current_status = CToFTypeFormatter::BAD_TYPE;
+            error_string = return_type + ", function return type.";
           }
           if (return_type.find("C_") != std::string::npos) {
             paramsType += (", " + return_type);
@@ -131,15 +138,12 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     if (pname.front() == '_') {  // Illegal character. Append a prefix.
       string old_pname = pname;
       pname = "h2m" + pname;
-      // This would be a duplicate warning
-      // if (args.getSilent() == false && args.getQuiet() == false) {
-      //  errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
-      //  errs() << pname << "\n";
-      //  CToFTypeFormatter::LineError(sloc);
-      // }
     }
     // Check for a valid name length for the dummy variable.
-    CToFTypeFormatter::CheckLength(pname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    if (pname.length() >= CToFTypeFormatter::name_max) {
+      current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+      error_string = pname + ", function parameter.";
+    }
     
     CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
 
@@ -150,15 +154,19 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       // In some cases parameter doesn't have a name in C, but must have one by the time we get here.
       bool problem = false;
       string type_wrapped = tf.getFortranTypeASString(true, problem);
-      if (problem == true) {
-        Okay = false;  // Set the global error flag due to an unrecognized type
+      if (problem == true) {  // We have seen an unrecognized type
+        current_status = CToFTypeFormatter::BAD_TYPE;
+        error_string = type_wrapped + ", parameter type.";
       }
       paramsDecl += "    " + type_wrapped + ", value" + " :: " + pname + "\n";
       // need to handle the attribute later - Michelle doesn't know what this (original) commment means 
     }
     // Similarly, check the length of the declaration line to make sure it is valid Fortran.
     // Note that the + 1 in length is to account for the newline character.
-    CToFTypeFormatter::CheckLength(pname, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
+    if (pname.length() >= CToFTypeFormatter::name_max) {
+      current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+      error_string = pname + ", parameter name.";
+    }
     index++;
   }
   return paramsDecl;
@@ -263,7 +271,8 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       bool problem = false;
       funcType = tf.getFortranTypeASString(true, problem) + " FUNCTION";
       if (problem == true) {  // An invalid type of some sort has been found
-        Okay = false;  // Set the error flag
+        current_status = CToFTypeFormatter::BAD_TYPE;
+        error_string = funcType + ", parameter type.";
       }
     }
     string funcname = funcDecl->getNameAsString();
@@ -280,13 +289,20 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       }
       funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
     }
-    // Check to make sure the function's name isn't too long. Warn if necessary.
-    CToFTypeFormatter::CheckLength(funcname, CToFTypeFormatter::name_max, args.getSilent(), sloc);
+    // Check to make sure the function's name isn't too long. 
+    if (funcname.length() >= CToFTypeFormatter::name_max) {
+      current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+      error_string = funcname + ", function name.";
+    }
     // Check to make sure this declaration line isn't too long. It well might be.
     // bindname may be empty or may contain a C function to link to.
-    fortranFunctDecl = CToFTypeFormatter::CheckLength(funcType + " " + funcname + "(" + getParamsNamesASString() + 
-        ")" + " BIND(C" + bindname + ")\n", CToFTypeFormatter::line_max, args.getSilent(), sloc);
-    
+    fortranFunctDecl = funcType + " " + funcname + "(" + getParamsNamesASString() +
+        ")" + " BIND(C" + bindname + ")\n";
+    if (fortranFunctDecl.length() >= CToFTypeFormatter::line_max) {
+      current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
+      error_string = fortranFunctDecl;
+    }
+    // Add in the import from iso_c_binding and the parameters.
     fortranFunctDecl += imports;
     fortranFunctDecl += getParamsDeclASString();
     // preserve the function body as comment
@@ -294,7 +310,8 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       Stmt *stmt = funcDecl->getBody();
       clang::SourceManager &sm = rewriter.getSourceMgr();
       // comment out the entire function {!body...}
-      string bodyText = Lexer::getSourceText(CharSourceRange::getTokenRange(stmt->getSourceRange()),
+      string bodyText = Lexer::getSourceText(CharSourceRange::getTokenRange(
+          stmt->getSourceRange()),
           sm, LangOptions(), 0);
       string commentedBody;
       std::istringstream in(bodyText);
@@ -319,33 +336,11 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     // The guard function checks for duplicate identifiers. This might 
     // happen because C is case sensitive. It shouldn't happen often, but if
     // it does, the duplicate declaration needs to be commented out.
-    // This also handles the case of an invlaid type in the function declaration
-    // when the arguments have requested that we comment such problems out.
     bool duplicate = RecordDeclFormatter::StructAndTypedefGuard(funcname); 
-    if (duplicate == false ||  // It is infact a duplicate name
-        (Okay == false && args.getDetectInvalid() == true)) {
-      string warning = "";  // We determine what warning to provide.
-      string intext = "";  // This warning goes in the translated text
-      if (duplicate == false) {  // Provide a warning about a duplicate
-        warning = "Warning: duplicate declaration of " + funcname + ", FUNCTION, skipped.\n";
-        intext = "! Duplicate declaration of " + funcname + ", FUNCTION, skipped.\n"; 
-      } else {
-        warning = "Warning: invalid type in " + funcname + ", FUNCTION.\n";
-        intext = "! Invalid type detected in " + funcname + "function declaration";
-      }
-      if (args.getSilent() == false) {
-        errs() << warning;  // Print the warning.
-        CToFTypeFormatter::LineError(sloc);
-      }
-      string temp_buf = fortranFunctDecl;
-      fortranFunctDecl = intext;  // Put in the in text warning.
-      std::istringstream in(temp_buf);
-      // Loops through the buffer like a line-buffered stream and comments it out
-      for (std::string line; std::getline(in, line);) {
-        fortranFunctDecl += "! " + line + "\n";
-      }
+    if (duplicate == false) {  // This implies this is a repeat.
+      current_status = CToFTypeFormatter::DUPLICATE;
+      error_string = funcname + ", function name.";
     }
-    
   }
 
   return fortranFunctDecl;

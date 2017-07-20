@@ -46,6 +46,8 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r,
     Arguments &arg) : rewriter(r), args(arg) {
   typedefDecl = t;
   Okay = true;
+  error_string = "";
+  current_status = CToFTypeFormatter::OKAY;
   isLocValid = typedefDecl->getSourceRange().getBegin().isValid();
   // sloc, if uninitialized, will be an invalid location. Because it 
   // is always passed to a function which checks validity, this should 
@@ -73,12 +75,7 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r,
 string TypedefDeclFormater::getFortranTypedefDeclASString() {
   string typedef_buffer = "";
   if (isLocValid && !isInSystemHeader) {  // Keeps system files from leaking in
-    // if (typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isStructureType()
-    //  or typedefDecl->getTypeSourceInfo()->getType().getTypePtr()->isEnumeralType ()) {
-    // } else {
-    // The above commented out section appeared with a comment indicating
-    // that struct/enum typedefs would be handled in the RecordDeclFormatter
-    //  section. This does not appear to be the case. -Michelle
+    // We fetch the typedef information from the AST to begin work.
     TypeSourceInfo * typeSourceInfo = typedefDecl->getTypeSourceInfo();
     CToFTypeFormatter tf(typeSourceInfo->getType(), typedefDecl->getASTContext(),
         sloc, args);
@@ -103,8 +100,9 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     bool problem;
     string type_wrapper_name = tf.getFortranTypeASString(true, problem);
     string type_no_wrapper = tf.getFortranTypeASString(false, problem); 
-    if (problem == true) {
-      Okay = false;
+    if (problem == true) {  // Set status to reflect failure.
+      current_status = CToFTypeFormatter::BAD_TYPE;
+      error_string = type_wrapper_name;
     }
     if (args.getSilent() == false) {
       errs() << "Warning: due to name collisions during typdef translation, " <<
@@ -112,44 +110,29 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       errs() <<  "\nrenamed " << identifier << "_" << type_no_wrapper << "\n";
       CToFTypeFormatter::LineError(sloc);
     }
-    string to_add = "    "+ type_wrapper_name + "::" + identifier+"_" +
+    string modified_name = identifier + "_" + type_no_wrapper;
+    string to_add = "    "+ type_wrapper_name + "::" + modified_name +
         type_no_wrapper + "\n";
-    CToFTypeFormatter::CheckLength(identifier + "_" + type_no_wrapper,
-        CToFTypeFormatter::name_max, args.getSilent(), sloc);
-    // Check for an illegal length. The \n character is the reason for the +1.
-    //  It doesn't count towards line length.
-    CToFTypeFormatter::CheckLength(to_add, CToFTypeFormatter::line_max + 1,
-      args.getSilent(), sloc);
+    // Set the flag to reflect a bad name length if necessary
+    if (modified_name.length() > CToFTypeFormatter::name_max) {
+      current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+      error_string = modified_name;
+    }
+    // Check for an illegal line length. Note that we add one to account for
+    // the newline character.
+    if (to_add.length() > CToFTypeFormatter::line_max + 1) {
+      current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
+      error_string = to_add;
+    }
     typedef_buffer += to_add;
     typedef_buffer += "END TYPE " + identifier + "\n";
-  //  }
     // Check to see whether we have declared something with this identifier before.
     // Skip this duplicate declaration if necessary. Also skip the declaration if
     // Okay is false and we have been asked to comment out invalid declarations
     bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
-    if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
-      string warning = "";
-      string intext = "";  // This is the intext warning for the problem
-      // Determine the explanatory warning to emit and emit it unless silenced
-      if (repeat == false) {
-        warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
-        intext = "\n! Duplicate declaration of " + identifier + ", TYPEDEF, skipped. \n";
-      } else {
-        warning = "Warning: illegal type in " + identifier + "\n";
-        intext = "\n! Illegal type in " + identifier + " TYPEDEF.\n";
-      }
-      if (args.getSilent() == false) {
-        errs() << warning;
-        CToFTypeFormatter::LineError(sloc);
-      }
-      string temp_buf = typedef_buffer;
-      // Reset the buffer to hold only the in text error warning.
-      typedef_buffer = intext;
-      std::istringstream in(temp_buf);
-      // Loops through the buffer like a line-buffered stream and comments it out
-      for (std::string line; std::getline(in, line);) {
-        typedef_buffer += "! " + line + "\n";
-      }
+    if (repeat == false) {  // This indicates that this is a duplicate identifier.
+      current_status = CToFTypeFormatter::DUPLICATE;
+      error_string = identifier + ", TYPEDEF.";
       
     }
   } 
@@ -161,6 +144,8 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r,
     Arguments &arg) : rewriter(r), args(arg) {
   enumDecl = e;
   Okay = true;
+  current_status = CToFTypeFormatter::OKAY;
+  error_string = "";
   // Becasue sloc is only ever passed to a function which checks its validity,
   // this should be a fine/ way to deal with an invalid location. An empty
   //  sloc is an invalid location.
@@ -193,6 +178,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
       enumName = enumDecl-> getTypeForDecl()->
           getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // This checks to make sure that this is not an anonymous enumeration
+      // This is not a problem, so we don't set a bad status.
       if (enumName.find("anonymous at") != string::npos) {
         anon = true;  // Sets a bool to let us know that we have no name.
       }
@@ -235,59 +221,19 @@ string EnumDeclFormatter::getFortranEnumASString() {
       }
       int constVal = (*it)->getInitVal().getExtValue();  // Get the initialization value
       // Check for a valid name length
-      CToFTypeFormatter::CheckLength(constName, CToFTypeFormatter::name_max,
-          args.getSilent(), sloc);
+      if (constName.length() >= CToFTypeFormatter::name_max) {
+        current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+        error_string = constName + ", ENUM member.";
+      }
       // We have seen this same name before, so we must comment out
       //  the line and warn about it.
       if (RecordDeclFormatter::StructAndTypedefGuard(constName) == false) { 
-        if (args.getSilent() == false) {
-          errs() << "Warning: skipping duplicate declaration of " << constName << 
-              ", enum member.\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
-        enum_buffer += "! Skipping duplicate identifier.";
-        enum_buffer +=  "    ! enumerator :: " + constName + "=" + 
-            to_string(constVal) + "\n";
-      } else {  // Otherwise, just add it on the buffer
-        enum_buffer += "    enumerator :: " + constName + "=" +
-            to_string(constVal) + "\n";
+        current_status = CToFTypeFormatter::DUPLICATE;
+        error_string = constName + ", ENUM member.";
       }
     }
-    // erase the redundant colon
-    // This erasing and adding back in of a newline is obsolete with the new format
-    // enum_buffer.erase(enum_buffer.size()-2);
-    // enum_buffer += "\n";
 
     // Because the actual enum name is commented out, we don't check it for a repeat. 
-    // However, we check Okay, the object's error flag, and comment out if necessary.
-    if (Okay == false && args.getDetectInvalid() == true) {
-      string warning = "";
-      string intext = "";  // This will be the in text error warning.
-      warning = "Warning: illegal type in " + enumName + "\n";  
-      intext = "\n! Invalid type in " + enumName + ", ENUM.\n"; 
-      if (args.getSilent() == false) {
-        errs() << warning;
-        CToFTypeFormatter::LineError(sloc);
-      }
-      // Comment out the declaration by stepping through and appending ! before newlines
-      // to avoid duplicate identifier collisions.
-      string temp_buf = enum_buffer;
-      // Add an explanation in the text for commenting it out
-      enum_buffer = intext;
-      std::istringstream in(temp_buf);
-      for (std::string line; std::getline(in, line);) {
-        enum_buffer += "! " + line + "\n";
-      }
-      // Add in a few last details... and return to avoid having END ENUM pasted on the end
-      // an anonymous enum doesn't need a name added in
-      if (anon == false) {
-        enum_buffer += "! END ENUM !" + enumName + "\n";
-      } else {
-        enum_buffer += "! END ENUM\n";
-      }
-      return(enum_buffer);
-    }
-
     if (anon == false) {  // Put the name after END ENUM unless there is no name.
       enum_buffer += "END ENUM !" + enumName + "\n";
     } else {
@@ -304,6 +250,8 @@ RecordDeclFormatter::RecordDeclFormatter(RecordDecl* rd, Rewriter &r,
     Arguments &arg) : rewriter(r), args(arg) {
   recordDecl = rd;
   Okay = true;
+  current_status = CToFTypeFormatter::OKAY;
+  error_string = "";
   // Because sloc is checked for validity prior to use, this should be a
   // fine way to deal with an invalid source location
   if (recordDecl->getSourceRange().getBegin().isValid()) {
@@ -361,8 +309,9 @@ string RecordDeclFormatter::getFortranFields() {
       bool problem = false;  // The helper function will set this error flag
       fieldsInFortran += "    " + tf.getFortranTypeASString(true, problem) +
           " :: " + identifier + "\n";
-      if (problem == true) {  // Set the object's error flag
-        Okay = false;
+      if (problem == true) {  // We have encountered an illegal type
+        current_status = CToFTypeFormatter::BAD_TYPE;
+        error_string = tf.getFortranTypeASString(true, problem);
       }
       ++iterations;
     }
@@ -408,10 +357,6 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly
-      // too long, the line can be guaranteed not to be too long.
-      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
-          args.getSilent(), sloc);
 
       // Declare the structure in Fortran. The bindname may be empty.
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
@@ -426,10 +371,6 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly too
-      // long, the line can be guaranteed not to be too long.
-      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
-          args.getSilent(), sloc);
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
@@ -443,10 +384,6 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly
-      // too long, the line can be guaranteed not to be too long.
-      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
-          args.getSilent(), sloc);
 
       // Assemble the strucutre in Fortran. Note that bindname may be empty.
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
@@ -462,18 +399,14 @@ string RecordDeclFormatter::getFortranStructASString() {
         }
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
-      // Check for a name which is too long. Note that if the name isn't hopelessly
-      // too long, the line can be guaranteed not to be too long.
-      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
-          args.getSilent(), sloc);
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == ANONYMOUS) {  // No bindname options are specified for anon structs.
       // Note that no length checking goes on here because there's no need. 
       // This will all be commented out anyway.
-      identifier = recordDecl->getTypeForDecl()
-          ->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
+      identifier = recordDecl->getTypeForDecl()->
+          getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // Erase past all the spaces so that only the name remains (ie get 
       // rid of the "struct" part)
       size_t found = identifier.find_first_of(" ");
@@ -497,54 +430,22 @@ string RecordDeclFormatter::getFortranStructASString() {
           CToFTypeFormatter::LineError(sloc);
         }
       }
-
-      rd_buffer += "! ANONYMOUS struct may or may not have a declared name\n";
-      string temp_buf = "TYPE, BIND(C) :: " + identifier + "\n" + fieldsInFortran + 
-          "END TYPE " + identifier +"\n";
-      // Comment out the concents of the anonymous struct. There is no good way to
-      //  guess at a name for it.
-      std::istringstream in(temp_buf);
-      for (std::string line; std::getline(in, line);) {
-        rd_buffer += "! " + line + "\n";
-        if (args.getQuiet() == false && args.getSilent() == false) {
-          errs() << "Warning: line in anonymous struct" << line << " commented out \n";
-          CToFTypeFormatter::LineError(sloc);
-        }
-      }
-      // Avoid any potential double-commenting problems below by returning the
-      // already commented out buffer now.
-      return rd_buffer;  
+      current_status = CToFTypeFormatter::BAD_ANON;
+      error_string = identifier + ", anonymous struct.";
     }
     // Now that we are through processing structs of all types, we must check for the problems
     // require us to comment the struct out: duplicate names or invalid types.
 
     // Check to see whether we have declared something with this identifier before.
-    // Skip this duplicate declaration if necessary. Also skip if it has an invalid
-    // type in it and we've been asked to comment those out.
     bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
-    if (repeat == false || (Okay == false && args.getDetectInvalid() == true)) {
-      // Determine and emit the proper warning for the circumstances.
-      string warning;
-      string intext;  // This will be the warning in the translated code
-      if (repeat == false) {
-        warning = "Warning: skipping duplicate declaration of " + identifier + "\n";
-        intext = "\n! Duplicate declaration of " + identifier +
-            ", structured type, skipped.\n";
-      } else {
-        warning = "Warning: invalid type in " + identifier + "\n";
-        intext = "\n! Invalid type in " + identifier + ", STRUCT.\n";
-      }
-      if (args.getSilent() == false) {
-        errs() << warning;
-        CToFTypeFormatter::LineError(sloc);
-      }
-      // Comment out the declaration by stepping through and appending ! before newlines
-      // Also put in the correct explanation for the commented section
-      std::istringstream in(rd_buffer);
-      rd_buffer = intext;  // Put the intext warning in first.
-      for (std::string line; std::getline(in, line);) {
-        rd_buffer += "! " + line + "\n";
-      }
+    if (repeat == false) {  // This indicates a duplicate
+      current_status = CToFTypeFormatter::DUPLICATE;
+      error_string = identifier + ", structured type.";
+    }
+    // Check for a name which is too long. 
+    if (identifier.length() >= CToFTypeFormatter::name_max) {
+      current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+      error_string = identifier;
     }
   }
   return rd_buffer;    

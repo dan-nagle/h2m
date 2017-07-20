@@ -180,7 +180,9 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
       FunctionDeclFormatter fdf(cast<FunctionDecl> (d), TheRewriter, args);
-      allFunctionDecls += fdf.getFortranFunctDeclASString();
+      string function_raw = fdf.getFortranFunctDeclASString();
+      allFunctionDecls += CToFTypeFormatter::EmitTranslationAndErrors(fdf.getStatus(),
+          fdf.getErrorString(), function_raw, fdf.getSloc(), args);
     }
     
     // args.getOutput().os() << "INTERFACE\n" 
@@ -194,7 +196,9 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
         args.getTogether() == true) {
       TypedefDecl *tdd = cast<TypedefDecl> (d);
       TypedefDeclFormater tdf(tdd, TheRewriter, args);
-      args.getOutput().os() << tdf.getFortranTypedefDeclASString();
+      string typedef_raw = tdf.getFortranTypedefDeclASString();
+      args.getOutput().os() << CToFTypeFormatter::EmitTranslationAndErrors(tdf.getStatus(),
+          tdf.getErrorString(), typedef_raw, tdf.getSloc(), args);
     }
 
   } else if (isa<RecordDecl> (d)) {
@@ -204,7 +208,9 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
         args.getTogether() == true) {
       RecordDecl *rd = cast<RecordDecl> (d);
       RecordDeclFormatter rdf(rd, TheRewriter, args);
-      args.getOutput().os() << rdf.getFortranStructASString();
+      string raw_record = rdf.getFortranStructASString();
+      args.getOutput().os() << CToFTypeFormatter::EmitTranslationAndErrors(rdf.getStatus(),
+          rdf.getErrorString(), raw_record, rdf.getSloc(), args);
     }
 
   } else if (isa<VarDecl> (d)) {
@@ -215,7 +221,9 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
         args.getTogether() == true) {
       VarDecl *varDecl = cast<VarDecl> (d);
       VarDeclFormatter vdf(varDecl, TheRewriter, args);
-      args.getOutput().os() << vdf.getFortranVarDeclASString();
+      string raw_decl = vdf.getFortranVarDeclASString();
+      args.getOutput().os() << CToFTypeFormatter::EmitTranslationAndErrors(vdf.getStatus(),
+        vdf.getErrorString(), raw_decl, vdf.getSloc(), args);
     } 
 
   } else if (isa<EnumDecl> (d)) {
@@ -223,13 +231,16 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
       EnumDeclFormatter edf(cast<EnumDecl> (d), TheRewriter, args);
-      args.getOutput().os() << edf.getFortranEnumASString();
+      string raw_enum = edf.getFortranEnumASString();
+      args.getOutput().os() << CToFTypeFormatter::EmitTranslationAndErrors(edf.getStatus(),
+         edf.getErrorString(), raw_enum, edf.getSloc(), args);
     }
   } else {
     // The program doesn't know what to do with this node yet.
     // Keep included header files out of the mix by checking the location
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
+      errs() << "Unknown declaration discovered. Dumping declaration to file.\n";
       args.getOutput().os() << "!found other type of declaration \n";
       d->dump();
       RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
@@ -279,7 +290,9 @@ bool TraverseNodeVisitor::TraverseType(QualType x) {
 //---------------------------Main Program Class Functions---------
 void TraverseMacros::MacroDefined (const Token &MacroNameTok, const MacroDirective *MD) {
     MacroFormatter mf(MacroNameTok, MD, ci, args);
-    args.getOutput().os() << mf.getFortranMacroASString();
+    string raw_macro = mf.getFortranMacroASString();
+    args.getOutput().os() << CToFTypeFormatter::EmitTranslationAndErrors(mf.getStatus(),
+      mf.getErrorString(), raw_macro, mf.getSloc(), args);
 }
 
 // HandlTranslationUnit is the overarching entry into the clang ast which is

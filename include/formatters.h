@@ -109,7 +109,10 @@ private:
 // This class holds a variety of functions used to transform C syntax into Fortran.
 class CToFTypeFormatter {
 public:
-  enum status {OKAY, BAD_LINE_LENGTH, BAD_TYPE, BAD_STRUCT_TRANS, BAD_STAR_ARRAY};
+  // Public status codes to be referenced by the formatter objects.
+  enum status {OKAY, FUNC_MACRO, BAD_ANON, BAD_LINE_LENGTH, BAD_TYPE,
+     BAD_NAME_LENGTH, BAD_STRUCT_TRANS, BAD_STAR_ARRAY, DUPLICATE,
+     U_OR_L_MACRO, UNKNOWN_VAR, CRIT_ERROR, BAD_MACRO, BAD_ARRAY};
   typedef enum status status;
 
   // QualTypes contain modifiers like "static" or "volatile"
@@ -145,9 +148,13 @@ public:
   static bool isHex(const string in_str);
   static bool isBinary(const string in_str);
   static bool isOctal(const string in_str);
-  static void emitErrorMessage(status current_status);
 
-  static string createFortranType(const string macroName, const string macroVal, PresumedLoc loc, Arguments &args);
+  static string createFortranType(const string macroName, const string macroVal,
+      PresumedLoc loc, Arguments &args);
+  // This somewhat complicated function handles emitting all errors and returning
+  // a (potentially) commented out string to the main translation routine.
+  static string EmitTranslationAndErrors(status current_status, string error_string,
+      string translation_string, PresumedLoc sloc, Arguments &args);
   // Prints an error location.
   static void LineError(PresumedLoc sloc); 
   // Can find when a name or long is illegally long for Fortran.
@@ -173,6 +180,9 @@ public:
   bool isOkay() { return Okay; }
   string getFortranStructASString();
   string getFortranFields();
+  string getErrorString() { return error_string; }
+  CToFTypeFormatter::status getStatus() { return current_status; } 
+  PresumedLoc getSloc() { return sloc; }
 
   // This function exists to make sure that a type is not
   // declared twice. This frequently happens with typedefs
@@ -212,6 +222,11 @@ private:
   // anonymous or unrecognized type was discovered during
   // the translation.
   bool Okay;
+  // The initially empty string which describes the text where
+  // an error occurred, if it did occur.
+  string error_string;
+  // The status code which represents the translation's success.
+  CToFTypeFormatter::status current_status;
 };
 
 // This class is used to translate a C enumeration into a
@@ -224,10 +239,12 @@ public:
   // string equivalent.
   string getFortranEnumASString();
   bool isOkay() { return Okay; }
+  string getErrorString() { return error_string; }
+  CToFTypeFormatter::status getStatus() { return current_status; } 
+  PresumedLoc getSloc() { return sloc; }
 
 private:
   EnumDecl *enumDecl;
-  // This doesn't appear to be used.
   bool isInSystemHeader;
   PresumedLoc sloc;
   Rewriter &rewriter;
@@ -237,7 +254,11 @@ private:
   // anonymous or unrecognized type was discovered during
   // the translation.
   bool Okay;
- 
+  // The initially empty string which describes the text where
+  // an error occurred, if it did occur.
+  string error_string;
+  // The status code which represents the translation's success.
+  CToFTypeFormatter::status current_status;
 };
 
 // This class is used to translate a variable declaration into
@@ -265,6 +286,9 @@ public:
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
       string &arrayShapes, bool &evaluatable, bool firstEle, bool is_char);
   bool isOkay() { return Okay; }
+  string getErrorString() { return error_string; }
+  CToFTypeFormatter::status getStatus() { return current_status; } 
+  PresumedLoc getSloc() { return sloc; }
 
 private:
   Rewriter &rewriter;
@@ -281,6 +305,12 @@ private:
   // anonymous or unrecognized type was discovered during
   // the translation.
   bool Okay;
+  // The initially empty string which describes the text where
+  // an error occurred, if it did occur.
+  string error_string;
+  // The status code which represents the translation's success.
+  CToFTypeFormatter::status current_status;
+
 };
 
 // This class translates C typedefs into 
@@ -291,6 +321,9 @@ public:
   // Member functions declarations
   TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments &args);
   string getFortranTypedefDeclASString();
+  PresumedLoc getSloc() { return sloc; }
+  CToFTypeFormatter::status getStatus() { return current_status; }
+  string getErrorString() { return error_string; }
 
 private:
   bool isInSystemHeader;
@@ -306,7 +339,11 @@ private:
   // anonymous or unrecognized type was discovered during
   // the translation.
   bool Okay;
- 
+  // The initially empty string which describes the text where
+  // an error occurred, if it did occur.
+  string error_string;
+  // The status code which represents the translation's success.
+  CToFTypeFormatter::status current_status;
 };
 
 // Class to translate a C function declaration into either a Fortran
@@ -330,6 +367,9 @@ public:
   // Whether or not the argument locations are valid according to clang
   bool argLocValid();
   bool isOkay() { return Okay; }
+  PresumedLoc getSloc() { return sloc; }
+  string getErrorString() { return error_string; }
+  CToFTypeFormatter::status getStatus() { return current_status; } 
 
 private:
   // The qualified type of the return value of the function 
@@ -348,6 +388,11 @@ private:
   // anonymous or unrecognized type was discovered during
   // the translation.
   bool Okay;
+  // The initially empty string which describes the text where
+  // an error occurred, if it did occur.
+  string error_string;
+  // The status code which represents the translation's success.
+  CToFTypeFormatter::status current_status;
 
 };
 
@@ -363,7 +408,9 @@ public:
   bool isFunctionLike();
   string getFortranMacroASString();
 
-
+  string getErrorString() { return error_string; }
+  CToFTypeFormatter::status getStatus() { return current_status; } 
+  PresumedLoc getSloc() { return sloc; }
 private:
   const MacroDirective *md;
   // Name of the macro
@@ -382,6 +429,11 @@ private:
   bool isObjectOrFunction;
   // Arguments passed in from the action factory
   Arguments &args;
+  // The initially empty string which describes the text where
+  // an error occurred, if it did occur.
+  string error_string;
+  // The status code which represents the translation's success.
+  CToFTypeFormatter::status current_status;
   CompilerInstance &ci;
 };
 

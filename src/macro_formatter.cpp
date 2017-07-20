@@ -7,45 +7,48 @@
 // -----------initializer MacroFormatter--------------------
 // The preprocessor is used to find the macro names in the source files. The macro is 
 // more difficult to process. Both its name and definition are fetched using the lexer.
-MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci,
-    Arguments &arg) : md(md), args(arg), ci(ci) {
-    const MacroInfo *mi = md->getMacroInfo();
-    SourceManager& SM = ci.getSourceManager();
+MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *md, 
+    CompilerInstance &ci, Arguments &arg) : md(md), args(arg), ci(ci) {
+  current_status = CToFTypeFormatter::OKAY;
+  error_string = "";
+  const MacroInfo *mi = md->getMacroInfo();
+  SourceManager& SM = ci.getSourceManager();
 
-    // define macro properties
-    isObjectOrFunction = mi->isObjectLike();
-   
-    // This should be a fine way to deal with invalid locations because sloc is checked for validity
-    // before it is used.
-    if (mi->getDefinitionLoc().isValid()) {
-      sloc = SM.getPresumedLoc(mi->getDefinitionLoc());
-      isInSystemHeader = SM.isInSystemHeader(mi->getDefinitionLoc());
-    } else {
-      isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
-    }
+  // define macro properties
+  isObjectOrFunction = mi->isObjectLike();
+ 
+  // This should be a fine way to deal with invalid locations because sloc is checked for validity
+  // before it is used.
+  if (mi->getDefinitionLoc().isValid()) {
+    sloc = SM.getPresumedLoc(mi->getDefinitionLoc());
+    isInSystemHeader = SM.isInSystemHeader(mi->getDefinitionLoc());
+  } else {
+    isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
+  }
 
-    // source text
-    macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(),
-        MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
-    macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(),
-        mi->getDefinitionEndLoc()), SM, LangOptions(), 0);
-    
-    // strangely there might be a "(" follows the macroName for function macros, remove it if there is
-    if (macroName.back() == '(') {
-      //args.getOutput().os() << "unwanted parenthesis found, remove it \n";
-      macroName.erase(macroName.size()-1);
-    }
+  // source text is fetched using the Lexer
+  macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(),
+      MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
+  macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(),
+      mi->getDefinitionEndLoc()), SM, LangOptions(), 0);
+  
+  // strangely there might be a "(" follows the macroName for function macros,
+  // remove it if there is
+  if (macroName.back() == '(') {
+    //args.getOutput().os() << "unwanted parenthesis found, remove it \n";
+    macroName.erase(macroName.size()-1);
+  }
 
-    // get value for object macro
-    bool frontSpace = true;
-    for (size_t i = macroName.size(); i < macroDef.size(); i++) {
-      if (macroDef[i] != ' ') {
-        frontSpace = false;
-        macroVal += macroDef[i];
-      } else if (frontSpace == false) {
-        macroVal += macroDef[i];
-      }
+  // get value for object macro
+  bool frontSpace = true;
+  for (size_t i = macroName.size(); i < macroDef.size(); i++) {
+    if (macroDef[i] != ' ') {
+      frontSpace = false;
+      macroVal += macroDef[i];
+    } else if (frontSpace == false) {
+      macroVal += macroDef[i];
     }
+  }
 }
 
 bool MacroFormatter::isObjectLike() {
@@ -63,7 +66,6 @@ bool MacroFormatter::isFunctionLike() {
 // option that may be invoked to request that all function-like macros be commented out.
 string MacroFormatter::getFortranMacroASString() {
   string fortranMacro;
-  bool duplicateIdentifier = false;
 
   // If we are not in the main file, don't include this. Just
   // return an empty string.  If the Together argument is specified, include it anyway.
@@ -105,6 +107,8 @@ string MacroFormatter::getFortranMacroASString() {
             }
             fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ actual_macroName + " = " +
                 macroVal + "\n";
+            current_status = CToFTypeFormatter::U_OR_L_MACRO;
+            error_string = macroVal;
           // Handle hexadecimal constants (0x or 0X is discovered in the number)
           } else if (CToFTypeFormatter::isHex(macroVal) == true) {
             size_t x = macroVal.find_last_of("xX");
@@ -163,114 +167,89 @@ string MacroFormatter::getFortranMacroASString() {
           // only support int short long char for now
           fortranMacro = CToFTypeFormatter::createFortranType(actual_macroName, macroVal, sloc, args);
         } else {  // We do not know what to do with this object like macro, so we comment it out.
-          std::istringstream in(macroDef);
-          for (std::string line; std::getline(in, line);) {
-            if (args.getQuiet() == false && args.getSilent() == false) {
-              errs() << "Warning: line " << line << " commented out\n";
-              CToFTypeFormatter::LineError(sloc);
-            }
-            fortranMacro += "! " + line + "\n";
-          }
+          current_status = CToFTypeFormatter::BAD_MACRO;
+          error_string = actual_macroName;
+          return macroDef;
         }
         // Check the length of the lines of all object like macros prepared. All these
         // will be single lines with the newline character already in place (hence the 
         // line_max + 1).
-        CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max + 1,
-            args.getSilent(), sloc);
+        if (fortranMacro.length() > CToFTypeFormatter::line_max + 1) {
+          current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
+          error_string = fortranMacro;
+        }
       } else { // The macro is empty, so, make the object a bool positive
         fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName  + " = 1\n";
         // Check the length of the lines of all the empty macros prepared.
-        CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max,
-            args.getSilent(), sloc);
+        if (fortranMacro.length() > CToFTypeFormatter::line_max + 1) {
+          current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
+          error_string = fortranMacro + ", macro.";
+        }
       }
-    } else {
-      // function macro
-      // If we have been asked to comment out all function like macros, just fetch
-      // the source text and comment it out.
-      // Length and valid name checks are not carried out because it is commented out.
-      // Otherwise, create a corresponding subroutine, but types aren't known.
-      if (args.getHideMacros() == true) {       
-        string temp_buf = macroDef;
-        fortranMacro = "! Function-like macro commented out.\n";
-        std::istringstream in(temp_buf);
-        // This construct is a common way to comment out a buffer with newlines embedded.
-        for (std::string line; std::getline(in, line);) {
-          fortranMacro += "! " + line + "\n";
-        }
-        fortranMacro += "\n";  // Add in a final line break.
-        return fortranMacro;  // Skip all the line-length/identifier tests below.
-      } else {  // Make a graceless translation attempt as requested.
-        // macroDef has the entire macro definition in it. Here the body of the macro
-        // is parsed out.
-        size_t rParen = macroDef.find(')');
-        string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
-        fortranMacro = "INTERFACE\n";
-        if (md->getMacroInfo()->arg_empty()) {
-          fortranMacro += "SUBROUTINE "+ actual_macroName + "() BIND(C)\n";
-        } else {
-          fortranMacro += "SUBROUTINE "+ actual_macroName + "(";
-          for (auto it = md->getMacroInfo()->arg_begin (); it !=
-              md->getMacroInfo()->arg_end (); it++) {
-            // Assemble the macro arguments in a list and check names for illegal underscores. 
-            string argname = (*it)->getName();
-            if (argname.front() == '_') {
-              if (args.getSilent() == false) { 
-                errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
-                errs() << argname << " renamed h2m" << argname << "\n";
-                CToFTypeFormatter::LineError(sloc);
-              }
-              argname = "h2m" + argname;  // Fix the illegal name problem by prepending h2m
-            }
-            fortranMacro += argname;
-            fortranMacro += ", ";
-          }
-          // erase the redundant comma and space at the end of the macro
-          fortranMacro.erase(fortranMacro.size()-2);
-          fortranMacro += ") BIND(C)\n";
-          // Check that this line is not too long. Take into account the fact that the
-          // characters INTERFACE\n alleady at the begining take up 10 characters and the 
-          // newline just added uses another one.
-          CToFTypeFormatter::CheckLength(fortranMacro, CToFTypeFormatter::line_max + 11,
-              args.getSilent(), sloc);
-
-        }
-        // Comment out the body of the function using the standard string-stream idiom.
-        if (!functionBody.empty()) {
-          std::istringstream in(functionBody);
-          for (std::string line; std::getline(in, line);) {
-            if (args.getSilent() == false && args.getQuiet() == false) {
-              errs() << "Warning: line " << line << " commented out.\n";
+    } else {  // We are dealing with a function macro.
+      // macroDef has the entire macro definition in it. Here the body of the macro
+      // is parsed out.
+      current_status = CToFTypeFormatter::FUNC_MACRO;
+      size_t rParen = macroDef.find(')');
+      string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
+      fortranMacro = "INTERFACE\n";
+      if (md->getMacroInfo()->arg_empty()) {
+        fortranMacro += "SUBROUTINE "+ actual_macroName + "() BIND(C)\n";
+      } else {
+        fortranMacro += "SUBROUTINE "+ actual_macroName + "(";
+        for (auto it = md->getMacroInfo()->arg_begin (); it !=
+            md->getMacroInfo()->arg_end (); it++) {
+          // Assemble the macro arguments in a list and check names for illegal underscores. 
+          string argname = (*it)->getName();
+          if (argname.front() == '_') {
+            if (args.getSilent() == false) { 
+              errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
+              errs() << argname << " renamed h2m" << argname << "\n";
               CToFTypeFormatter::LineError(sloc);
             }
-            fortranMacro += "! " + line + "\n";
+            argname = "h2m" + argname;  // Fix the illegal name problem by prepending h2m
           }
+          fortranMacro += argname;
+          fortranMacro += ", ";
         }
-        fortranMacro += "END SUBROUTINE " + actual_macroName + "\n";
-        fortranMacro += "END INTERFACE\n";
+        // erase the redundant comma and space at the end of the macro
+        fortranMacro.erase(fortranMacro.size()-2);
+        fortranMacro += ") BIND(C)\n";
+        // Check that this line is not too long. Take into account the fact that the
+        // characters INTERFACE\n alleady at the begining take up 10 characters and the 
+        // newline just added uses another one.
+        if (fortranMacro.length() >= CToFTypeFormatter::line_max + 11) {
+          current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
+          error_string = actual_macroName + " macro definition.";
+        }
       }
+      // Comment out the body of the function using the standard string-stream idiom.
+      if (!functionBody.empty()) {
+        std::istringstream in(functionBody);
+        for (std::string line; std::getline(in, line);) {
+          if (args.getSilent() == false && args.getQuiet() == false) {
+            errs() << "Warning: line " << line << " commented out.\n";
+            CToFTypeFormatter::LineError(sloc);
+          }
+          fortranMacro += "! " + line + "\n";
+        }
+      }
+      fortranMacro += "END SUBROUTINE " + actual_macroName + "\n";
+      fortranMacro += "END INTERFACE\n";
     }
 
     // Here checks for illegal name lengths and repeated names occur. It seemed best to do this
     // in one place. I surrender to the strange structure of this function already in place.
     // Check the name's length to make sure that it is valid
-    CToFTypeFormatter::CheckLength(actual_macroName, CToFTypeFormatter::name_max, 
-        args.getSilent(), sloc);
+    if (actual_macroName.length() >= CToFTypeFormatter::name_max) {
+      current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+      error_string = actual_macroName + ", macro name.";
+    }
     // Now check to see if this is a repeated identifier. This is very uncommon but could occur.
     if (RecordDeclFormatter::StructAndTypedefGuard(actual_macroName) == false) {
-      if (args.getSilent() == false) {
-        errs() << "Warning: skipping duplicate declaration of " << actual_macroName << 
-            ", macro definition.\n";
-        CToFTypeFormatter::LineError(sloc);
-      }
-      string temp_buf = fortranMacro;  // Comment out all the lines using an istringstream
-      fortranMacro = "\n! Duplicate declaration of " + actual_macroName + ", MACRO, skipped.\n";
-      std::istringstream in(temp_buf);
-      for (std::string line; std::getline(in, line);) {
-        fortranMacro += "! " + line + "\n";
-      }
+      current_status = CToFTypeFormatter::DUPLICATE;
+      error_string = actual_macroName + ", macro name.";
     }
-    
-
   }
   return fortranMacro;
 };

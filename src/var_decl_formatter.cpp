@@ -7,6 +7,8 @@
 // -----------initializer VarDeclFormatter--------------------
 VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   varDecl = v;
+  current_status = CToFTypeFormatter::OKAY;
+  error_string = "";
   Okay = true;
   // Because sloc is checked for validity prior to use, this should handle invalid locations. If it
   // isn't initialized, it isn't valid according to the Clang check made in the helper.
@@ -96,14 +98,9 @@ string VarDeclFormatter::getInitValueASString() {
         }
         valString += "! " + line + "\n";
       }
-    } else {
-      valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(),
-          varDecl->getType());
-      if (args.getSilent() == false && args.getQuiet() == false) {
-        errs() << "Variable declaration initialization commented out:\n" << 
-            valString << " \n";
-        CToFTypeFormatter::LineError(sloc);
-      }
+    } else {  // Unknown variable declaration.
+      current_status = CToFTypeFormatter::UNKNOWN_VAR;
+      error_string = "Unknown variable declaration: " + valString;
     }
   }
   return valString;  // This is empty if there was no initialization.
@@ -188,7 +185,8 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
   if (exp == nullptr) {
     success = false;
     // This is a serious enough problem taht it should always be reported.
-    errs() << "Error: nullpointer in place of expression.\n";
+    current_status = CToFTypeFormatter::CRIT_ERROR;
+    error_string = "Error: nullpointer in place of expression.";
     return "Internal error: nullpointer in place of expression.";
   }
   if (isa<InitListExpr>(exp)) {  // For a struct decl this should be true
@@ -201,8 +199,9 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
       Expr *element = (*it);
       if (element == nullptr) {  // Check for safety.
         success = false;
+        current_status = CToFTypeFormatter::CRIT_ERROR;
+        error_string = "Error: nullpointer in place of expression.";
         // This is serious enough that it should always be reported.
-        errs() << "Error: nullpointer in place of InitListExpression element.\n";
         return "Internal error: nullpointer in place of InitListExpression element.";
       }
       string eleVal;  // This will hold the value to add to the declaration.
@@ -267,7 +266,8 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
         // how to handle string literals, but only string literals should
         // actually be evaluatable
         } else if (e_qualType.getTypePtr()->isArrayType() == true) {
-          bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
+          bool isChar = varDecl->getASTContext().getBaseElementType(
+              e_qualType).getTypePtr()->isCharType();
           // This implies a string literal has been found.
           if (eleVal.front() == '&' && isChar == true) {
             // Erase up to the beginning of the & symbol which may be present because 
@@ -278,10 +278,8 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
           } else {  // Not a string literal... so we don't know what it is.
             // We warn, and arrange for the declaration to be commented out.
             eleVal = eleVal + " & ! Confusing array not translated.\n";
-            if (args.getSilent() == false) {
-              errs() << "Confusing sub-array initialization, " << eleVal << " not translated\n";
-              CToFTypeFormatter::LineError(sloc);
-            }
+            error_string = "Confusing array element.";
+            current_status = CToFTypeFormatter::BAD_ARRAY; 
             success = false;
           }
         }
@@ -298,18 +296,12 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
             // Determine whether this is a char array, needing special
             // evaluation, or not (do we need to cast an int to char to
             // avoid saying "CHARACTER(C_CHAR) = RESHAPE((/97...")))?
-            bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
+            bool isChar = varDecl->getASTContext().getBaseElementType(
+                e_qualType).getTypePtr()->isCharType();
             // Call a helper to get the array in string form. This function deals with all possible 
             // array nesting. The array_success flag will reflect the helper's status.
             getFortranArrayEleASString(in_list_exp, values, shapes, array_success,
               true, isChar);
-          //} else {  // This appears to be redundant with the segment below dealing with success.
-            //eleVal = "UntranslatableArray ! ";
-            //success = false;
-            // Get the array text we can't handle and put it in a comment.
-            //string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
-            //    element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
-           // eleVal += value;
           }
           // If the array was succesfully evaluated, put together the translation
           if (array_success == true) {
@@ -323,9 +315,11 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
             }
             // A ", " is added by the helper function so one isn't appended here.
             eleVal = "RESHAPE((/" + values + "/), (/" + shapes + "/))";
-          } else {
+          } else {  // The translation failed.
             eleVal = "UntranslatableArray ! ";
             success = false;
+            current_status = CToFTypeFormatter::BAD_ARRAY;
+            error_string = "Confusing array element.";
             string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
                 element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
             eleVal += value;
@@ -335,9 +329,9 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
           // First, get the structure's name (hopefully) and append "(" to create "type_name(".
           eleVal = e_qualType.getAsString() + "(";
           eleVal += getFortranStructFieldsASString(element, success) + ")";
-        // If a pointer or function pointer is found, set it to 
-        // the appropriate corresponding Fortran NULL value. Warn
-        // if requested.
+          // If a pointer or function pointer is found, set it to 
+          // the appropriate corresponding Fortran NULL value. Warn
+          // if requested.
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isFunctionPointerType()) {
           eleVal = "C_NULL_FUNPTR";
           string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
@@ -360,10 +354,8 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
           string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
               element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
           eleVal = "untranslatable_component !" + value;
-          if (args.getSilent() == false) {
-            errs() << "Warning: unknown component not translated: " + value + ".\n";
-            CToFTypeFormatter::LineError(sloc);
-          }
+          error_string = "Untranslatable array componenet: " + value;
+          current_status = CToFTypeFormatter::BAD_ARRAY;
           success = false;
         }
       }
@@ -422,17 +414,10 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
     // Fortran in a function declaration.
     bool is_star = (tf.getFortranArrayDimsASString().find("*") !=
         std::string::npos);
-    Okay = false;
-    if (args.getSilent() != false) {
-      errs() << "Warning: variable size array detected: " <<
-          identifier <<".\n";
+    if (is_star == true) {  // There is a * in the array dimensiosn
+      current_status = CToFTypeFormatter::BAD_STAR_ARRAY;
+      error_string = identifier;
     }
-
-    // Check for an illegal name length. Warn if it exists.
-    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, 
-        args.getSilent(), sloc);
-
-
     // Illegal underscore is found in the array declaration
     if (identifier.front() == '_') {
       // If necessary, prepare a bind name to properly link to the C function
@@ -448,27 +433,15 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       identifier = "h2m" + identifier;
     }
 
-    // Check to see whether we have seen this identifier before. If need be, comment
-    // out the duplicate declaration.
-    // We need to strip off the (###) for the test or we will end up testing
-    // for a repeat of the variable n(4) rather than n if the decl is int n[4];
-    if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
-      if (args.getSilent() == false) {
-        errs() << "Warning: skipping duplicate declaration of " << identifier;
-        errs() << ", array declaration.\n";
-        CToFTypeFormatter::LineError(sloc);
-      }
-      arrayDecl = "! Skipping duplicate declaration of " + identifier + "\n!";
-    }
-
     if (!varDecl->hasInit()) {
       // The array is only declared, no initialization of the array takes place.
       // Note that the bindname will be empty unless certain options are in effect and
       // the function's actual name is illegal.
       bool problem = false;
       arrayDecl += tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname + ") :: ";
-      if (problem == true) {  // Set the object's problem flag
-        Okay = false;
+      if (problem == true) {  // We have encountered an unrecognized type.
+        current_status = CToFTypeFormatter::BAD_TYPE;
+        error_string = tf.getFortranTypeASString(true, problem);
       }
       arrayDecl += tf.getFortranIdASString(identifier) + "\n";
     } else {
@@ -489,8 +462,9 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
         bool problem = false;  // The helper will set this flag appropriately.
         arrayDecl += tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
             tf.getFortranIdASString(identifier) + " = " + arrayText + "\n";
-        if (problem == true) {  // Set the object's problem flag
-          Okay = false;
+        if (problem == true) {  // We have encountered an illegal type.
+          current_status = CToFTypeFormatter::BAD_TYPE;
+          error_string = tf.getFortranTypeASString(true, problem);
         }
       } else {  // This is not a string literal but a standard C array.
         bool evaluatable = false;
@@ -498,8 +472,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
         if (isa<InitListExpr> (exp)) {
           // initialize shape (dimensions) and values
           // format: INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /), (/2, 3/))
-          string arrayValues;
-          string arrayShapes;
+          string arrayValues;  // Initialization values
+          string arrayShapes;  // Array dimensions
 
           // Get the initialization values in an array form from the Expr.
           InitListExpr *ile = cast<InitListExpr>(exp);
@@ -556,18 +530,12 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
           } //<--end iteration (one pass through the array elements)
           if (!evaluatable) {
             // We can't translate this array because we can't evaluate its values to
-            // get fortran equivalents. We comment out the declaration.
-            string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(varDecl->getSourceRange()),
-                rewriter.getSourceMgr(), LangOptions(), 0);
-            // We comment out arrayText using the string stream.
-            std::istringstream in(arrayText);
-            for (std::string line; std::getline(in, line);) {
-              arrayDecl += "! " + line + "\n";
-              if (args.getQuiet() == false && args.getSilent() == false) {
-                errs() << "Warning: array text " << line << " commented out.\n";
-                CToFTypeFormatter::LineError(sloc);
-              }
-            }
+            // get fortran equivalents. We comment out the declaration during error handling.
+            string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(
+                varDecl->getSourceRange()), rewriter.getSourceMgr(), LangOptions(), 0);
+              // We comment out arrayText using the string stream.
+              current_status = CToFTypeFormatter::BAD_ARRAY;
+              error_string = arrayText;
           } else {
             // The array is evaluatable and has been evaluated already. We assemble the
             //  declaration. INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /),
@@ -575,8 +543,9 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             bool problem = false;  // The helper sends back this flag.
             arrayDecl += tf.getFortranTypeASString(true, problem)+", BIND(C" + bindname +  ") :: "+
                 identifier +"("+arrayShapes_fin+")";
-            if (problem == true) {  // Set the object's problem flag
-              Okay = false;
+            if (problem == true) {  // We hav efound a bad type.
+              current_status = CToFTypeFormatter::BAD_TYPE;
+              error_string = identifier + ", array definition.";
             }
             arrayDecl += " = RESHAPE((/"+arrayValues+"/), (/"+arrayShapes_fin+"/))\n";
           }
@@ -584,12 +553,6 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       }     
     }
   }
-  // Check for lines which exceed the Fortran maximum. The helper will warn
-  // if they are found and Silent is false. The +1 is because of the newline character
-  // which doesn't count towards line length.
-
-  CToFTypeFormatter::CheckLength(arrayDecl, CToFTypeFormatter::line_max + 1, args.getSilent(), sloc);
-
   return arrayDecl;
 };
 
@@ -635,13 +598,15 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       bool problem;
       string f_type = tf.getFortranTypeASString(false, problem);
       if (problem == true) {  // Set the object's error flag for unrecognized types
-        Okay = false;
+        current_status = CToFTypeFormatter::BAD_TYPE;
+        error_string = f_type + ", in struct.";
       }
       if (f_type.front() == '/' || f_type.front() == '_' || f_type.front() == '\\' ||
           f_type.find("anonymous at") != string::npos) {
         // We don't need an ! here because everything will be commented out below.
-        vd_buffer = " Anonymous struct declaration commented out. \n";
         struct_error = true;  // Set the special error flag.
+        current_status = CToFTypeFormatter::BAD_TYPE;
+        error_string = f_type + ", anonymous in struct.";
       }
       // Assemble the variable declaration, including the bindname if it exists.
       vd_buffer += tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
@@ -652,30 +617,21 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // during an attempt to translate a structure. It will be checked for and
       // commented out later.
       if (success == false) {
-        struct_error = true;
-        // The ! will be added in during the global checks later.
-        vd_buffer = "Unable to get initialization of structure\n" + vd_buffer;
+        current_status = CToFTypeFormatter::BAD_STRUCT_TRANS;
       }
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
       // Handle initialized numeric arrays specifically in the helper function.
-      vd_buffer = getFortranArrayDeclASString();
-      // Because most of the complicated array information is stored elsewhere,
-      // checks for most errors are done in the helper. Only check for the 
-      // invalid type problem here and comment out as necessary
-      if (Okay == false && args.getDetectInvalid()) {
-        std::istringstream in(vd_buffer);
-        vd_buffer = "! Illegal size or type in array.\n";
-        if (args.getSilent() == false) {
-          errs() << "Warning: illegal type or size in array.\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
-        for (std::string line; std::getline(in, line);) {
-          vd_buffer += "! " + line + "\n";
-        }
+      // We fetch the identifier here only to use it later to check for repeats
+      // or names which are too long. The warnings are printed elsewhere.
+      identifier = varDecl->getNameAsString();
+      errs() << "DEBUG: array identifier " << identifier << "\n";
+      if (identifier[0] == '_') {
+        identifier = "h2m" + identifier;
       }
-      // The length and Okay checks everyone else does below would be 
-      // repetitive, so skip them.
-      return vd_buffer;
+      // This strips off potential size modifiers so we only get the name
+      // or the array: n rather than n(4,3).
+      identifier = identifier.substr(0, identifier.find_first_of("("));
+      vd_buffer = getFortranArrayDeclASString();
     } else if (varDecl->getType().getTypePtr()->isPointerType() && 
       varDecl->getType().getTypePtr()->getPointeeType()->isCharType()) {
       // This is a string declaration
@@ -701,23 +657,26 @@ string VarDeclFormatter::getFortranVarDeclASString() {
         bool problem = false;  // The helper sets this flag to show status.
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer +=  ") :: " + identifier + "\n";
-        if (problem == true) {  // Set the object's error flag
-          Okay = false;
+        if (problem == true) {  // We've found an unrecognized type
+          current_status = CToFTypeFormatter::BAD_TYPE;
+          error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
       } else if (value[0] == '!') {
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer +=  + ") :: " + identifier + " " + value + "\n";
-        if (problem == true) {  // Set the object's error flag
-          Okay = false;
+        if (problem == true) {  // We've found an unrecognized type
+          current_status = CToFTypeFormatter::BAD_TYPE;
+          error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
       } else {
         // A parameter may not have a bind(c) attribute.
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
             identifier + " = " + value + "\n";
-        if (problem == true) {  // Set the object's error flag
-          Okay = false;
+        if (problem == true) {  // We've found an unrecognized type
+          current_status = CToFTypeFormatter::BAD_TYPE;
+          error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
       }
       // If it is not a structure, pointer, or array, proceed with no special treatment.
@@ -732,9 +691,9 @@ string VarDeclFormatter::getFortranVarDeclASString() {
             errs() << identifier << " renamed h2m" << identifier << "\n";
             CToFTypeFormatter::LineError(sloc);
          }
-         if (args.getAutobind() == true) {
+         if (args.getAutobind() == true) {  // Set the BIND(C, name=..." to link to the c name
            bindname = ", name=\"" + identifier + " \"";
-         }
+         }  
          identifier = "h2m" + identifier;
       } 
       // Determine the state of the declaration and assemble the appropriate Fortran equivalent.
@@ -743,73 +702,53 @@ string VarDeclFormatter::getFortranVarDeclASString() {
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer += ") :: " + identifier + "\n";
-        if (problem == true) {  // Set the object's error flag
-          Okay = false;
+        if (problem == true) {  // We've found an unrecognized type
+          current_status = CToFTypeFormatter::BAD_TYPE;
+          error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
       } else if (value[0] == '!') {
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer += ") :: " + identifier + " " + value + "\n";
-        if (problem == true) {  // Set the object's error flag
-          Okay = false;
+        if (problem == true) {  // We've found an unrecognized type
+          current_status = CToFTypeFormatter::BAD_TYPE;
+          error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
       } else {
         // A parameter may not have a bind(c) attribute
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
             identifier + " = " + value + "\n";
-        if (problem == true) {  // Set the object's error flag
-          Okay = false;
+        if (problem == true) {  // We've found an unrecognized type
+          current_status = CToFTypeFormatter::BAD_TYPE;
+          error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
       }
     }
 
-    // Check for repeats or for invalid types within the declaration.
-    // If either is discovered, comment out the entire declaration.
-    // Also check for the special structure error which might occur.
+    // Check for a repeated identifier.
     bool not_duplicate = RecordDeclFormatter::StructAndTypedefGuard(identifier);
-    if (not_duplicate == false || (Okay == false && args.getDetectInvalid() == true) ||
-        struct_error == true) {
-      string warning = "";  // This warning is printed
-      string intext = "";  // The warning goes in the translated code.
-      if (not_duplicate == false) {
-        warning = "Variable declaration with name conflict, " + identifier + ", commented out.\n";
-        intext = "! Variable with name conflict, " + identifier + ", commented out.\n";
-      // When special errors occur, their warnings are already in the text
-      // but we're not exactly sure what the error was.
-      } else if (struct_error == true) {
-        warning = "Error translating structure, " + identifier + "\n";
-        // The intext warning was already added. Don't include another.
-      } else {
-        warning = "Variable with name conflict, " + identifier + ", commented out.\n";
-        intext = "! Commenting out name conflict.\n";
-      }
-      // Warn about the mishap unless silenced.
-      if (args.getSilent() == false) {
-        errs() << warning;
-        CToFTypeFormatter::LineError(sloc);
-      }
-      // Add the proper warning and comment out the buffer.
-      std::istringstream in(vd_buffer);
-      vd_buffer = intext;
-      for (std::string line; std::getline(in, line);) {
-        vd_buffer += "! " + line + "\n";
-      }
-    } else {  // We are not commenting things out, so we do length checks
-      std::istringstream in(vd_buffer);
-      // If we are not warning about line lengths, skip these checks,
-      // otherwise perform them on every line (use silent==false for all.)
-      if (args.getSilent() == false) {
-        for (std::string line; std::getline(in, line);) {
-          CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::line_max,
-              false, sloc);
-        }
+    errs () << "\nDEBUG: identifier " << identifier << " DEBUG not_duplicate: " << not_duplicate << "\n";
+    if (not_duplicate == false) {  // This is a duplicate identifier
+      current_status = CToFTypeFormatter::DUPLICATE;
+      error_string = identifier;
+    }
+    // Check for an overly long identifier.
+    if (identifier.length() >= CToFTypeFormatter::name_max) {
+      current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
+      error_string = identifier;
+    }
+    // Check for an excessively long line in the declaration by
+    // looping through all the lines in a string stream. An empty
+    // string will not be a problem.
+    std::istringstream in(vd_buffer);
+    for (std::string line; std::getline(in, line);) {
+      if (line.length() >= CToFTypeFormatter::line_max) {
+        current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
+        error_string = line + ", in variable declaration.";
       }
     }
-    
-    // Identifier may be initialized to "". This will cause no harm.
-    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max, args.getSilent(), sloc);
-  }
+  }  // End processing of non-system headers
   return vd_buffer;
 };
 
