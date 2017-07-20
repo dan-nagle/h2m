@@ -178,12 +178,11 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 // VarDecl is requested, so recursive calls are acceptable. When a fatal
 // error occurs, success is set to "false" to let the caller know it should
 // comment out the declaration.
-string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success) {
+string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
   string structDecl = "";  // This will eventually hold all the fields.
 
   // The nullptr check is for safety.
   if (exp == nullptr) {
-    success = false;
     // This is a serious enough problem taht it should always be reported.
     current_status = CToFTypeFormatter::CRIT_ERROR;
     error_string = "Error: nullpointer in place of expression.";
@@ -198,7 +197,6 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
     for (auto it = elements.begin(); it != elements.end(); it++) {
       Expr *element = (*it);
       if (element == nullptr) {  // Check for safety.
-        success = false;
         current_status = CToFTypeFormatter::CRIT_ERROR;
         error_string = "Error: nullpointer in place of expression.";
         // This is serious enough that it should always be reported.
@@ -280,7 +278,6 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
             eleVal = eleVal + " & ! Confusing array not translated.\n";
             error_string = "Confusing array element.";
             current_status = CToFTypeFormatter::BAD_ARRAY; 
-            success = false;
           }
         }
       } else {   // The element is NOT evaluatable.
@@ -317,18 +314,17 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
             eleVal = "RESHAPE((/" + values + "/), (/" + shapes + "/))";
           } else {  // The translation failed.
             eleVal = "UntranslatableArray ! ";
-            success = false;
             current_status = CToFTypeFormatter::BAD_ARRAY;
-            error_string = "Confusing array element.";
             string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
                 element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
             eleVal += value;
+            error_string = value;
          }
         // Make a recursive call to fill in the sub-structure embeded in the main structure.
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isStructureType() == true) {
           // First, get the structure's name (hopefully) and append "(" to create "type_name(".
           eleVal = e_qualType.getAsString() + "(";
-          eleVal += getFortranStructFieldsASString(element, success) + ")";
+          eleVal += getFortranStructFieldsASString(element) + ")";
           // If a pointer or function pointer is found, set it to 
           // the appropriate corresponding Fortran NULL value. Warn
           // if requested.
@@ -355,8 +351,7 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
               element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
           eleVal = "untranslatable_component !" + value;
           error_string = "Untranslatable array componenet: " + value;
-          current_status = CToFTypeFormatter::BAD_ARRAY;
-          success = false;
+          current_status = CToFTypeFormatter::BAD_STRUCT_TRANS;
         }
       }
     // Paste the generated, evaluated string value into place
@@ -374,7 +369,7 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp, bool &success
 // other identifier and should thus be commented out, or has some
 // other problem such as an unrecognized field.
 // The form returned is "struct_name = struct_type(init1, init2...)"
-string VarDeclFormatter::getFortranStructDeclASString(string struct_name, bool &success) {
+string VarDeclFormatter::getFortranStructDeclASString(string struct_name) {
   string structDecl = "";
   // This prevents system headers from leaking into the translation
   // This also makes sure we have an initialized structured type.
@@ -385,7 +380,7 @@ string VarDeclFormatter::getFortranStructDeclASString(string struct_name, bool &
     structDecl += " = " + struct_name + "(";
     // Make a call to the helper (which may make recursive calls).
     // Close the declaration.
-    structDecl += getFortranStructFieldsASString(exp, success);
+    structDecl += getFortranStructFieldsASString(exp);
     structDecl += ")";
   }
 
@@ -610,21 +605,13 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       }
       // Assemble the variable declaration, including the bindname if it exists.
       vd_buffer += tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
-      // This flag will tell us whether we had success fetching the struct declaration
-      bool success = true;
-      vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(f_type, success) + "\n";
-      // This is another kind of error, the source of which we aren't sure of,
-      // during an attempt to translate a structure. It will be checked for and
-      // commented out later.
-      if (success == false) {
-        current_status = CToFTypeFormatter::BAD_STRUCT_TRANS;
-      }
+      // Get the struct translation.
+      vd_buffer +=  ") :: " + identifier + getFortranStructDeclASString(f_type) + "\n";
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
       // Handle initialized numeric arrays specifically in the helper function.
       // We fetch the identifier here only to use it later to check for repeats
       // or names which are too long. The warnings are printed elsewhere.
       identifier = varDecl->getNameAsString();
-      errs() << "DEBUG: array identifier " << identifier << "\n";
       if (identifier[0] == '_') {
         identifier = "h2m" + identifier;
       }
@@ -728,13 +715,12 @@ string VarDeclFormatter::getFortranVarDeclASString() {
 
     // Check for a repeated identifier.
     bool not_duplicate = RecordDeclFormatter::StructAndTypedefGuard(identifier);
-    errs () << "\nDEBUG: identifier " << identifier << " DEBUG not_duplicate: " << not_duplicate << "\n";
     if (not_duplicate == false) {  // This is a duplicate identifier
       current_status = CToFTypeFormatter::DUPLICATE;
       error_string = identifier;
     }
     // Check for an overly long identifier.
-    if (identifier.length() >= CToFTypeFormatter::name_max) {
+    if (identifier.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = identifier;
     }
@@ -743,7 +729,9 @@ string VarDeclFormatter::getFortranVarDeclASString() {
     // string will not be a problem.
     std::istringstream in(vd_buffer);
     for (std::string line; std::getline(in, line);) {
-      if (line.length() >= CToFTypeFormatter::line_max) {
+      // Trim the line to the point where a comment begins if it does.
+      line = line.substr(0, line.find_first_of("!"));
+      if (line.length() > CToFTypeFormatter::line_max) {
         current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
         error_string = line + ", in variable declaration.";
       }

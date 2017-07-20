@@ -157,8 +157,6 @@ public:
       string translation_string, PresumedLoc sloc, Arguments &args);
   // Prints an error location.
   static void LineError(PresumedLoc sloc); 
-  // Can find when a name or long is illegally long for Fortran.
-  static string CheckLength(string tochek, int limit, bool no_warn, PresumedLoc sloc);
   // Constants to be used for length checking when comparing names/lines
   // to see if they are valid Fortran.
   static const int name_max = 63;
@@ -278,10 +276,10 @@ public:
   // in fortran. This is also quite complex and specialized.
   // The name of the structure is passed in to allow the possibility of
   // recursion.
-  string getFortranStructDeclASString(string struct_name, bool &success);
+  string getFortranStructDeclASString(string struct_name);
   // This function is set up to do recursion to fetch a structure's
   // fields when that structure is initialized
-  string getFortranStructFieldsASString(Expr *exp, bool &success);
+  string getFortranStructFieldsASString(Expr *exp);
   // Fetches an individual initialized array element.
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
       string &arrayShapes, bool &evaluatable, bool firstEle, bool is_char);

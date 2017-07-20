@@ -41,7 +41,7 @@ string Arguments::GenerateModuleName(string Filename) {
     repeats[filename] = 2;
   }
   filename = "module_" + filename;  // Now check for illegal module name length
-  if (filename.length() > CToFTypeFormatter::name_max  && silent == false) {
+  if (filename.length() >= CToFTypeFormatter::name_max  && silent == false) {
     errs() << "Warning: module name, " << filename << " too long.";
   }
   // Set the filename in the arguments object from which the function was called.

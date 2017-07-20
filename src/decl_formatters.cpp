@@ -89,10 +89,6 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       identifier = "h2m" + identifier;  // Prependdh2m to fix the problem.
     }
     
-
-    // Check to make sure the identifier is not too lone
-    CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
-        args.getSilent(), sloc);
     // Include the bindname, which may be empty, when assembling the definition.
     typedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
     // Because names in typedefs may collide with the typedef name, 
@@ -111,9 +107,9 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       CToFTypeFormatter::LineError(sloc);
     }
     string modified_name = identifier + "_" + type_no_wrapper;
-    string to_add = "    "+ type_wrapper_name + "::" + modified_name +
-        type_no_wrapper + "\n";
+    string to_add = "    "+ type_wrapper_name + "::" + modified_name + "\n";
     // Set the flag to reflect a bad name length if necessary
+    errs() << "DEBUG  : " << modified_name << ":" << modified_name.length() << "\n";
     if (modified_name.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = modified_name;
@@ -129,8 +125,8 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     // Check to see whether we have declared something with this identifier before.
     // Skip this duplicate declaration if necessary. Also skip the declaration if
     // Okay is false and we have been asked to comment out invalid declarations
-    bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
-    if (repeat == false) {  // This indicates that this is a duplicate identifier.
+    bool not_repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
+    if (not_repeat == false) {  // This indicates that this is a duplicate identifier.
       current_status = CToFTypeFormatter::DUPLICATE;
       error_string = identifier + ", TYPEDEF.";
       
@@ -193,12 +189,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
       enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
     }
 
-    // Check the length of the name to make sure it is valid Fortran
-    // Note that it would be impossible for this line to be an illegal
-    // length unless the variable name were hopelessly over the length
-    // limit. Note bindname may be empty.
-    CToFTypeFormatter::CheckLength(enumName, CToFTypeFormatter::name_max,
-        args.getSilent(), sloc);
+    // If there is no name, we don't add one on.
     if (anon == false) {
       enum_buffer = "ENUM, BIND(C) ! " + enumName + "\n";
     } else {  // Handle a nameless enum as best we can.
@@ -220,8 +211,9 @@ string EnumDeclFormatter::getFortranEnumASString() {
         }
       }
       int constVal = (*it)->getInitVal().getExtValue();  // Get the initialization value
-      // Check for a valid name length
-      if (constName.length() >= CToFTypeFormatter::name_max) {
+      // Check for a valid name length. Note that the line can't be too 
+      // long unless the name is hopelessly too long.
+      if (constName.length() > CToFTypeFormatter::name_max) {
         current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
         error_string = constName + ", ENUM member.";
       }
@@ -231,6 +223,8 @@ string EnumDeclFormatter::getFortranEnumASString() {
         current_status = CToFTypeFormatter::DUPLICATE;
         error_string = constName + ", ENUM member.";
       }
+      enum_buffer += "ENUMERATOR :: " + constName + " = " + 
+          std::to_string(constVal) + "\n";
     }
 
     // Because the actual enum name is commented out, we don't check it for a repeat. 
@@ -302,10 +296,6 @@ string RecordDeclFormatter::getFortranFields() {
         }
         identifier = "h2m" + identifier;
       }
-      // Make sure that the field's identifier isn't too long for a fortran name
-      CToFTypeFormatter::CheckLength(identifier, CToFTypeFormatter::name_max,
-          args.getSilent(), sloc);
-
       bool problem = false;  // The helper function will set this error flag
       fieldsInFortran += "    " + tf.getFortranTypeASString(true, problem) +
           " :: " + identifier + "\n";
@@ -443,7 +433,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       error_string = identifier + ", structured type.";
     }
     // Check for a name which is too long. 
-    if (identifier.length() >= CToFTypeFormatter::name_max) {
+    if (identifier.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = identifier;
     }

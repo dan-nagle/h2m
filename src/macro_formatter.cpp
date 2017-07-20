@@ -174,14 +174,14 @@ string MacroFormatter::getFortranMacroASString() {
         // Check the length of the lines of all object like macros prepared. All these
         // will be single lines with the newline character already in place (hence the 
         // line_max + 1).
-        if (fortranMacro.length() > CToFTypeFormatter::line_max + 1) {
+        if (fortranMacro.length() >= CToFTypeFormatter::line_max + 1) {
           current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
           error_string = fortranMacro;
         }
       } else { // The macro is empty, so, make the object a bool positive
         fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName  + " = 1\n";
         // Check the length of the lines of all the empty macros prepared.
-        if (fortranMacro.length() > CToFTypeFormatter::line_max + 1) {
+        if (fortranMacro.length() >= CToFTypeFormatter::line_max + 1) {
           current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
           error_string = fortranMacro + ", macro.";
         }

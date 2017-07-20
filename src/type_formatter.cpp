@@ -13,22 +13,6 @@ void CToFTypeFormatter::CToFTypeFormatter::LineError(PresumedLoc sloc) {
   }
 }
 
-// A helper function to be used to find lines/names which are too 
-// long to be valid fortran. It returns the string which is passed
-// in, regardless of the outcome of the test. The first argument
-// is the string to be checked. The integer agument is the
-// limit (how many characters are allowed), the boolean is whether
-// or not to warn, and the Presumed location is for passing to 
-// CToFTypeFormatter::CToFTypeFormatter::LineError if needed. 
-string CToFTypeFormatter::CheckLength(string tocheck, int limit,
-    bool no_warn, PresumedLoc sloc) {
-  if (tocheck.length() > limit && no_warn == false) {
-    errs() << "Warning: length of '" << tocheck;
-    errs() << "'\n exceeds maximum. Fortran name and line lengths are limited.\n";
-    CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
-  }
-  return tocheck;  // Send back the string!
-}
 
 // This complicated function determines from status and arguments what errors
 // should be emitted and whether a buffer should be commented out after a 
@@ -785,7 +769,7 @@ bool CToFTypeFormatter::isType(const string input) {
 // errors that might occur during an attempted translation. The macro is translated into 
 // a Fortran TYPE definition. This only supports int, shorts, chars, and longs. The TYPE
 // will include one field which is [type_name]_C_CHAR/C_INT/C_LONG as appropriate given
-// the type being declared.
+// the type being declared. I have never seen this function called - Michelle.
 string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal,
     PresumedLoc loc, Arguments &args) {
   string ft_buffer;
@@ -810,21 +794,15 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
     temp_macro_name = "h2m" + macroName;
   }
 
-  // The CToFTypeFormatter::CheckLength function is employed here to make sure lines are acceptable lengths
-  ft_buffer = CToFTypeFormatter::CheckLength("TYPE, BIND(C) :: " + temp_macro_name + "\n", CToFTypeFormatter::line_max,
-      args.getSilent(), loc);
+  ft_buffer = "TYPE, BIND(C) :: " + temp_macro_name + "\n";
   if (macroVal.find("char") != std::string::npos) {
-    ft_buffer += CToFTypeFormatter::CheckLength("    CHARACTER(C_CHAR) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-        args.getSilent(), loc);
+    ft_buffer += "    CHARACTER(C_CHAR) :: " + type_id + "\n";
   } else if (macroVal.find("long") != std::string::npos) {
-    ft_buffer += CToFTypeFormatter::CheckLength("    INTEGER(C_LONG) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-        args.getSilent(), loc);
+    ft_buffer += "    INTEGER(C_LONG) :: " + type_id + "\n";
   } else if (macroVal.find("short") != std::string::npos) {
-    ft_buffer += CToFTypeFormatter::CheckLength("    INTEGER(C_SHORT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-        args.getSilent(), loc);
+    ft_buffer += "    INTEGER(C_SHORT) :: " + type_id + "\n";
   } else {
-    ft_buffer += CToFTypeFormatter::CheckLength("    INTEGER(C_INT) :: " + type_id + "\n", CToFTypeFormatter::line_max,
-        args.getSilent(), loc);
+    ft_buffer += "    INTEGER(C_INT) :: " + type_id + "\n";
   }
   ft_buffer += "END TYPE " + temp_macro_name + "\n";
 

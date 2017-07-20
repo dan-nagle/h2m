@@ -140,7 +140,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       pname = "h2m" + pname;
     }
     // Check for a valid name length for the dummy variable.
-    if (pname.length() >= CToFTypeFormatter::name_max) {
+    if (pname.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = pname + ", function parameter.";
     }
@@ -163,7 +163,7 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     }
     // Similarly, check the length of the declaration line to make sure it is valid Fortran.
     // Note that the + 1 in length is to account for the newline character.
-    if (pname.length() >= CToFTypeFormatter::name_max) {
+    if (pname.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = pname + ", parameter name.";
     }
@@ -253,10 +253,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     string bindname;  // This is used to link to a C function with a different name.
     // This determines what types to be included in the iso_c_binding.
     if (!paramsString.empty()) {
-      // CToFTypeFormatter::CheckLength just returns the same string, but it will make sure the line is not too
-      // long for Fortran and it will warn if needed and not silenced.
-      imports = CToFTypeFormatter::CheckLength("    USE iso_c_binding, only: " + getParamsTypesASString() + "\n",
-          CToFTypeFormatter::line_max, args.getSilent(), sloc);
+      imports = "    USE iso_c_binding, only: " + getParamsTypesASString() + "\n";
     } else {
       imports = "    USE iso_c_binding\n";
     }
@@ -290,7 +287,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
     }
     // Check to make sure the function's name isn't too long. 
-    if (funcname.length() >= CToFTypeFormatter::name_max) {
+    if (funcname.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = funcname + ", function name.";
     }
@@ -298,10 +295,6 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     // bindname may be empty or may contain a C function to link to.
     fortranFunctDecl = funcType + " " + funcname + "(" + getParamsNamesASString() +
         ")" + " BIND(C" + bindname + ")\n";
-    if (fortranFunctDecl.length() >= CToFTypeFormatter::line_max) {
-      current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
-      error_string = fortranFunctDecl;
-    }
     // Add in the import from iso_c_binding and the parameters.
     fortranFunctDecl += imports;
     fortranFunctDecl += getParamsDeclASString();
@@ -340,6 +333,16 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     if (duplicate == false) {  // This implies this is a repeat.
       current_status = CToFTypeFormatter::DUPLICATE;
       error_string = funcname + ", function name.";
+    }
+
+    // We check the line lengths in one place to make sure they are
+    // all valid fortran lengths.
+    std::istringstream in(fortranFunctDecl);
+    for (std::string line; std::getline(in, line);) {
+      if (line.length() > CToFTypeFormatter::line_max) {
+        current_status = CToFTypeFormatter::BAD_LINE_LENGTH; 
+        error_string = line + ", in function.";
+      }
     }
   }
 
