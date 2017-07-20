@@ -25,6 +25,8 @@ To build h2m if you do not have Clang or LLVM installed, run:
 ./h2mbuild.sh -download -download_dir [path to desired Clang/LLVM download]
 or run ./h2mbuild.sh -i for interactive mode.
 
+It is recommended to download and install CMake seperately from h2m, but 
+the script may be able to do this for you.
 To build h2m if you are also missing CMake as well as Clang and LLVM, run:
 ./h2mbuild.sh -download -download_dir [path to desired Clang/LLVM download]
 -download_cmake -download_cmake_dir [path to desired CMake download]
@@ -83,11 +85,14 @@ run under other shells including ksh and zsh. Other posix compliant
 shells may also work, but they have not been tested.
 LLVM and Clang are absolutely required to run h2m. The h2mbuild.sh
 script can handle the installation of this software if necessary. In
-fact, it is recommended that Clang and LLVM be downloaded and built
+fact, it is most convenient if Clang and LLVM are downloaded and built
 during the installation process to avoid potential complications and
 avoid the need to determine the locations of their config.cmake files.
+However, this may not always be possible because building these large
+projects is not always smooth and the script can only provide basic
+build options.
 Note that there is no "bootstrapping" involved in the build carried
-out by the script. Its interest is goal is to compile header and library
+out by the script. Its only goal is to compile header and library
 files used by h2m as quickly as possible, not to create a reliable
 and thoroughly tested compiler.
 If CMake is not installed, (ie the command 'which cmake' fails) CMake
@@ -97,7 +102,7 @@ If LLVM and Clang are already installed, CMake will need information
 about where their header and library files are located.
 The easiest way to provide this information is to provide the 
 paths to the directories containing the LLVMConfig.cmake and
-ClangConfig.cmake files which will provide all the needed variables
+ClangConfig.cmake files. These will provide all the needed variables
 to complete a build. If these files do not exist, manual paths to
 library and header files can be specified.
 Because the h2mbuild.sh script may change directories, always run
@@ -121,7 +126,7 @@ do not stop or print a warning if the test fails.
 This will likely require administrator privledges. Alternately, CMake 
 can be downloaded from https://cmake.org/download/ as a binary release
 (not automated by this script.) The default directory if none is specified
-is ./cmake_dir.
+is ./cmake_dir for the download.
 
 -download_cmake_dir	Option to specify the absolute or relative path
 to the desired download location for CMake. CMake files will be extracted
@@ -230,7 +235,7 @@ more complicated build process.
 1. Minimize libraries that might accidentally be linked into a build
 This will likely mean unloading all the modules that are not 
 absolutely necessary to build h2m (probably meaning compiler packages and
-cmake). If the system where the build is being attempted does not use 
+CMake). If the system where the build is being attempted does not use 
 modules, more complicated and individualized methods for avoiding
 the inclusion of bad library references into a build may be necessary.
 Every effort should be made to keep the linker from adding improper
@@ -262,10 +267,10 @@ and CMake documentation to do this.
 4. Build in pieces if errors occur
 It may be necessary to build CMake, Clang and LLVM, and h2m seperately
 due to complicated problems building the large projects. Troubleshooting
-advice fromt the LLVM and CMake websites should be helpful. The
+advice from the LLVM and CMake websites should be helpful. The
 h2mbuild.sh script can then be used to build h2m, or CMake can be
 used directly, specifying the directories to search for the CMake config
-files as specified above. 
+files as described directly below.
 
 
 Building h2m Without the Script:
@@ -287,8 +292,9 @@ To guarantee that all the needed files are present, download and
 build from source. A binary release is unlikely to have
 the needed header and CMake files. Clang/LLVM version 4.0.0 is the
 only version thoroughly tested. Somewhat earlier versions are likely to
-work as well. Later versions may not. The Clang website provides good
-build instructions (https://clang.llvm.org/get_started.html).
+work as well. Later versions almost certainly will not. The Clang 
+website (https://clang.llvm.org/get_started.html) provides good 
+build instructions.
 
 2). Find the CMake Configuration Files
 The files clang-config.cmake and llvm-config.cmake should be located
@@ -338,7 +344,8 @@ Troubleshooting
 used with a newer version of the other. Check to make sure there
 is not a mismatch between versions if linker errors are seen.
 This advice only applies when Clang and LLVM were already available
-on the computer used.
+on the computer used and were not built from scratch during the 
+process.
 
 2. Multiple copies of some files exist within the LLVM/Clang
 build tree. Make sure, if manual paths are specified, that the directory
@@ -355,7 +362,7 @@ Often a clean download and build of LLVM and Clang can fix these problems.
 4. Newer versions of Clang/LLVm may be incompatible with the h2m
 implementation. Release 4.0 is known to work, and this is the 
 default download URL. It is likely that releases after 4.0 will not
-work. 
+work at all.
 
 5. LLVM and Clang are extremely demanding on the compilers used to 
 build them. Later versions of gcc are known to work, as are other
@@ -365,8 +372,8 @@ build processes.
 
 6. Make sure that the compiler you think is being used to build LLVM
 and Clang is actually the compiler found by CMake. Alteration of 
-search paths or manual builds explicitly specifying the compiler,
-may be necessary. CMake should specify the found compiler and 
+search paths, or manual builds explicitly specifying the compiler,
+may be necessary. CMake should name the found compiler and 
 version as it begins the build process.
 
 7. Always build h2m and Clang/LLVM with the same version of the
@@ -383,8 +390,8 @@ LLVM or h2m. Update CMake if necessary. Version 3.2 or later is required.
 Refer to the CMake website for instructions. 
 
 10. It may be more convenient and easier to download CMake from its
-website as a binary release. The script does not provide an option to do
-this, but it is not too difficult to do by hand.
+website as a binary release. The script does not provide an option
+to do this, but it is not too difficult to do by hand.
 
 3)   USAGE OF H2M
 
@@ -406,41 +413,47 @@ unless supressed with the -q or -s option.
 By default, only the contents of a single header file are written into a single Fortran
 module. Files included by this header are ignored. There are two ways to change this.
 The first way is to request a recursive run with the option -recursive or -r.
-During recursion, Each file is translated into exactly one fortran module. These
+During recursion, each file is translated into exactly one Fortran module. These
 modules will be linked together by USE statements, probably far more USE statements
 than are actually necessary. The tool will attempt to link them in the order which
 corresponds to the dependencies among the C header files. By default, system headers
 will be translated into modules as well. This can be disabled with the option
 -no-system-headers or -n.
-The second way is to request that all local headers included by the specified file,
-meaning all includes excluding system headers, be translated and written to a single
-module. This option is -together or -t. There is no option to include system headers
-when translating in this way.
+Another way to change this behavior is with the -together or -t option, which will
+send all local header files into a single module as the preprocessor does,
+meaning all includes excluding system headers, are translated and written to a single
+module. There is no option to include system headers when translating in this way.
 
 Errors: In the case of some errors, the program will terminate and the output file
 will be deleted. Most, however, are expected to be minor and processing will
 continue. For example, many errors raised by Clang as it processes header files are
 completely irrelevant to h2m. To make sure that the output file is kept despite
-any errors, use the -keep-going or -k option.
+any errors, use the -keep-going or -k option. This may potentially produce incomplete
+or unusable modules depending on how serious the error was.
 
 Mistakes on the user's part may result in unusual errors. Only provide one
 source file to h2m at a time or the underlying Clang infrastructure will
 raise errors relating to the number of compiler jobs expected.
 
+Some options are incompatible and will either be ignored or protested with an 
+error message.
+
 Module Names: The base file name is prepended with "module_" to create a name
-for the fortran module generated from each file. If identically named header 
+for the Fortran module generated from each file. If identically named header 
 files are found during recursive inclusion, a suffix of _[number of repetition]
 will be appended to create a unique module name.
 A module name is not checked for other illegal characters, which may well be
-present depending on the user's namning scheme. The user will need to rename
-the module by hand.
+present depending on the user's naming scheme. The user will need to rename
+the module by hand if this is the case.
 
 Macros: Because fortran has no equivalent to the C macro, macros are traslated
 approximately. However, because types often cannot be determined for macros,
 a translation attempt may fail. In this case, the line will be commented out
 and a warning will be printed to standard error. These warnings can be silenced
 with the -q or -s option. Macros will be translated into functions, subroutines,
-or parameters as most appropriate.
+or parameters as most appropriate. Macros containing letter modifiers for 
+numbers (u,U,L,l,f,F etc) will also be commented out because the desired 
+type is unclear.
 
 Enumerated Types: An enumerated type of arbitrary length can be translated. Because
 Fortran enums do not have their own scope as C enums do, the enumerator's name will
@@ -448,8 +461,8 @@ be commented out. Interoperability is supported for the invidual enumerators
 within the enumerated type.
 
 Typedefs: There is no Fortran type interoperable with a typedef. All typedefs will
-be translated into Fortran TYPE definitions containing exactly one field. This field
-will be named [typedef name]_[type redefined]. For example:
+be translated into Fortran TYPE definitions containing exactly one field. This
+field will be named [typedef name]_[type redefined]. For example:
 typedef int my_int;
 -> h2m ->
 TYPE, BIND(C) :: my_int
@@ -458,13 +471,11 @@ END TYPE my_int
 
 Other Conflicting Names: The h2m tool attempts to find name conflicts as it 
 translates code. It will raise warnings about conflicting names and coment
-out the identifier causing the name conflict. However, h2m may not catch
-all conflicts, in which case compiler errors will occur. Name conflicts will have
-to be fixed manually by the programmer, either by modifying a name or by 
-modifying a USE statement to a USE ONLY statement to exclude conflicting symbols.
-However, h2m should notice when a typedef statement would conflict with the 
-name of an existing struct. For example:
-
+out the identifier causing the name conflict.
+Name conflicts will have to be fixed manually by the programmer, either
+by modifying a name or by modifying a USE statement to a USE ONLY statement
+to exclude conflicting symbols.
+Here is an example of a common sort of name conflict:
 struct my_struct {
   int x;
 };
@@ -481,28 +492,37 @@ must manually change names to address the problem.
 
 In all cases, comments in the code should point out the problem.
 
-
 Names Begining With "_": Names will be prepended with h2m in order to create
 a legal identifier. Warnings will be printed to standard error when a name is
 changed. A user must change names in the C files to allow interoperability.
 Optionally, the -auto-bind or -b option can perform some Fortran to C binding
-automatically.
+automatically. Note that these name specification statements are not legal
+in structured type definitions and names of structured types must be changed
+by hand.
+For example:
+int __my_integer;
+-> h2m -b ->
+INTEGER(C_INT), BIND(C, name="__my_integer") :: h2m__my_integer
 
 Unrecognized Types: When h2m does not recognize a type in a header, it will print a
 warning about the problem and surround the questionably translated text with 
-unrecognized_type(...) in the output. This should only happen with (void) types
-for which there is no Fortran equivalent.
+WARNING_UNRECOGNIZED(...) in the output. This is most commonly seen with void types,
+types associated with va_list or other built-in C types for which there is no 
+Fortran equivalent, and types defined in complicated typedef statements.
+If the -detect-invalid or -d option is enabled, h2m will detect invalid types
+and comment out the entire declaration involiving them. Warnings will be printed
+in the text and in standard error.
 
 Unions: There is no Fortran type interoperable with a union. A union will be translated
 into a TYPE definition in Fortran, but this translated TYPE is not interoperable.
 
 Name and Line Lengths Exceeding Maximum:
 Though C has no limits on line and name lengths, Fortran does. Though h2m can detect
-line length problems and warn about them, it is not able to address these issues
-which may require continuing lines with the "&" symbol. This often occurs during
-very long function declarations or during translations of typedefs where appending
-the type to the fiend in the generated structure increases its length.
-
+line length and name length problems and will comment out the offending text, it does
+not know how to split lines. This must be done by hand. Warnings will be printed on
+standard error and in the translated text. These problems are most commonly seen
+in typedefs with very long names and function definitions with very long argument
+lists.
 
 OPTIONS:
 
@@ -510,7 +530,8 @@ OPTIONS:
 -a			Automatically reverse the dimensions of an array translated into
 Fortran (ie int x[3][5][9] becomes INTEGER, DIMENSION(9, 5, 3) :: x). Because Fortran
 stores arrays in column major order and C stores arrays in row major order, this will
-preserve C-like access to array members.
+preserve C-like access to array members, but does not always produce proper
+interoperability so use with caution.
 
 -auto-bind
 -b			Where possible, if a C name begins with an underscore, after
@@ -535,6 +556,9 @@ and Clang errors will still be reported.
 as well as warnings related to unrecognized types and invalid names. Critical errors,
 such as failure to open the output file, and Clang errors will still be reported.
 
+
+TODO: START HERE TODO: START HERE
+
 -recursive
 -r			Recursively search through include files found in the main file. 
 Run the translation on them in reversed order and link the produced modules with USE
@@ -543,13 +567,20 @@ which case it will not be translated and future modules will have the USE statem
 corresponding to the failed translation commented out. In the case that an error is reported
 by Clang, the output may be missing, corrupted, or completely usable depending on the
 nature of the error. However, all following modules will have the USE statement corresponding
-to that module commented out. 
+to that module commented out. The -l or -link-all option can override this behavior.
 
 -keep-going
 -k			Ignore errors during the information gathering phase where the tool
 determines the identities and orders of header files to recursively process. The output file
 will also not be deleted regardless of what errors may occur. This option may potentially
 create unusable code.
+
+-link-all
+-l			When recursively translating code, ignore all erros that occur
+during translation and never comment out and USE statements. Link all modules
+regardless of whether or not they are known to contain properly tranlated code.
+Because most Clang errors are actually minor, using this option does not normally
+cause any problems.
 
 -no-system-headers
 -n			During recursive processing, ignore all system header files.

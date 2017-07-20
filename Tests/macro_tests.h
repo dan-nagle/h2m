@@ -9,6 +9,8 @@
 #define my_binary_caps 0B000
 #define my_not_binary 0B20
 
+#define my_odd_hex 0x00ff
+#define yet_another_hex 0xff00
 #define my_octal 05234
 #define not_octal 08323
 #define my_other_not_octal 0L832
