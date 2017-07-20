@@ -45,9 +45,8 @@ bool RecordDeclFormatter::StructAndTypedefGuard(string name) {
 TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r,
     Arguments &arg) : rewriter(r), args(arg) {
   typedefDecl = t;
-  Okay = true;
-  error_string = "";
   current_status = CToFTypeFormatter::OKAY;
+  error_string = "";
   isLocValid = typedefDecl->getSourceRange().getBegin().isValid();
   // sloc, if uninitialized, will be an invalid location. Because it 
   // is always passed to a function which checks validity, this should 
@@ -109,7 +108,6 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     string modified_name = identifier + "_" + type_no_wrapper;
     string to_add = "    "+ type_wrapper_name + "::" + modified_name + "\n";
     // Set the flag to reflect a bad name length if necessary
-    errs() << "DEBUG  : " << modified_name << ":" << modified_name.length() << "\n";
     if (modified_name.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = modified_name;
@@ -123,8 +121,6 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     typedef_buffer += to_add;
     typedef_buffer += "END TYPE " + identifier + "\n";
     // Check to see whether we have declared something with this identifier before.
-    // Skip this duplicate declaration if necessary. Also skip the declaration if
-    // Okay is false and we have been asked to comment out invalid declarations
     bool not_repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
     if (not_repeat == false) {  // This indicates that this is a duplicate identifier.
       current_status = CToFTypeFormatter::DUPLICATE;
@@ -139,7 +135,6 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
 EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r, 
     Arguments &arg) : rewriter(r), args(arg) {
   enumDecl = e;
-  Okay = true;
   current_status = CToFTypeFormatter::OKAY;
   error_string = "";
   // Becasue sloc is only ever passed to a function which checks its validity,
@@ -243,9 +238,8 @@ string EnumDeclFormatter::getFortranEnumASString() {
 RecordDeclFormatter::RecordDeclFormatter(RecordDecl* rd, Rewriter &r, 
     Arguments &arg) : rewriter(r), args(arg) {
   recordDecl = rd;
-  Okay = true;
-  current_status = CToFTypeFormatter::OKAY;
   error_string = "";
+  current_status = CToFTypeFormatter::OKAY;
   // Because sloc is checked for validity prior to use, this should be a
   // fine way to deal with an invalid source location
   if (recordDecl->getSourceRange().getBegin().isValid()) {
@@ -319,7 +313,6 @@ string RecordDeclFormatter::getFortranFields() {
 string RecordDeclFormatter::getFortranStructASString() {
   // initalize mode here
   setMode();
-  Okay = true;
   string identifier = "";  // Holds the Fortran name for this structure.
   // A value of TRUE indicates that this declaration is okay. A value
   // of false indicates that this is a repeated name and needs to be
@@ -422,6 +415,9 @@ string RecordDeclFormatter::getFortranStructASString() {
       }
       current_status = CToFTypeFormatter::BAD_ANON;
       error_string = identifier + ", anonymous struct.";
+      rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
+      rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
+
     }
     // Now that we are through processing structs of all types, we must check for the problems
     // require us to comment the struct out: duplicate names or invalid types.

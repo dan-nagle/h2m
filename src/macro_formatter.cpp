@@ -100,12 +100,7 @@ string MacroFormatter::getFortranMacroASString() {
         } else if (CToFTypeFormatter::isIntLike(macroVal)) {
           // Unsigned or longs are not handled by h2m, so these lines are commented out
           if (macroVal.find_first_of("UL") != std::string::npos) {
-            if (args.getSilent() == false) {
-              errs() << "Warning: Macro with value including UL detected. ";
-              errs() << macroName << " Is invalid.\n";
-              CToFTypeFormatter::LineError(sloc);
-            }
-            fortranMacro = "!INTEGER(C_INT), parameter, public :: "+ actual_macroName + " = " +
+            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName + " = " +
                 macroVal + "\n";
             current_status = CToFTypeFormatter::U_OR_L_MACRO;
             error_string = macroVal;

@@ -65,7 +65,7 @@ string CToFTypeFormatter::EmitTranslationAndErrors(status current_status, string
   } else if (current_status == BAD_NAME_LENGTH) {
     comment_out = true;
     emit_errors = !silent;
-    error_string = "Warning: name exceeding length maximum fuound: " + error_string;
+    error_string = "Warning: name exceeding length maximum found: " + error_string;
     translation_string = "Commenting out excessively long name.\n" + translation_string;
   } else if (current_status == BAD_STRUCT_TRANS) {
     comment_out = true;
@@ -108,7 +108,7 @@ string CToFTypeFormatter::EmitTranslationAndErrors(status current_status, string
     comment_out = true;
     emit_errors = !silent;
     error_string = "Warning: unrecognized macro type not translated: " + error_string;
-    translation_string = "Commenting out unrecongnized macro.\n";
+    translation_string = "Commenting out unrecongnized macro.\n" + translation_string;
   } else {
     comment_out = true;
     emit_errors = !silent;
@@ -459,12 +459,9 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
       f_type.erase(0, found + 1);  // Erase up to the space
       found=f_type.find_first_of(" ");
     }
+    // Fix an illegal name, but a warning would be redundant so do not
+    // give one.
     if (f_type.front() == '_') {
-      if (args.getSilent() == false) {
-        errs() << "Warning: fortran names may not begin with an underscore.";
-        errs() << f_type << " renamed " << "h2m" << f_type << "\n";
-        CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
-      }
       f_type = "h2m" + f_type;  // Prepend h2m to fix the naming problem
     }
 
@@ -472,13 +469,12 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
       f_type = "TYPE(" + f_type + ")";
     } 
     // Any usage of an anonymous struct is warned about and highighted
+    // Note that because of the way the leading spaces are removed, the
+    // leading parenthesis is stripped from the anonymous type so a
+    // trailing parenthesis is not added in (this will balance the parenthesis.)
     if (anon == true) {
-      if (args.getSilent() == false) {
-        errs() << "Warning: anonymous struct or union used " + f_type + "\n";
-        CToFTypeFormatter::LineError(sloc);
-      }
       problem = true;
-      f_type = "WARNING_ANONYMOUS(" + f_type + ")";
+      f_type = "WARNING_ANONYMOUS(" + f_type;
     }
 
   // Handle an array type declaration
@@ -516,6 +512,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
 // using helper functions.
 bool CToFTypeFormatter::isIntLike(const string input) {
   // "123L" "18446744073709551615ULL" "18446744073709551615UL" 
+  
   if (std::all_of(input.begin(), input.end(), ::isdigit)) {
     return true;
   } else if (isHex(input) == true) {  // This is a hexadecimal.
@@ -616,6 +613,11 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
 // potentially. Note that a - sign is not allowed.
 bool CToFTypeFormatter::isHex(const string in_str) {
   string input = in_str;
+  // Remove all leading spaces from the macro.
+  while (input[0] == ' ') {
+    input.erase(input.begin(), input.begin() + 1);
+  }
+
   if (input[0] == '0' && (input[1] == 'x' || input[1] == 'X')) {
     // Erase the 0x or 0X from the begining.
     input.erase(input.begin(), input.begin() + 2);
@@ -650,6 +652,10 @@ bool CToFTypeFormatter::isHex(const string in_str) {
 // Note a - sign is not allowed.
 bool CToFTypeFormatter::isBinary(const string in_str) {
   string input = in_str;
+  // Remove all leading spaces from the macro.
+  while (input[0] == ' ') {
+    input.erase(input.begin(), input.begin() + 1);
+  }
   if (input[0] == '0' && (input[1] == 'b' || input[1] == 'B')) {
     // Erase the 0b or 0B from the begining.
     input.erase(input.begin(), input.begin() + 2);
@@ -685,6 +691,10 @@ bool CToFTypeFormatter::isBinary(const string in_str) {
 // Note a - sign is not allowed.
 bool CToFTypeFormatter::isOctal(const string in_str) {
   string input = in_str;
+  // Remove all leading spaces from the macro.
+  while (input[0] == ' ') {
+    input.erase(input.begin(), input.begin() + 1);
+  }
   // If the string is empty or just '0', it is not octal.
   if (input.length() <= 1) {
     return false;

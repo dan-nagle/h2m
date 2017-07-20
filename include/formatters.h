@@ -175,7 +175,6 @@ public:
   void setTagName(string name);
   bool isStruct();
   bool isUnion();
-  bool isOkay() { return Okay; }
   string getFortranStructASString();
   string getFortranFields();
   string getErrorString() { return error_string; }
@@ -216,10 +215,6 @@ private:
   bool isInSystemHeader;
   // Presumed location of this node
   PresumedLoc sloc;
-  // Originally set to "true", this reflects whether an 
-  // anonymous or unrecognized type was discovered during
-  // the translation.
-  bool Okay;
   // The initially empty string which describes the text where
   // an error occurred, if it did occur.
   string error_string;
@@ -236,7 +231,6 @@ public:
   // The main function to fetch the enumeration as a Fortran
   // string equivalent.
   string getFortranEnumASString();
-  bool isOkay() { return Okay; }
   string getErrorString() { return error_string; }
   CToFTypeFormatter::status getStatus() { return current_status; } 
   PresumedLoc getSloc() { return sloc; }
@@ -248,10 +242,6 @@ private:
   Rewriter &rewriter;
   // Arguments passed in from the action factory.
   Arguments &args;
-  // Originally set to "true", this reflects whether an 
-  // anonymous or unrecognized type was discovered during
-  // the translation.
-  bool Okay;
   // The initially empty string which describes the text where
   // an error occurred, if it did occur.
   string error_string;
@@ -283,7 +273,6 @@ public:
   // Fetches an individual initialized array element.
   void getFortranArrayEleASString(InitListExpr *ile, string &arrayValues,
       string &arrayShapes, bool &evaluatable, bool firstEle, bool is_char);
-  bool isOkay() { return Okay; }
   string getErrorString() { return error_string; }
   CToFTypeFormatter::status getStatus() { return current_status; } 
   PresumedLoc getSloc() { return sloc; }
@@ -299,10 +288,6 @@ private:
   bool isInSystemHeader;
   // The presumed location of this node
   PresumedLoc sloc;
-  // Originally set to "true", this reflects whether an 
-  // anonymous or unrecognized type was discovered during
-  // the translation.
-  bool Okay;
   // The initially empty string which describes the text where
   // an error occurred, if it did occur.
   string error_string;
@@ -315,7 +300,6 @@ private:
 // the closest possible fortran equivalent.
 class TypedefDeclFormater {
 public:
-  bool isOkay() { return Okay; };
   // Member functions declarations
   TypedefDeclFormater(TypedefDecl *t, Rewriter &r, Arguments &args);
   string getFortranTypedefDeclASString();
@@ -333,10 +317,6 @@ private:
   bool isLocValid;
   // Arguments passed in from the action factory
   Arguments &args;
-  // Originally set to "true", this reflects whether an 
-  // anonymous or unrecognized type was discovered during
-  // the translation.
-  bool Okay;
   // The initially empty string which describes the text where
   // an error occurred, if it did occur.
   string error_string;
@@ -364,7 +344,6 @@ public:
   string getParamsTypesASString();
   // Whether or not the argument locations are valid according to clang
   bool argLocValid();
-  bool isOkay() { return Okay; }
   PresumedLoc getSloc() { return sloc; }
   string getErrorString() { return error_string; }
   CToFTypeFormatter::status getStatus() { return current_status; } 
@@ -382,10 +361,6 @@ private:
   FunctionDecl *funcDecl;
   bool isInSystemHeader;
   PresumedLoc sloc;
-  // Originally set to "true", this reflects whether an 
-  // anonymous or unrecognized type was discovered during
-  // the translation.
-  bool Okay;
   // The initially empty string which describes the text where
   // an error occurred, if it did occur.
   string error_string;

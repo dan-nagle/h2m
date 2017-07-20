@@ -7,9 +7,8 @@
 // -----------initializer VarDeclFormatter--------------------
 VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
   varDecl = v;
-  current_status = CToFTypeFormatter::OKAY;
   error_string = "";
-  Okay = true;
+  current_status = CToFTypeFormatter::OKAY;
   // Because sloc is checked for validity prior to use, this should handle invalid locations. If it
   // isn't initialized, it isn't valid according to the Clang check made in the helper.
   if (varDecl->getSourceRange().getBegin().isValid()) {

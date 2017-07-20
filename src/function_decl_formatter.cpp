@@ -5,10 +5,9 @@
 
 // -----------initializer FunctionDeclFormatter--------------------
 FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
-  Okay = true;
-  current_status = CToFTypeFormatter::OKAY;
   error_string = "";
   funcDecl = f;
+  current_status = CToFTypeFormatter::OKAY;
   returnQType = funcDecl->getReturnType();
   params = funcDecl->parameters();
   // Because sloc is checked for validity prior to use, this should be a fine way to deal with
@@ -26,96 +25,53 @@ FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Argum
 // the above demonstrated syntax can be used to establish proper fortran binding.
 // Each type present will only be mentioned once.
 string FunctionDeclFormatter::getParamsTypesASString() {
-  string paramsType;
-  QualType prev_qt;
-  std::vector<QualType> qts;
-  bool first = true;
-  // loop through all arguments of the function
+  string paramsType = "";
+  std::set<string> param_types;
+  // loop through all arguments of the function, determine 
+  // their types, and add them into the set.
   for (auto it = params.begin(); it != params.end(); it++) {
-    if (first) {
-      prev_qt = (*it)->getOriginalType();
-      qts.push_back(prev_qt);
-      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
-      bool problem = false;
-      // The flag will indicate a bad type.
-      string type_no_wrapper = tf.getFortranTypeASString(false, problem);
-      if (problem == true) {
-        current_status = CToFTypeFormatter::BAD_TYPE;
-        error_string = type_no_wrapper + ", function argument.";
-      }
-      // If we have a valid type to add, begin the argument list!
-      if (type_no_wrapper.find("C_") != std::string::npos) {
-        paramsType = type_no_wrapper;
-      }
-      first = false;
-
-      // Now that we have found the type of the arguments, find the return
-      // type, too. Deal with the potential of a void (subroutine) return. 
-      // Add the type to the vector for iso_c_binding only : <vector> if it
-      // is not already present. 
-      CToFTypeFormatter rtf(returnQType, funcDecl->getASTContext(), sloc, args);
-      if (!returnQType.getTypePtr()->isVoidType()) {
-        if (rtf.isSameType(prev_qt)) {  // Then there is no need to add a new type
-        } else {
-          bool add = true;
-          // check if the return type is in the vector
-          for (auto v = qts.begin(); v != qts.end(); v++) {
-            if (rtf.isSameType(*v)) {
-              add = false;
-            }
-          }
-          if (add) {
-            bool problem = false;
-            string return_type = rtf.getFortranTypeASString(false, problem);
-            if (problem == true) {  // We have found an invalid type
-              current_status = CToFTypeFormatter::BAD_TYPE;
-              error_string = return_type + ", function return type.";
-            }  
-            // If the return type is valid, add it into the list with
-            // the appropriate syntax. 
-            if (return_type.find("C_") != std::string::npos) {
-              if (paramsType.empty()) {
-                paramsType += return_type;
-              } else {
-                paramsType += (", " + return_type); 
-              }
-              
-            }
-            
-          }
-        }
-        prev_qt = returnQType;
-        qts.push_back(prev_qt);
-      }
-
-    } else {
-      CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(),
-          sloc, args);
-      if (tf.isSameType(prev_qt)) {  // Then there is no need to add a new type.
-      } else {
-        // check if the return type is in the vector
-        bool add = true;
-        for (auto v = qts.begin(); v != qts.end(); v++) {
-          if (tf.isSameType(*v)) {
-            add = false;
-          }
-        }
-        if (add) {
-          bool problem = false;
-          string return_type = tf.getFortranTypeASString(false, problem); 
-          if (problem == true) {  // We have found an invalid type
-            current_status = CToFTypeFormatter::BAD_TYPE;
-            error_string = return_type + ", function return type.";
-          }
-          if (return_type.find("C_") != std::string::npos) {
-            paramsType += (", " + return_type);
-          }
-        }
-      }
-      prev_qt = (*it)->getOriginalType();
-      qts.push_back(prev_qt);
-    }        
-
+    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
+    bool problem = false;
+    // The flag will indicate a bad type.
+    string type_no_wrapper = tf.getFortranTypeASString(false, problem);
+    if (problem == true) {
+      current_status = CToFTypeFormatter::BAD_TYPE;
+      error_string = type_no_wrapper + ", function argument.";
+    }
+    // If we have a valid type to add, begin the argument list!
+    // This method of determining validity is left over from
+    // the original function (which I rewrote -Michelle). It is
+    // use to keep from including structured types in the bind
+    // lists.
+    if (type_no_wrapper.find("C_") != std::string::npos) {
+      param_types.insert(type_no_wrapper);
+    }
+  }
+  // Now that we have found the type of the arguments, find the return
+  // type, too. Deal with the potential of a void (subroutine) return. 
+  CToFTypeFormatter rtf(returnQType, funcDecl->getASTContext(), sloc, args);
+  if (!returnQType.getTypePtr()->isVoidType()) {
+    bool problem = false;
+    string return_type = rtf.getFortranTypeASString(false, problem);
+    if (problem == true) {  // We have found an invalid type
+      current_status = CToFTypeFormatter::BAD_TYPE;
+      error_string = return_type + ", function return type.";
+    }  
+    // If the return type is valid, add it into the list with
+    // the appropriate syntax. 
+    if (return_type.find("C_") != std::string::npos) {
+      param_types.insert(return_type);
+    }
+  }
+  // We have placed all the types as strings in a set. Now we iterate
+  // through the set and write them into the string of param types.
+  for (std::set<string>::iterator iter = param_types.begin(); iter != 
+      param_types.end(); ++iter) {
+    paramsType += *iter + ", ";
+  }
+  // Erase the extra ", " added on in the last iteration.
+  if (paramsType.length() > 2) {  // Protect against an empty string.
+    paramsType.erase(paramsType.end() - 2, paramsType.end());
   }
   return paramsType;
 };
