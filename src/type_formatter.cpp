@@ -13,6 +13,17 @@ void CToFTypeFormatter::CToFTypeFormatter::LineError(PresumedLoc sloc) {
   }
 }
 
+// This little helper outputs an error relating to prepending h2m to the
+// from of an identifier, if needed.
+void CToFTypeFormatter::PrependError(const string identifier, Arguments& args,
+    PresumedLoc sloc) {
+  if (args.getSilent() == false) {
+    errs() << "Warning: fortran identifiers may not begin with an underscore.\n" <<
+        identifier << " renamed h2m" << identifier;
+    LineError(sloc);
+  }
+}
+
 
 // This complicated function determines from status and arguments what errors
 // should be emitted and whether a buffer should be commented out after a 
@@ -244,8 +255,8 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
         }
         // This is likely a serious issue. It may prevent compilation. There is
         // no guarantee that this expression is evaluatable in Fortran.
-        if (args.getSilent() == false) {
-          errs() << "Warning: unevaluatable array dimensions: " << expr_text << "\n";
+        if (args.getSilent() == false) { 
+          errs() << "Warning: unevaluatable array dimensions: " << expr_text;
           CToFTypeFormatter::LineError(sloc);
         }
       }
@@ -493,12 +504,6 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
     f_type = "WARNING_UNRECOGNIZED(" + c_qualType.getAsString()+")";
     problem = true;
     // Warning only in the case of a typewrapper avoids repetitive error messages
-    if (typeWrapper) {
-      if (args.getSilent() == false) {
-        errs() << "Warning: unrecognized type (" << c_qualType.getAsString() << ")\n";
-        CToFTypeFormatter::CToFTypeFormatter::LineError(sloc);
-      }
-    }
   }
   return f_type;
 };
@@ -796,11 +801,7 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
 
   // We have found an illegal name. We deal with it as usual by prepending h2m.
   if (macroName[0] == '_') {
-    if (args.getSilent() == false) {
-      errs() << "Warning: Fortran names may not start with '_' ";
-      errs() << macroName << " renamed h2m" << macroName << "\n";
-      CToFTypeFormatter::CToFTypeFormatter::LineError(loc);
-    }
+    CToFTypeFormatter::PrependError(macroName, args, loc);
     temp_macro_name = "h2m" + macroName;
   }
 

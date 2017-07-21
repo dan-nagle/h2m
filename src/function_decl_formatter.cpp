@@ -146,13 +146,8 @@ string FunctionDeclFormatter::getParamsNamesASString() {
         pname = "arg_" + to_string(index);
       }
       if (pname.front() == '_') {  // Illegal character. Append a prefix.
-        string old_pname = pname;
+        CToFTypeFormatter::PrependError(pname, args, sloc);
         pname = "h2m" + pname;
-        if (args.getSilent() == false) {
-          errs() << "Warning: Illegal parameter identifier " << old_pname << " renamed ";
-          errs() << pname << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
       }
       paramsNames += pname;
     } else { // parameters in between
@@ -162,13 +157,8 @@ string FunctionDeclFormatter::getParamsNamesASString() {
         pname = "arg_" + to_string(index);
       }
       if (pname.front() == '_') {  // Illegal character. Append a prefix.
-        string old_pname = pname;
+        CToFTypeFormatter::PrependError(pname, args, sloc);
         pname = "h2m" + pname;
-        if (args.getSilent() == false) {
-          errs() << "Warning: Illegal parameter name " << old_pname << " renamed ";
-          errs() << pname << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
       }
       paramsNames += ", " + pname; 
     }
@@ -230,10 +220,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     }
     string funcname = funcDecl->getNameAsString();
     if (funcname.front() == '_') {  // We have an illegal character in the identifier
-      if (args.getSilent() == false) {
-        errs() << "Warning: invalid function name " << funcname << " renamed h2m" << funcname << "\n";
-        CToFTypeFormatter::LineError(sloc);
-      }
+      CToFTypeFormatter::PrependError(funcname, args, sloc);
       // If necessary, prepare a bind name to properly link to the C function
       // because we have been forced to change this function's declared name.
       if (args.getAutobind() == true) {

@@ -79,11 +79,7 @@ string MacroFormatter::getFortranMacroASString() {
     // Warn about the presence of an illegal underscore at the beginning of a name.
     string actual_macroName = macroName;  // We may need to prepend h2m to the beginning.
     if (macroName[0] == '_') {
-      if (args.getSilent() == false) {
-        errs() << "Warning: Fortran names may not start with an underscore. ";
-        errs() << macroName << " renamed " << "h2m" << macroName << "\n";
-        CToFTypeFormatter::LineError(sloc);
-      }
+      CToFTypeFormatter::PrependError(macroName, args, sloc);
       actual_macroName = "h2m" + macroName;
     }
 
@@ -186,11 +182,7 @@ string MacroFormatter::getFortranMacroASString() {
           // Assemble the macro arguments in a list and check names for illegal underscores. 
           string argname = (*it)->getName();
           if (argname.front() == '_') {
-            if (args.getSilent() == false) { 
-              errs() << "Warning: fortran names may not start with an underscore. Macro argument ";
-              errs() << argname << " renamed h2m" << argname << "\n";
-              CToFTypeFormatter::LineError(sloc);
-            }
+            CToFTypeFormatter::PrependError(macroName, args, sloc);
             argname = "h2m" + argname;  // Fix the illegal name problem by prepending h2m
           }
           fortranMacro += argname;  // Add the new argument into the subroutine's definition.

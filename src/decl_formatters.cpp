@@ -80,11 +80,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
         sloc, args);
     string identifier = typedefDecl->getNameAsString();
     if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining.
-      if (args.getSilent() == false) {  // Warn about the renaming unless silenced.
-        errs() << "Warning: illegal identifier " << identifier << 
-            " renamed h2m" << identifier << "\n";
-        CToFTypeFormatter::LineError(sloc);
-      }
+      CToFTypeFormatter::PrependError(identifier, args, sloc);
       identifier = "h2m" + identifier;  // Prependdh2m to fix the problem.
     }
     
@@ -176,11 +172,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
     }
 
     if (enumName.front() == '_') {  // Illegal underscore beginning the name!
-      if (args.getSilent() == false) {  // Warn unless silenced
-        errs() << "Warning: illegal enumeration identifier " << enumName << 
-            " renamed h2m" << enumName << "\n";
-        CToFTypeFormatter::LineError(sloc); 
-      } 
+      CToFTypeFormatter::PrependError(enumName, args, sloc);
       enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
     }
 
@@ -197,13 +189,8 @@ string EnumDeclFormatter::getFortranEnumASString() {
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end(); it++) {
       string constName = (*it)->getNameAsString ();
       if (constName.front() == '_') {  // The name begins with an illegal underscore.
-        string old_constName = constName;
+        CToFTypeFormatter::PrependError(constName, args, sloc);
         constName = "h2m" + constName;
-        if (args.getSilent() == false) {
-          errs() << "Warning: illegal enumeration identfier " << old_constName <<
-          " renamed " << constName << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
       }
       int constVal = (*it)->getInitVal().getExtValue();  // Get the initialization value
       // Check for a valid name length. Note that the line can't be too 
@@ -283,11 +270,7 @@ string RecordDeclFormatter::getFortranFields() {
         identifier = "field_" + std::to_string(iterations);
       } 
       if (identifier.front() == '_') {  // There is an illegal identifier.
-        if (args.getSilent() == false) {
-          errs() << "Warning: invalid struct field name " << identifier;
-          errs() << " renamed h2m" << identifier << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
         identifier = "h2m" + identifier;
       }
       bool problem = false;  // The helper function will set this error flag
@@ -332,12 +315,8 @@ string RecordDeclFormatter::getFortranStructASString() {
 
     if (mode == ID_ONLY) {
       identifier = recordDecl->getNameAsString();
-            if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false) {
-          errs() << "Warning: invalid structure name " << identifier << 
-              " renamed h2m" << identifier << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
+      if (identifier.front() == '_') {  // Illegal underscore detected
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
 
@@ -347,11 +326,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     } else if (mode == TAG_ONLY) {
       identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m" <<
-              identifier << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
+        identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
 
@@ -360,11 +335,7 @@ string RecordDeclFormatter::getFortranStructASString() {
     } else if (mode == ID_TAG) {
       identifier = tag_name;
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false) {
-          errs() << "Warning: invalid structure name " << identifier << " renamed h2m"
-              << identifier << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
 
@@ -375,11 +346,7 @@ string RecordDeclFormatter::getFortranStructASString() {
       identifier = recordDecl->getTypeForDecl(
           )->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false) {
-          errs() << "Warning: invalid typedef name " << identifier << 
-              " renamed h2m" << identifier << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
 
@@ -398,20 +365,8 @@ string RecordDeclFormatter::getFortranStructASString() {
         found=identifier.find_first_of(" ");
       }
       if (identifier.front() == '_') {  // Illegal underscore detected
-        if (args.getSilent() == false) {
-          errs() << "Warning: invalid structure name " << identifier <<
-              " renamed h2m" << identifier << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
-      }
-      // We have previously seen a declaration with this name. This shouldn't be possible.
-      // It's commented out anyway.
-      if (RecordDeclFormatter::StructAndTypedefGuard(identifier) == false) {
-        if (args.getSilent() == false) {
-          errs() << "Warning: skipping duplicate declaration of " << identifier << "\n";
-          CToFTypeFormatter::LineError(sloc);
-        }
       }
       current_status = CToFTypeFormatter::BAD_ANON;
       error_string = identifier + ", anonymous struct.";

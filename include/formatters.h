@@ -39,6 +39,7 @@
 #include <string>
 #include <sstream>
 // Set, deque, and stack are needed to keep track of files seen by the preprocessor
+// and for a number of other uses.
 #include <set>
 #include <deque>
 #include <stack>
@@ -47,6 +48,8 @@
 // Used to determine whether or not a character has a lowercase equivalent
 #include <locale>
 
+// These were here when I got here (though it may not be a good idea) 
+// and it is too difficult to take them out now...
 using namespace clang;
 using namespace clang::tooling;
 using namespace llvm;
@@ -110,6 +113,19 @@ private:
 class CToFTypeFormatter {
 public:
   // Public status codes to be referenced by the formatter objects.
+  // FUNC_MACRO, is not an error code, just a statement that we are
+  // processing a function macro. U_OR_L_MACRO is for an object like
+  // macro with some unrecognized size/type modifier (ie l/L or u/U).
+  // BAD_STRUCT_TRANS is for failed translaiton of a structure init.
+  // DUPLICATE is for duplicate identifiers of any kind. BAD_TYPE
+  // is for an anonymous, unrecognized or va_list related type in
+  // a declaration. BAD_ANON is for the declaration of an anonymous
+  // structure type. BAD_ARRAY is for a failed array initialization
+  // evaluation. BAD_MACRO is for a confusing macro of any kind.
+  // CRIT_ERROR is for nullpointers and other serious, internal problems.
+  // BAD_STAR_ARRAY is for a variable size array outside of a 
+  // function prototype. UNKNOWN_VAR is for an unrecognized variable
+  // intialiation declaration. Others are self explanatory.
   enum status {OKAY, FUNC_MACRO, BAD_ANON, BAD_LINE_LENGTH, BAD_TYPE,
      BAD_NAME_LENGTH, BAD_STRUCT_TRANS, BAD_STAR_ARRAY, DUPLICATE,
      U_OR_L_MACRO, UNKNOWN_VAR, CRIT_ERROR, BAD_MACRO, BAD_ARRAY};
@@ -149,6 +165,11 @@ public:
   static bool isBinary(const string in_str);
   static bool isOctal(const string in_str);
 
+  // This function emits a standard error relating to the frequent need
+  // to prepend "h2m" to the front of an illegal identifier.
+  static void PrependError(const string identifier, Arguments& args, PresumedLoc sloc);
+  // This is used to create a typedef like macro. These are approximate
+  // and only work on some types (short, int, long...)
   static string createFortranType(const string macroName, const string macroVal,
       PresumedLoc loc, Arguments &args);
   // This somewhat complicated function handles emitting all errors and returning

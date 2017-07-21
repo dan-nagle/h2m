@@ -419,11 +419,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
         // This is the proper syntax to bind to a C variable: BIND(C, name="cname")
         bindname = " , name =\"" + identifier + "\"";
       }
-      if (args.getSilent() == false) {
-        errs() << "Warning: illegal array identifier " << identifier;
-        errs() << " renamed h2m" << identifier << ".\n";
-        CToFTypeFormatter::LineError(sloc);
-      }
+      CToFTypeFormatter::PrependError(identifier, args, sloc);
       identifier = "h2m" + identifier;
     }
 
@@ -572,16 +568,12 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
 
       if (identifier.front() == '_') {
-         if (args.getSilent() == false) {
-            errs() << "Warning: fortran names may not begin with an underscore. ";
-            errs() << identifier << " renamed h2m" << identifier << "\n";
-            CToFTypeFormatter::LineError(sloc);
-         }
-         if (args.getAutobind() == true) {  // Set up the bind phrase if requested.
-           // The proper syntax is BIND(C, name="cname").
-           bindname = ", name=\"" + identifier + " \"";
-         }
-         identifier = "h2m" + identifier;
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
+        if (args.getAutobind() == true) {  // Set up the bind phrase if requested.
+          // The proper syntax is BIND(C, name="cname").
+          bindname = ", name=\"" + identifier + " \"";
+        }
+        identifier = "h2m" + identifier;
       }
 
       // The following are checks for potentially illegal characters which might be
@@ -627,15 +619,11 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
       // Check for an illegal character at the string identifier's start.
       if (identifier.front() == '_') {
-         if (args.getSilent() == false) {
-            errs() << "Warning: fortran names may not begin with an underscore. ";
-            errs() << identifier << " renamed h2m" << identifier << "\n";
-            CToFTypeFormatter::LineError(sloc);
-         }
-         if (args.getAutobind() == true) {  // Setup the autobinding buffer if requested
-           bindname = ", name=\"" + identifier + " \"";
-         }
-         identifier = "h2m" + identifier;
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
+        if (args.getAutobind() == true) {  // Setup the autobinding buffer if requested
+          bindname = ", name=\"" + identifier + " \"";
+        }
+        identifier = "h2m" + identifier;
       }
       // Determine the state of the declaration. Is there something declared? Is it commented out?
       // Create the declaration in correspondence with this. Add in the bindname, which may be empty
@@ -672,15 +660,11 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
       // Check for an illegal name.
       if (identifier.front() == '_') {
-         if (args.getSilent() == false) {
-            errs() << "Warning: fortran names may not begin with an underscore. ";
-            errs() << identifier << " renamed h2m" << identifier << "\n";
-            CToFTypeFormatter::LineError(sloc);
-         }
-         if (args.getAutobind() == true) {  // Set the BIND(C, name=..." to link to the c name
-           bindname = ", name=\"" + identifier + " \"";
-         }  
-         identifier = "h2m" + identifier;
+        CToFTypeFormatter::PrependError(identifier, args, sloc);
+        if (args.getAutobind() == true) {  // Set the BIND(C, name=..." to link to the c name
+          bindname = ", name=\"" + identifier + " \"";
+        }  
+        identifier = "h2m" + identifier;
       } 
       // Determine the state of the declaration and assemble the appropriate Fortran equivalent.
       // Include the bindname, which may be empty.

@@ -36,6 +36,7 @@ print_help ()
   echo "-CLANG_URL gives an alternate URL from which to download Clang"
   echo "-CMAKE_URL gives an alternate URL from which to download CMake"
   echo "-CMAKE_INSTALL_PREFIX gives the path to the desired CMake install location."
+  echo "-CXX_COMPILER gives an alternative compiler to build h2m"
   echo "See README.txt for additional details."
   exit "$1"
 }
@@ -74,7 +75,7 @@ LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
 CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
 install_h2m="no"
 INSTALL_H2M_DIR="/usr/local/bin"
-
+CXX_COMPILER=
 
 
 # Process command line args via shift in a while loop
@@ -103,6 +104,7 @@ do
     -INSTALL_H2M_DIR) INSTALL_H2M_DIR="$2"; shift;;  # Alternate installation directory
     -download_cmake) download_cmake="yes";;  # A CMake download is requested
     -download_cmake_dir) download_cmake_dir="$2"; shift;;  # The overriding cmake download directory
+    -CXX_COMPILER) CXX_COMPILER="$2"; shift;;  # An alternative C++ compiler for h2m
     *) echo "Invalid option, $1."; print_help 1;;  # Print help. Exit with error.
   esac
   shift
@@ -134,6 +136,12 @@ then
     echo "y or n required"
     read download_install_temp
   done
+  # Read an alternative C++ complier name.
+  echo "If necessary, specify the absolute path to the C++ compiler you would"
+  echo "like to use to build h2m and Clang/LLVM. Leave this field blank if you would"
+  echo "like CMake to make its default decision (which is probably fine.)"
+  read CXX_COMPILER
+
   # Acquire the needed information to download CMake and install it
   if [ "$download_cmake_temp" = "y" ]
   then
@@ -321,7 +329,7 @@ then
   then
     echo "Wget found."
   else
-    error_report "Unable to locate wget or curl to commplete download."
+    error_report "Unable to locate wget or curl to complete download."
   fi
 
   # Obtain source code from the internet with Wget or Curl
@@ -375,7 +383,12 @@ then
   echo "Building clang and llvm"
   mkdir "$download_dir"/build || error_report "Can't create $download_dir/clang-llvm/build"
   cd "$download_dir"/build || error_report "Can't change to build directory"
-  cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError building clang/llvm."
+  if [ "$CXX_COMPILER" != "" ]  # An alternative compiler was specified
+  then
+    cmake -G "Unix Makefiles" -DCMAKE_CXX_COMPILER="$CXX_COMPILER" ../llvm || error_report "CMakeError building clang/llvm."
+  else
+    cmake -G "Unix Makefiles" ../llvm || error_report "CMakeError building clang/llvm."
+  fi
   make || error_report "Make error"
   if [ "$install" = "yes" ]  # Attempted installation requested. Run make install.
   then
@@ -402,9 +415,19 @@ then
 
   if [ "$install_h2m" = "yes" ]  # If installation is requested, we must follow a different command 
   then
-    cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR"
+    if [ "$CXX_COMPILER" != "" ]  # If an alternative compiler is given
+    then
+      cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR" -DCMAKE_CXX_COMPILER="$CXX_COMPILER"
+    else 
+      cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR"
+    fi
   else 
-    cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm 
+    if [ "$CXX_COMPILER" != "" ]
+    then
+      cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DCMAKE_CXX_COMPILER="$CXX_COMPILER"
+    else
+      cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm 
+    fi
   fi
   make  || exit 1  # Either create the software or die trying
   if [ "$install_h2m" = "yes" ]   # If requested, attempt to install h2m
@@ -463,7 +486,7 @@ then
     all="no"
   fi
   
-
+  
   echo "Would you like to install h2m?"
   while [ "$h2m_install_temp" != "y" ] && [ "$h2m_install_temp" != "n" ]
   do
@@ -589,6 +612,12 @@ fi
 if [ "$all" = "yes" ] 
 then
   cmake_command="$cmake_command -DALL=ON"
+fi
+
+# Append an alternative compiler option if requested
+if [ "$CXX_COMPILER" != "" ]  # If this field is not blank
+then
+  cmake_command="$cmake_command -DCMAKE_CXX_COMPILER=$CXX_COMPILER"
 fi
 
 # To provide more descriptive errors, a specific test for CMake is made.
