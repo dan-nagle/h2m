@@ -13,3 +13,5 @@ install_manifest.txt
 *.mod
 *.gch
 *temp*
+*.f90
+*.f03

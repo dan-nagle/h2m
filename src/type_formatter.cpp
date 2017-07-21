@@ -619,7 +619,7 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
 bool CToFTypeFormatter::isHex(const string in_str) {
   string input = in_str;
   // Remove all leading spaces from the macro.
-  while (input[0] == ' ') {
+  while (input[0] == ' ' || input[0] == '(' || input[0] == '-') {
     input.erase(input.begin(), input.begin() + 1);
   }
 
@@ -629,7 +629,7 @@ bool CToFTypeFormatter::isHex(const string in_str) {
     size_t found = input.find_first_of("01234567890abcdefABCDEF");
     while (found != std::string::npos) {
       if (found != 0) {  // The first digit should always be hex.
-        return false;
+        break;  // Break out of the loop to inspect the remainders.
       } 
       // Continue the iteration. It may be a hexadecimal.
       input.erase(found, found + 1);
@@ -658,7 +658,7 @@ bool CToFTypeFormatter::isHex(const string in_str) {
 bool CToFTypeFormatter::isBinary(const string in_str) {
   string input = in_str;
   // Remove all leading spaces from the macro.
-  while (input[0] == ' ') {
+  while (input[0] == ' ' || input[0] == '(' || input[0] == '-') {
     input.erase(input.begin(), input.begin() + 1);
   }
   if (input[0] == '0' && (input[1] == 'b' || input[1] == 'B')) {
@@ -667,7 +667,7 @@ bool CToFTypeFormatter::isBinary(const string in_str) {
     size_t found = input.find_first_of("01");
     while (found != std::string::npos) {
       if (found != 0) {  // The first digit should always be binary.
-        return false;
+        break;  // Leave the loop and check on the remainders.
       } 
       // Continue the iteration. It may be binary.
       input.erase(found, found + 1);
@@ -697,7 +697,7 @@ bool CToFTypeFormatter::isBinary(const string in_str) {
 bool CToFTypeFormatter::isOctal(const string in_str) {
   string input = in_str;
   // Remove all leading spaces from the macro.
-  while (input[0] == ' ') {
+  while (input[0] == ' ' || input[0] == '(' || input[0] == '-') {
     input.erase(input.begin(), input.begin() + 1);
   }
   // If the string is empty or just '0', it is not octal.
@@ -728,7 +728,6 @@ bool CToFTypeFormatter::isOctal(const string in_str) {
         found=input.find_first_of("UuLl() ");
       }
    }
-
 
   // If the string was all octal, we are good.
   return input.empty();
@@ -784,7 +783,7 @@ bool CToFTypeFormatter::isType(const string input) {
 // errors that might occur during an attempted translation. The macro is translated into 
 // a Fortran TYPE definition. This only supports int, shorts, chars, and longs. The TYPE
 // will include one field which is [type_name]_C_CHAR/C_INT/C_LONG as appropriate given
-// the type being declared. I have never seen this function called - Michelle.
+// the type being declared. 
 string CToFTypeFormatter::createFortranType(const string macroName, const string macroVal,
     PresumedLoc loc, Arguments &args) {
   string ft_buffer;
@@ -820,3 +819,128 @@ string CToFTypeFormatter::createFortranType(const string macroName, const string
   return ft_buffer;
 };
 
+// Given a string describing an integer like macro, determine what size modifier to
+// give to the corresponding Fortran type. The boolean value will be used to pass
+// back a failure if there are too many appearances of L or U
+string CToFTypeFormatter::DetermineIntegerType(const string integer_in, bool &invalid) {
+  invalid = false;
+  string instr = integer_in;
+  int total_l = 0;
+  int total_u = 0;
+  size_t found = instr.find_first_of("Ll");
+  // Count the number of appearnces of L or l in the string
+  while (found != std::string::npos) {
+    ++total_l;
+    found = instr.find_first_of("Ll", found+1);
+  }
+  // We ignore the signed specifiers, but make sure there
+  // are not too many of them.
+  found = instr.find_first_of("Uu");
+  while (found != std::string::npos) {
+    ++total_u;
+    found = instr.find_first_of("Uu", found+1);
+  } 
+  if (total_l > 2 || total_u > 1) {
+    invalid = true;
+    return "C_INVALID";
+  }
+  // Based on the number of "l" or "L" modifiers, determine the size
+  if (total_l == 1) {  // A single long modifier was found
+    return "C_LONG";
+  } else if (total_l == 2) {  // Two long modifiers were found
+    return "C_LONG_LONG";
+  }
+  return "C_INT";  // Integer size is the default.
+}
+
+// Similar to the function above, this will determine what size modifier to give
+// to the corresponding fortran type when presented with a double-like string value.
+// The boolean argument is used to pass failure information back if there are too
+// many appearances of L/l or U/u
+string CToFTypeFormatter::DetermineFloatingType(const string floating_in, bool &invalid) {
+  invalid = false;
+  string instr = floating_in;
+  int total_l = 0;
+  int total_u = 0;
+  int total_f = 0;
+  size_t found = instr.find_first_of("Ll");
+  // Count the number of appearnces of L or l in the string
+  while (found != std::string::npos) {
+    ++total_l;
+    found = instr.find_first_of("Ll", found+1);
+  }
+  // We ignore the signed specifiers, but make sure there
+  // are not too many of them.
+  found = instr.find_first_of("Uu");
+  while (found != std::string::npos) {
+    ++total_u;
+    found = instr.find_first_of("Uu", found+1);
+  }
+  // We count the appearances of f. There should only be one.
+  found = instr.find_first_of("Ff");
+  while (found != std::string::npos) {
+    ++total_f;
+    found = instr.find_first_of("Ff", found+1);
+  } 
+  // More than one float, long, or unsigned modifier is not supported.
+  if (total_f > 1 || total_u > 1 || total_l > 1) {
+    invalid = true;
+    return "C_INVALID";
+  }
+
+  // A long (L/l) combined with an float (f/F) is illegal
+  if (total_f == 1 && (total_l > 0)) {
+    invalid = true;
+    return "C_INVALID";
+  } else if (total_f > 0) {  // A float specifier is found.
+    return "C_FLOAT";
+  } else if (total_l > 0) {  // A long specifier is found.
+    return "C_LONG_DOUBLE";
+  }
+  return "C_DOUBLE";  // Double is the default. 
+}
+
+// This function removes questionable characters from an
+// integer string, things that should never be there.
+string CToFTypeFormatter::GroomFloatingType(const string in) {
+  // Erases parenthesis.
+  string val = in;
+  val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
+  val.erase(std::remove(val.begin(), val.end(), '('), val.end());
+  // Erase spaces
+  val.erase(std::remove(val.begin(), val.end(), ' '), val.end());
+  // Erase all F
+  val.erase(std::remove(val.begin(), val.end(), 'F'), val.end());
+  // Erase all f
+  val.erase(std::remove(val.begin(), val.end(), 'f'), val.end());
+  // Erase all U
+  val.erase(std::remove(val.begin(), val.end(), 'U'), val.end());
+  // Erase all u
+  val.erase(std::remove(val.begin(), val.end(), 'u'), val.end());
+  // Erase all l
+  val.erase(std::remove(val.begin(), val.end(), 'l'), val.end());
+  // Erase all L
+  val.erase(std::remove(val.begin(), val.end(), 'L'), val.end());
+  return val; 
+}
+
+// This function removes questionable characters from an integer
+// string, things that should never be there. It does not remove
+// f/F as in floating point because these are legal in hexadecimals.
+string CToFTypeFormatter::GroomIntegerType(const string in) {
+  // Erases parenthesis.
+  string val = in;
+  val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
+  val.erase(std::remove(val.begin(), val.end(), '('), val.end());
+  // Erase spaces
+  val.erase(std::remove(val.begin(), val.end(), ' '), val.end());
+  // Erase all U
+  val.erase(std::remove(val.begin(), val.end(), 'U'), val.end());
+  // Erase all u
+  val.erase(std::remove(val.begin(), val.end(), 'u'), val.end());
+  // Erase all l
+  val.erase(std::remove(val.begin(), val.end(), 'l'), val.end());
+  // Erase all L
+  val.erase(std::remove(val.begin(), val.end(), 'L'), val.end());
+  return val; 
+}

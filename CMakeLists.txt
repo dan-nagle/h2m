@@ -20,8 +20,10 @@ cmake_minimum_required(VERSION 3.2)
 project(h2m)
 
 # This is the option to link in all LLVM libraries in case of emergency.
+# Its default state is off.
 option(ALL "ALL" OFF)
-
+# Give system information.
+message(STATUS "Compiling for: ${CMAKE_SYSTEM_NAME}, ${CMAKE_SYSTEM_VERSION}, ${CMAKE_SYSTEM_PROCESSOR}")
 
 # Find the package for LLVM or else obtain paths to includes and library files
 find_package(LLVM CONFIG)
@@ -95,15 +97,15 @@ if(Clang_FOUND) # We found the config and can use its definitions
   find_path(AUX_CLANG_DIR_H NAMES ../tools/clang/include/clang/Basic/Version.h HINTS ${LLVM_INCLUDE_DIRS})
   if(IS_DIRECTORY "${AUX_CLANG_DIR_H}") 
     include_directories("${AUX_CLANG_DIR_H}/../tools/clang/include")
-    #DEBUGLINE message(STATUS "Including ${AUX_CLANG_DIR_H}/../tools/clang/include")
+    # DEBUGLINE message(STATUS "Including ${AUX_CLANG_DIR_H}/../tools/clang/include")
   endif()
   find_path(AUX_CLANG_DIR_INC NAMES ../tools/clang/include/clang/Basic/Version.inc HINTS ${LLVM_INCLUDE_DIRS})
   if(IS_DIRECTORY "${AUX_CLANG_DIR_INC}")
     include_directories("${AUX_CLANG_DIR_INC}/../tools/clang/include")
-    #DEBUGLINE message(STATUS "Including ${AUX_CLANG_DIR_INC}/../tools/clang/include")
+    # DEBUGLINE message(STATUS "Including ${AUX_CLANG_DIR_INC}/../tools/clang/include")
   endif()
-  #DEBUGLINE message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.h in ${LLVM_INCLUDE_DIRS}")
-  #DEBUGLINE message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.inc in ${LLVM_INCLUDE_DIRS}")
+  # DEBUGLINE message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.h in ${LLVM_INCLUDE_DIRS}")
+  # DEBUGLINE message(STATUS "Searched for ../tools/clang/include/clang/Basic/Version.inc in ${LLVM_INCLUDE_DIRS}")
 
   # If the include directories are defined (as they should be!) use those.
   # Double includes are not an issue as far as I can tell. CMake doesn't care

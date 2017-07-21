@@ -417,14 +417,14 @@ then
   then
     if [ "$CXX_COMPILER" != "" ]  # If an alternative compiler is given
     then
-      cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR" -DCMAKE_CXX_COMPILER="$CXX_COMPILER"
-    else 
+      cmake . -DCMAKE_CXX_COMPILER="$CXX_COMPILER" -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR"
+     else 
       cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DINSTALL_PATH="$INSTALL_H2M_DIR"
     fi
   else 
     if [ "$CXX_COMPILER" != "" ]
     then
-      cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm -DCMAKE_CXX_COMPILER="$CXX_COMPILER"
+      cmake . -DCMAKE_CXX_COMPILER="$CXX_COMPILER" -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm
     else
       cmake . -DClang_DIR="$download_dir"/build/lib/cmake/clang -DLLVM_DIR="$download_dir"/build/lib/cmake/llvm 
     fi

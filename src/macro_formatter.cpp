@@ -26,7 +26,7 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
     isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
   }
 
-  // source text is fetched using the Lexer
+  // The macros' source text is fetched using the Lexer
   macroName = Lexer::getSourceText(CharSourceRange::getTokenRange(MacroNameTok.getLocation(),
       MacroNameTok.getEndLoc()), SM, LangOptions(), 0);
   macroDef = Lexer::getSourceText(CharSourceRange::getTokenRange(mi->getDefinitionLoc(),
@@ -35,11 +35,12 @@ MacroFormatter::MacroFormatter(const Token MacroNameTok, const MacroDirective *m
   // strangely there might be a "(" follows the macroName for function macros,
   // remove it if there is
   if (macroName.back() == '(') {
-    //args.getOutput().os() << "unwanted parenthesis found, remove it \n";
     macroName.erase(macroName.size()-1);
   }
 
-  // get value for object macro
+  // get the value (number or char or string) for an object macro
+  // Note that this doesn't really work properly because of other forms
+  // of whitespace and all helpers also look for whitespace in macros.
   bool frontSpace = true;
   for (size_t i = macroName.size(); i < macroDef.size(); i++) {
     if (macroDef[i] != ' ') {
@@ -64,6 +65,9 @@ bool MacroFormatter::isFunctionLike() {
 // macros can be translated as functions or subroutines. However, it is not always possible
 // to translate a macro, in which case the line must be commented out. There is also an 
 // option that may be invoked to request that all function-like macros be commented out.
+// This option is caried out later. The status flag is set to show that the macro is
+// function like. The central error handling function will deal with commenting it out
+// if need be.
 string MacroFormatter::getFortranMacroASString() {
   string fortranMacro;
 
@@ -74,7 +78,7 @@ string MacroFormatter::getFortranMacroASString() {
     return "";
   } 
   if (!isInSystemHeader) {  // Keeps macros from system headers from bleeding into the file
-    // remove all tabs
+    // remove all tabs from the macro definition.
     macroVal.erase(std::remove(macroVal.begin(), macroVal.end(), '\t'), macroVal.end());
     // Warn about the presence of an illegal underscore at the beginning of a name.
     string actual_macroName = macroName;  // We may need to prepend h2m to the beginning.
@@ -85,7 +89,7 @@ string MacroFormatter::getFortranMacroASString() {
 
     // handle object first, this means definitions of parameters of int, char, double... types
     if (isObjectLike()) {
-      // analyze type
+      // analyze the macro's type and translate as appropriate
       if (!macroVal.empty()) {
         if (CToFTypeFormatter::isString(macroVal)) {
           fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+
@@ -94,56 +98,62 @@ string MacroFormatter::getFortranMacroASString() {
           fortranMacro = "CHARACTER("+ to_string(macroVal.size()-2)+
               "), parameter, public :: "+ macroName + " = " + macroVal + "\n";
         } else if (CToFTypeFormatter::isIntLike(macroVal)) {
-          // Unsigned or longs are not handled by h2m, so these lines are commented out
-          if (macroVal.find_first_of("ULul") != std::string::npos) {
-            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName + " = " +
-                macroVal + "\n";
-            current_status = CToFTypeFormatter::U_OR_L_MACRO;
+          // Will hold the type_needed of INTEGER(type_needed), parameter...
+          string type_specifier = "";
+          bool invalid = false;
+          type_specifier = CToFTypeFormatter::DetermineIntegerType(macroVal, invalid);
+          // invalid will be true if the proper type couldn't be detmined
+          if (invalid == true) {  // The specifiers cannot be handled.
+            current_status = CToFTypeFormatter::BAD_MACRO;
             error_string = actual_macroName + ", " + macroVal;
+            return macroDef;  // We can skip the name and line checks down below.
+          }
+          // Build up the part of the macro we already know
+          fortranMacro = "INTEGER(" + type_specifier + "), parameter, public :: ";
           // Handle hexadecimal constants (0x or 0X is discovered in the number)
-          } else if (CToFTypeFormatter::isHex(macroVal) == true) {
+          if (CToFTypeFormatter::isHex(macroVal) == true) {
             size_t x = macroVal.find_last_of("xX");
             string val = macroVal.substr(x+1);
             // Erases hypothetical parenthesis.
             val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
             val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName +
-                " = Z\'" + val + "\'\n";
+            fortranMacro += actual_macroName + " = Z\'" + val + "\'\n";
           // Handle a binary constant (0B or 0b is discovered in the number)
           } else if (CToFTypeFormatter::isBinary(macroVal) == true) {
             size_t b = macroVal.find_last_of("bB");
             string val = macroVal.substr(b+1);
-            // Erases hypothetical parenthesis.
-            val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
-            val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-            fortranMacro = "INTEGER(C_INT), parameter, public :: " + actual_macroName + " = B\'" +
-                val + "\'\n";
+            // Remove questionable characters from the number.
+            val = CToFTypeFormatter::GroomIntegerType(val);
+            fortranMacro += actual_macroName + " = B\'" + val + "\'\n";
           // We have found an octal number: 0####
           } else if (CToFTypeFormatter::isOctal(macroVal) == true) {
             string val = macroVal;
             // Remove the leading zero.
             val.erase(val.begin(), val.begin() + 1);
-            val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
-            val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-            fortranMacro = "INTEGER(C_INT), parameter, public :: " + actual_macroName + " = O\'" +
-                val + "\'\n";
+            // Remove questionable characters from the number.
+            val = CToFTypeFormatter::GroomIntegerType(val);
+            fortranMacro += actual_macroName + " = O\'" + val + "\'\n";
           } else {  // This is some other kind of integer like number.
             string val = macroVal;  // Create a mutable temporary string.
-            // Erase parenthesis if they are present.
-            val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
-            val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-            fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName +
-                " = " + val + "\n";
+            // Remove questionable characters from the number.
+            val = CToFTypeFormatter::GroomIntegerType(val);
+            fortranMacro += actual_macroName + " = " + val + "\n";
           }
         } else if (CToFTypeFormatter::isDoubleLike(macroVal)) {
-          // Letters F, U, or L indicate a type not easily translated
-          // thus it will be commented out later as part of error handling.
-          if (macroVal.find_first_of("FULful") != std::string::npos) {
+          string type_specifier = "";
+          bool invalid = false;
+          type_specifier = CToFTypeFormatter::DetermineFloatingType(macroVal, invalid);
+          // Some illegal modifiers have been discovered in the macro and
+          // we can't determine its type.
+          if (invalid == true) {
+            current_status = CToFTypeFormatter::BAD_MACRO;
             error_string = actual_macroName + ", " + macroVal;
-            current_status = CToFTypeFormatter::U_OR_L_MACRO;
+            return macroDef;
           }
-          fortranMacro = "REAL(C_DOUBLE), parameter, public :: "+ actual_macroName +
-              " = " + macroVal + "\n";
+          // Remove questionable characters from the decimal.
+          string val = CToFTypeFormatter::GroomFloatingType(macroVal);
+          fortranMacro = "REAL(" + type_specifier + "), parameter, public :: " +
+              actual_macroName + " = " + val + "\n";
         // Be aware that this may create multiline macros. All others
         // created here will be single line macros, so this can be a
         // surprise. This comes into play when someone types:
@@ -160,11 +170,6 @@ string MacroFormatter::getFortranMacroASString() {
         }
       } else { // The macro is empty, so, make the object a bool positive
         fortranMacro = "INTEGER(C_INT), parameter, public :: "+ actual_macroName  + " = 1\n";
-        // Check the length of the lines of all the empty macros prepared.
-        if (fortranMacro.length() >= CToFTypeFormatter::line_max + 1) {
-          current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
-          error_string = actual_macroName + ", " + fortranMacro;
-        }
       }
     } else {  // We are dealing with a function macro.
       // macroDef has the entire macro definition in it. Here the body of the macro

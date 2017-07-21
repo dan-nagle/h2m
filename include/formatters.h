@@ -164,6 +164,10 @@ public:
   static bool isHex(const string in_str);
   static bool isBinary(const string in_str);
   static bool isOctal(const string in_str);
+  static string DetermineIntegerType(const string integer_in, bool &invalid); 
+  static string DetermineFloatingType(const string integer_in, bool &invalid); 
+  static string GroomFloatingType(const string in);
+  static string GroomIntegerType(const string in);
 
   // This function emits a standard error relating to the frequent need
   // to prepend "h2m" to the front of an illegal identifier.
