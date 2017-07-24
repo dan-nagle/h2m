@@ -5,6 +5,8 @@
 #define my_long_long 10000000000LL
 #define my_u_long_long 10000000000llU
 #define my_float 25f
+#define exp_check .0075e5uL
+#define bad_exp .045e3E4
 #define my_other_float 90F
 #define my_long_float 100000000.0Lu
 #define my_illegal_float 1000.0LL
@@ -17,8 +19,8 @@
 #define my_oct_l_l 0424235LL
 #define my_bin_l 0b0101L
 #define my_bin_u 0b0101u
-#define my_bin_u_paren (0b1020u)
-#define my_bin_paren (0b1020)
+#define my_bin_u_paren (0b1010u)
+#define my_bin_paren (0b1010)
 #define illegal_1 343uu
 #define illegal_2 432LLLu
 #define illegal_3 0452lLuU

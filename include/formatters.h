@@ -158,16 +158,24 @@ public:
   // Here are functions to determine whether or not a macro resembles a given type.
   static bool isIntLike(const string input);
   static bool isDoubleLike(const string input);
+  // Does this macro define a new type?
   static bool isType(const string input);
+  // These functions help determine a macro's type
   static bool isString(const string input);
   static bool isChar(const string input);
   static bool isHex(const string in_str);
   static bool isBinary(const string in_str);
   static bool isOctal(const string in_str);
+  // This determines the fortran KIND for an integer-like macro.
   static string DetermineIntegerType(const string integer_in, bool &invalid); 
+  // This determines the fortran KIND for a flat like macro.
   static string DetermineFloatingType(const string integer_in, bool &invalid); 
+  // These static functions remove questionable characters
+  // from floats, integers, and hex types respectively to 
+  // help create macros.
   static string GroomFloatingType(const string in);
   static string GroomIntegerType(const string in);
+  static string GroomHexType(const string in);
 
   // This function emits a standard error relating to the frequent need
   // to prepend "h2m" to the front of an illegal identifier.

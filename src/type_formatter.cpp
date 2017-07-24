@@ -528,6 +528,7 @@ bool CToFTypeFormatter::isIntLike(const string input) {
     return true;
   } else {
     string temp = input;
+    // These are double like digits, unacceptable in an int-like
     size_t doubleF = temp.find_first_of(".eF");
     if (doubleF != std::string::npos) {
       return false;
@@ -552,17 +553,14 @@ bool CToFTypeFormatter::isIntLike(const string input) {
     // not acceptable in the string.
     if (!temp.empty()) {
       found = temp.find_first_of("UuLl()- ");
-      while (found != std::string::npos)
-      {
+      while (found != std::string::npos) {
         temp.erase(found, found+1);
         found=temp.find_first_of("UuLl()- ");
       }
-      // If it is empty after erasing suffixes, it is int like
-      // because it just contained digits and suffixes.
-      return temp.empty();
-    } else {
-      return false;
     }
+    // If it is empty after erasing suffixes, it is int like
+    // because it just contained digits and suffixes.
+    return temp.empty();
   }
 };
 
@@ -574,42 +572,30 @@ bool CToFTypeFormatter::isIntLike(const string input) {
 bool CToFTypeFormatter::isDoubleLike(const string input) {
   // "1.23", 1.18973149535723176502e+4932L
   string temp = input;
+  // If we can't find a digit, we know it's not double like
   size_t found = temp.find_first_of("01234567890");
   if (found==std::string::npos) {
     return false;
   }
-
-  while (found != std::string::npos)
-  {
+  // Erase all the digits from the string.
+  while (found != std::string::npos) {
     temp.erase(found, found+1);
     found=temp.find_first_of("01234567890");
   }
-  // Now that all the digits are erased, we look at the suffixes.
+  // Now that all the digits are erased, we look at the suffixes,
+  // e/E for exponents, . for decimals, and ()/+/- which may
+  // appear. Note that this isn't full-proof. It's more of a
+  // best guess.
   if (!temp.empty()) {
-    size_t doubleF = temp.find_first_of(".eFUL()+- ");
-    while (doubleF != std::string::npos)
-    {
+    size_t doubleF = temp.find_first_of(".eEfFuUlL()+- ");
+    while (doubleF != std::string::npos) {
       temp.erase(doubleF, doubleF+1);
-      doubleF=temp.find_first_of(".eFUL()+- ");
+      doubleF=temp.find_first_of(".eEfFuUlL()+- ");
     }
-    // If nothing remains after erasing the suffixes, we
-    // have found a double like entity.
-    return temp.empty();
-  } else {
-    return false;
   }
-  
-  if (!temp.empty()) {
-    found = temp.find_first_of(".eFL()- ");
-    while (found != std::string::npos)
-    {
-      temp.erase(found, found+1);
-      found=temp.find_first_of("xUL()- ");
-    }
-    return temp.empty();
-  } else {
-    return false;
-  }
+  // If nothing remains after erasing the suffixes, we
+  // have found a double like entity.
+  return temp.empty();
 };
 
 // Returns true if the string under consideration is
@@ -664,14 +650,9 @@ bool CToFTypeFormatter::isBinary(const string in_str) {
   if (input[0] == '0' && (input[1] == 'b' || input[1] == 'B')) {
     // Erase the 0b or 0B from the begining.
     input.erase(input.begin(), input.begin() + 2);
-    size_t found = input.find_first_of("01");
-    while (found != std::string::npos) {
-      if (found != 0) {  // The first digit should always be binary.
-        break;  // Leave the loop and check on the remainders.
-      } 
-      // Continue the iteration. It may be binary.
-      input.erase(found, found + 1);
-      found = input.find_first_of("01");
+    // Erase binary digits until none can be found.
+    while (input[0] == '0' || input[0] == '1') {
+      input.erase(input.begin(), input.begin() + 1);
     }
   } else {
     return false;
@@ -716,7 +697,7 @@ bool CToFTypeFormatter::isOctal(const string in_str) {
       input.erase(found, found + 1);
       found = input.find_first_of("01234567");
     }
-  } else {
+  } else {  // It does not begin with '0'.
     return false;
   }
   // Strip of unsigned or long specifiers
@@ -860,9 +841,10 @@ string CToFTypeFormatter::DetermineIntegerType(const string integer_in, bool &in
 string CToFTypeFormatter::DetermineFloatingType(const string floating_in, bool &invalid) {
   invalid = false;
   string instr = floating_in;
-  int total_l = 0;
-  int total_u = 0;
-  int total_f = 0;
+  int total_l = 0;  // Check long specifiers
+  int total_u = 0;  // Check unsigned specifiers
+  int total_f = 0;  // Check float type specifiers
+  int total_e = 0;  // This is th exponent specifier; we check for too many
   size_t found = instr.find_first_of("Ll");
   // Count the number of appearnces of L or l in the string
   while (found != std::string::npos) {
@@ -876,6 +858,13 @@ string CToFTypeFormatter::DetermineFloatingType(const string floating_in, bool &
     ++total_u;
     found = instr.find_first_of("Uu", found+1);
   }
+  // Now we count the number of appearances of e/E.
+  // There cannot be more than one.
+  found = instr.find_first_of("Ee");
+  while (found != std::string::npos) {
+    ++total_e;
+    found = instr.find_first_of("Ee", found+1);
+  }
   // We count the appearances of f. There should only be one.
   found = instr.find_first_of("Ff");
   while (found != std::string::npos) {
@@ -883,13 +872,14 @@ string CToFTypeFormatter::DetermineFloatingType(const string floating_in, bool &
     found = instr.find_first_of("Ff", found+1);
   } 
   // More than one float, long, or unsigned modifier is not supported.
-  if (total_f > 1 || total_u > 1 || total_l > 1) {
+  // More than one e/E exponenet specifier is illegal.
+  if (total_f > 1 || total_u > 1 || total_l > 1 || total_e > 1) {
     invalid = true;
     return "C_INVALID";
   }
 
   // A long (L/l) combined with an float (f/F) is illegal
-  if (total_f == 1 && (total_l > 0)) {
+  if (total_f > 0 && total_l > 0) {
     invalid = true;
     return "C_INVALID";
   } else if (total_f > 0) {  // A float specifier is found.
@@ -900,47 +890,52 @@ string CToFTypeFormatter::DetermineFloatingType(const string floating_in, bool &
   return "C_DOUBLE";  // Double is the default. 
 }
 
-// This function removes questionable characters from an
-// integer string, things that should never be there.
+// This function removes questionable characters from a
+// floating point string by culling anything that isn't a digit
+// or the '.' character, e/E or '-'.
 string CToFTypeFormatter::GroomFloatingType(const string in) {
-  // Erases parenthesis.
-  string val = in;
-  val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
-  val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-  // Erase spaces
-  val.erase(std::remove(val.begin(), val.end(), ' '), val.end());
-  // Erase all F
-  val.erase(std::remove(val.begin(), val.end(), 'F'), val.end());
-  // Erase all f
-  val.erase(std::remove(val.begin(), val.end(), 'f'), val.end());
-  // Erase all U
-  val.erase(std::remove(val.begin(), val.end(), 'U'), val.end());
-  // Erase all u
-  val.erase(std::remove(val.begin(), val.end(), 'u'), val.end());
-  // Erase all l
-  val.erase(std::remove(val.begin(), val.end(), 'l'), val.end());
-  // Erase all L
-  val.erase(std::remove(val.begin(), val.end(), 'L'), val.end());
+  string val = "";
+  // Search through the input string and retrieve all the numbers. 
+  // Also keep the '.' character.
+  int i = 0;
+  for (i = 0; i < in.length(); i++) {
+    // Check that each member is a digit. Add it on if it is.
+    // Also keep the '.', 'e'/'E' for exponents, and '-'.
+    if (isdigit(in[i]) || in[i] == '.' || in[i] == '-' ||
+        in[i] == 'e' || in[i] == 'E') {
+      val = val + in[i];
+    }
+  }
   return val; 
 }
 
 // This function removes questionable characters from an integer
-// string, things that should never be there. It does not remove
-// f/F as in floating point because these are legal in hexadecimals.
+// string by removing everything that is not a digit or '-'.
 string CToFTypeFormatter::GroomIntegerType(const string in) {
-  // Erases parenthesis.
-  string val = in;
-  val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
-  val.erase(std::remove(val.begin(), val.end(), '('), val.end());
-  // Erase spaces
-  val.erase(std::remove(val.begin(), val.end(), ' '), val.end());
-  // Erase all U
-  val.erase(std::remove(val.begin(), val.end(), 'U'), val.end());
-  // Erase all u
-  val.erase(std::remove(val.begin(), val.end(), 'u'), val.end());
-  // Erase all l
-  val.erase(std::remove(val.begin(), val.end(), 'l'), val.end());
-  // Erase all L
-  val.erase(std::remove(val.begin(), val.end(), 'L'), val.end());
+  int i = 0;
+  string val = "";
+  // Search through the input string and retrieve all the numbers.
+  for (i = 0; i < in.length(); i++) {
+    // Check that each member is a digit. Add it on if it is.
+    // Also keep the '-' character.
+    if (isdigit(in[i]) || in[i] == '-') {
+      val = val + in[i];
+    }
+  }
+  return val; 
+}
+
+// This function removes questionable characters from a
+// hexadecimal (removes EVERYTHING that isn't a hex character).
+string CToFTypeFormatter::GroomHexType(const string in) {
+  int i = 0;
+  string val = "";
+  // Search through the input string and add on only hex
+  // digits to the growing string.
+  for (i = 0; i < in.length(); i++) {
+    if (isxdigit(in[i])) {
+      val = val + in[i];
+    }
+  }
   return val; 
 }

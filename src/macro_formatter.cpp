@@ -114,9 +114,8 @@ string MacroFormatter::getFortranMacroASString() {
           if (CToFTypeFormatter::isHex(macroVal) == true) {
             size_t x = macroVal.find_last_of("xX");
             string val = macroVal.substr(x+1);
-            // Erases hypothetical parenthesis.
-            val.erase(std::remove(val.begin(), val.end(), ')'), val.end());
-            val.erase(std::remove(val.begin(), val.end(), '('), val.end());
+            // Strip val down to its pure hexadecimal digits.
+            val = CToFTypeFormatter::GroomHexType(val);
             fortranMacro += actual_macroName + " = Z\'" + val + "\'\n";
           // Handle a binary constant (0B or 0b is discovered in the number)
           } else if (CToFTypeFormatter::isBinary(macroVal) == true) {
