@@ -8,12 +8,13 @@
 // twice. This frequently happens with typedefs renaming structs.
 // This results in duplicate-name-declaration errors in Fortran
 // because there are no seperate name-look-up procedures for
-// "tag-names" as there are in C (ie in C typedef struct Point point
+// "tag-names" as there are in C (ie in C "typedef struct Point point"
 // is legal but in Fortran this causes conflicts.) A static map will
 // make sure that no typedef declares an already declared name.
 // If the name has already been seen, it returns false. If it hasn't,
 // it adds it to a set (will return false if called again with that
-// name) and returns true. It will also return true if the name is ""
+// name) and returns true. It will also return true if the name is "".
+// This is assumed to be a mistake of some kind.
 bool RecordDeclFormatter::StructAndTypedefGuard(string name) {
   static std::set<string> seennames;  // Records all identifiers seen.
   // This is insurance against accidental improper calling of
@@ -45,6 +46,7 @@ bool RecordDeclFormatter::StructAndTypedefGuard(string name) {
 TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r,
     Arguments &arg) : rewriter(r), args(arg) {
   typedefDecl = t;
+  // Initialize the object's status variables.
   current_status = CToFTypeFormatter::OKAY;
   error_string = "";
   isLocValid = typedefDecl->getSourceRange().getBegin().isValid();
@@ -63,13 +65,11 @@ TypedefDeclFormater::TypedefDeclFormater(TypedefDecl *t, Rewriter &r,
 // From a C typedef, a string representing a Fortran pseudo-typedef
 // is created. The fortran equivalent is a type with only one field. 
 // The name of this field is name_type (ie name_C_INT), depending 
-// on the type. Note that this function will be called for Structs
-// and Enums as well, but that they will be skipped and handled 
-// elsewhere (in recordDeclFormatter). A typedef with an illegal name 
+// on the type. A typedef with an illegal name 
 // will be prepended with "h2m" to become legal fortran. This function 
 // will check for name duplication. In the case that this is a
-// duplicate identifier, a string containing a comment will be returned
-// (no definition will be provided). Note that no bindname is allowed
+// duplicate identifier, the status will be set appropriately to
+// CToFTypeFormatter::DUPLICATE. Note that no bindname is allowed
 // because BIND(C, name="") is not permitted in a TYPE.
 string TypedefDeclFormater::getFortranTypedefDeclASString() {
   string typedef_buffer = "";
@@ -81,13 +81,14 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     string identifier = typedefDecl->getNameAsString();
     if (identifier.front() == '_') {  // This identifier has an illegal _ at the begining.
       CToFTypeFormatter::PrependError(identifier, args, sloc);
-      identifier = "h2m" + identifier;  // Prependdh2m to fix the problem.
+      identifier = "h2m" + identifier;  // Prepend h2m to fix the problem.
     }
     
     // Include the bindname, which may be empty, when assembling the definition.
     typedef_buffer = "TYPE, BIND(C) :: " + identifier + "\n";
     // Because names in typedefs may collide with the typedef name, 
     // suffixes are appended to the internal member of the typedef.
+    // This flag will indicate the presence of an unrecognized type.
     bool problem;
     string type_wrapper_name = tf.getFortranTypeASString(true, problem);
     string type_no_wrapper = tf.getFortranTypeASString(false, problem); 
@@ -95,6 +96,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       current_status = CToFTypeFormatter::BAD_TYPE;
       error_string = type_wrapper_name;
     }
+    // Give a special warning about the odd way in which typedefs are made.
     if (args.getSilent() == false) {
       errs() << "Warning: due to name collisions during typdef translation, " <<
           identifier;
@@ -102,14 +104,14 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
       CToFTypeFormatter::LineError(sloc);
     }
     string modified_name = identifier + "_" + type_no_wrapper;
-    string to_add = "    "+ type_wrapper_name + "::" + modified_name + "\n";
+    string to_add = "    " + type_wrapper_name + "::" + modified_name + "\n";
     // Set the flag to reflect a bad name length if necessary
     if (modified_name.length() > CToFTypeFormatter::name_max) {
       current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
       error_string = modified_name;
     }
     // Check for an illegal line length. Note that we add one to account for
-    // the newline character.
+    // the newline character which shouldn't cound against line length.
     if (to_add.length() > CToFTypeFormatter::line_max + 1) {
       current_status = CToFTypeFormatter::BAD_LINE_LENGTH;
       error_string = to_add;
@@ -148,13 +150,14 @@ EnumDeclFormatter::EnumDeclFormatter(EnumDecl *e, Rewriter &r,
 
 // From a C enumerated type, a fotran ENUM is created. The names are prepended
 // with h2m if they begin with an underscore. The function loops through all 
-// the members in the enumerator and adds them into place. Note that this can
-// resut in serious problems if the enumeration is too large. Note that there
+// the members in the enumerator and adds them into place. Note that therei
 // is no option to use a bind name here because it is not permitted to have
 // a BIND(C, name="") statement in an Enum.
 string EnumDeclFormatter::getFortranEnumASString() {
   string enum_buffer;
-  bool anon = false;  // The flag for an anonymous type to comment out
+  bool anon = false;  // The flag for an anonymous type.
+  // This is a hold over from an old function structure 
+  // and really should be made more elegant -Michelle
 
    // Keeps definitions in system headers from leaking into the translation.
    if (!isInSystemHeader) { 
@@ -162,10 +165,11 @@ string EnumDeclFormatter::getFortranEnumASString() {
 
     // We don't have a proper name. We must get another form of identifier.
     if (enumName.empty() == true) {
-      enumName = enumDecl-> getTypeForDecl()->
+      enumName = enumDecl->getTypeForDecl()->
           getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // This checks to make sure that this is not an anonymous enumeration
-      // This is not a problem, so we don't set a bad status.
+      // This is not a problem, so we don't set a bad status, we just
+      // deal with names slightly differently.
       if (enumName.find("anonymous at") != string::npos) {
         anon = true;  // Sets a bool to let us know that we have no name.
       }
@@ -176,16 +180,16 @@ string EnumDeclFormatter::getFortranEnumASString() {
       enumName = "h2m" + enumName;  // Prepend h2m to fix the problem
     }
 
-    // If there is no name, we don't add one on.
+    // If there is no name, we don't add one on to the 
+    // definition. Note that enums don't have "real" names
+    // in Fortran. The name is commented out.
     if (anon == false) {
       enum_buffer = "ENUM, BIND(C) ! " + enumName + "\n";
     } else {  // Handle a nameless enum as best we can.
       enum_buffer = "ENUM, BIND(C)\n";
     }
 
-    // enum_buffer += "    enumerator :: ";
-    // Removed when changes were made to allow unlimited enum length
-    // Cycle through the pieces of the enum and translate them into fortran
+    // Cycle through the pieces of the enum and translate them into fortran.
     for (auto it = enumDecl->enumerator_begin (); it != enumDecl->enumerator_end(); it++) {
       string constName = (*it)->getNameAsString ();
       if (constName.front() == '_') {  // The name begins with an illegal underscore.
@@ -194,13 +198,15 @@ string EnumDeclFormatter::getFortranEnumASString() {
       }
       int constVal = (*it)->getInitVal().getExtValue();  // Get the initialization value
       // Check for a valid name length. Note that the line can't be too 
-      // long unless the name is hopelessly too long.
+      // long unless the name is hopelessly too long so we only 
+      // chech for a name being too long. Set the status if
+      // necessary.
       if (constName.length() > CToFTypeFormatter::name_max) {
         current_status = CToFTypeFormatter::BAD_NAME_LENGTH;
         error_string = constName + ", ENUM member.";
       }
-      // We have seen this same name before, so we must comment out
-      //  the line and warn about it.
+      // If there is a duplicate identifier, set the flag to reflect
+      // the problem.
       if (RecordDeclFormatter::StructAndTypedefGuard(constName) == false) { 
         current_status = CToFTypeFormatter::DUPLICATE;
         error_string = constName + ", ENUM member.";
@@ -248,7 +254,7 @@ bool RecordDeclFormatter::isUnion() {
 };
 
 // tag_name is the name used as 'struct name' which C
-// stores in a seperate symbol table. Structs are usually
+// stores (essentially) in a seperate symbol table. Structs are usually
 // referred to by typedef provided, simpler names
 void RecordDeclFormatter::setTagName(string name) {
   tag_name = name;
@@ -273,7 +279,9 @@ string RecordDeclFormatter::getFortranFields() {
         CToFTypeFormatter::PrependError(identifier, args, sloc);
         identifier = "h2m" + identifier;
       }
-      bool problem = false;  // The helper function will set this error flag
+      // The helper function will set this error flag if it finds an 
+      // illegal type of any kind.
+      bool problem = false;
       fieldsInFortran += "    " + tf.getFortranTypeASString(true, problem) +
           " :: " + identifier + "\n";
       if (problem == true) {  // We have encountered an illegal type
@@ -294,25 +302,23 @@ string RecordDeclFormatter::getFortranFields() {
 // bindname is allowed because BIND(C, name="") statements are illegal in
 // a TYPE definition.
 string RecordDeclFormatter::getFortranStructASString() {
-  // initalize mode here
+  // Initialize the mode (ie is this a typedef, tag struct, ID struct, anonymous?)
   setMode();
   string identifier = "";  // Holds the Fortran name for this structure.
-  // A value of TRUE indicates that this declaration is okay. A value
-  // of false indicates that this is a repeated name and needs to be
-  // commented out.
-
   string rd_buffer;  // Holds the entire declaration.
 
   if (!isInSystemHeader) {  // Prevents system headers from leaking in to the file
-    string fieldsInFortran = getFortranFields();
-    if (fieldsInFortran.empty()) {
+    string fieldsInFortran = getFortranFields();  // Get the struct's pieces.
+    if (fieldsInFortran.empty()) {  // Warn about an empty struct.
       rd_buffer = "! struct without fields may cause warnings\n";
       if (args.getSilent() == false && args.getQuiet() == false) {
         errs() << "Warning: struct without fields may cause warnings: \n";
         CToFTypeFormatter::LineError(sloc);
       }
     }
-
+   
+    // Different modes require slightly different treatments to get the 
+    // proper name.
     if (mode == ID_ONLY) {
       identifier = recordDecl->getNameAsString();
       if (identifier.front() == '_') {  // Illegal underscore detected
@@ -320,7 +326,7 @@ string RecordDeclFormatter::getFortranStructASString() {
         identifier = "h2m" + identifier;  // Fix the problem by prepending h2m
       }
 
-      // Declare the structure in Fortran. The bindname may be empty.
+      // Declare the structure in Fortran.
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
     } else if (mode == TAG_ONLY) {
@@ -342,6 +348,8 @@ string RecordDeclFormatter::getFortranStructASString() {
       // Assemble the strucutre in Fortran. Note that bindname may be empty.
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";    
+    // This should never be called. Typedefs should be processed in their
+    // own places. This is for insurance.
     } else if (mode == TYPEDEF) {
       identifier = recordDecl->getTypeForDecl(
           )->getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
@@ -352,9 +360,8 @@ string RecordDeclFormatter::getFortranStructASString() {
 
       rd_buffer += "TYPE, BIND(C) :: " + identifier + "\n";
       rd_buffer += fieldsInFortran + "END TYPE " + identifier +"\n";
-    } else if (mode == ANONYMOUS) {  // No bindname options are specified for anon structs.
-      // Note that no length checking goes on here because there's no need. 
-      // This will all be commented out anyway.
+    // An anonymous strut may or may not have a declared name.
+    } else if (mode == ANONYMOUS) {
       identifier = recordDecl->getTypeForDecl()->
           getLocallyUnqualifiedSingleStepDesugaredType().getAsString();
       // Erase past all the spaces so that only the name remains (ie get 
@@ -376,10 +383,12 @@ string RecordDeclFormatter::getFortranStructASString() {
     }
     // Now that we are through processing structs of all types, we must check for the problems
     // require us to comment the struct out: duplicate names or invalid types.
+    // The lines that make up the struct were checked for length earlier, and a struct's
+    // first line cannot be too long unless the identifier is hopelessly too long.
 
     // Check to see whether we have declared something with this identifier before.
-    bool repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
-    if (repeat == false) {  // This indicates a duplicate
+    bool not_repeat = RecordDeclFormatter::StructAndTypedefGuard(identifier); 
+    if (not_repeat == false) {  // This indicates a duplicate
       current_status = CToFTypeFormatter::DUPLICATE;
       error_string = identifier + ", structured type.";
     }
@@ -394,7 +403,7 @@ string RecordDeclFormatter::getFortranStructASString() {
 
 // Determines what sort of struct we are dealing with. The differences seem
 // subtle to me. If you need to understand what these modes are, you will
-// have to play around with some structs. 
+// have to play around with some structs. -Michelle
 void RecordDeclFormatter::setMode() {
   // int ANONYMOUS = 0;
   // int ID_ONLY = 1;
@@ -413,7 +422,6 @@ void RecordDeclFormatter::setMode() {
     if (identifier.find(" ") != string::npos) {
       mode = ANONYMOUS;
     } else {
-      // is a identifier
       mode = TYPEDEF;
     }
     

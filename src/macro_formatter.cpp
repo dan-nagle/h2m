@@ -87,7 +87,8 @@ string MacroFormatter::getFortranMacroASString() {
       actual_macroName = "h2m" + macroName;
     }
 
-    // handle object first, this means definitions of parameters of int, char, double... types
+    // handle object first, this means definitions of parameters of int, char, double, 
+    // or macros functioning link typedefs
     if (isObjectLike()) {
       // analyze the macro's type and translate as appropriate
       if (!macroVal.empty()) {
@@ -99,6 +100,7 @@ string MacroFormatter::getFortranMacroASString() {
               "), parameter, public :: "+ macroName + " = " + macroVal + "\n";
         } else if (CToFTypeFormatter::isIntLike(macroVal)) {
           // Will hold the type_needed of INTEGER(type_needed), parameter...
+          // which might be C_INT, C_LONG, or C_LONG_LONG
           string type_specifier = "";
           bool invalid = false;
           type_specifier = CToFTypeFormatter::DetermineIntegerType(macroVal, invalid);
@@ -113,7 +115,7 @@ string MacroFormatter::getFortranMacroASString() {
           // Handle hexadecimal constants (0x or 0X is discovered in the number)
           if (CToFTypeFormatter::isHex(macroVal) == true) {
             size_t x = macroVal.find_last_of("xX");
-            string val = macroVal.substr(x+1);
+            string val = macroVal.substr(x+1);  // val is a mutable temporary
             // Strip val down to its pure hexadecimal digits.
             val = CToFTypeFormatter::GroomHexType(val);
             fortranMacro += actual_macroName + " = Z\'" + val + "\'\n";
@@ -124,7 +126,7 @@ string MacroFormatter::getFortranMacroASString() {
             // Remove questionable characters from the number.
             val = CToFTypeFormatter::GroomIntegerType(val);
             fortranMacro += actual_macroName + " = B\'" + val + "\'\n";
-          // We have found an octal number: 0####
+          // We have found an octal number: 0#### but not just '0'.
           } else if (CToFTypeFormatter::isOctal(macroVal) == true) {
             string val = macroVal;
             // Remove the leading zero.
@@ -141,9 +143,11 @@ string MacroFormatter::getFortranMacroASString() {
         } else if (CToFTypeFormatter::isDoubleLike(macroVal)) {
           string type_specifier = "";
           bool invalid = false;
+          // This helper will determine whether we should have the kind
+          // in Fortran be C_FLOAT, C_DOUBLE, or C_LONG_DOUBLE.
           type_specifier = CToFTypeFormatter::DetermineFloatingType(macroVal, invalid);
           // Some illegal modifiers have been discovered in the macro and
-          // we can't determine its type.
+          // we can't determine its type if invalid is true.
           if (invalid == true) {
             current_status = CToFTypeFormatter::BAD_MACRO;
             error_string = actual_macroName + ", " + macroVal;
@@ -158,10 +162,11 @@ string MacroFormatter::getFortranMacroASString() {
         // surprise. This comes into play when someone types:
         // "#define some_weird_thing int".
         } else if (CToFTypeFormatter::isType(macroVal)) {
-          // only support int short long char for now
+          // This only supports int short long char types for now
           fortranMacro = CToFTypeFormatter::createFortranType(actual_macroName,
                macroVal, sloc, args);
         // We do not know what to do with this object like macro, so we comment it out.
+        // We have no idea what type it is or what it defines.
         } else {
           current_status = CToFTypeFormatter::BAD_MACRO;
           error_string = actual_macroName + ", " + macroVal;
@@ -174,6 +179,13 @@ string MacroFormatter::getFortranMacroASString() {
       // macroDef has the entire macro definition in it. Here the body of the macro
       // is parsed out.
       current_status = CToFTypeFormatter::FUNC_MACRO;
+      // If we are going to comment out this definition, send back its
+      // C definition to be commented out. This gives the user more
+      // information to translate the macro by hand.
+      if (args.getHideMacros() == true) {
+        return macroDef;
+      }
+      // Parse out the body from the definition.
       size_t rParen = macroDef.find(')');
       string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
       fortranMacro = "INTERFACE\n";

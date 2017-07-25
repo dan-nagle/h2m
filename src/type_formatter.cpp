@@ -30,6 +30,10 @@ void CToFTypeFormatter::PrependError(const string identifier, Arguments& args,
 // translation. The error string and a call to LineError will be emitted if
 // the argument's value of quite and silent requires it. The error string should
 // be the text of the problem. A description will be added in.
+// The current_status is the status associated with the object that produced the error
+// and translation string. sloc is the location in the source files where
+// the translation began. args is the Arguments object associated with the 
+// current tool run.
 string CToFTypeFormatter::EmitTranslationAndErrors(status current_status, string
     error_string, string translation_string, PresumedLoc sloc, Arguments &args) {
   bool silent = args.getSilent();  // This is for ease of access.
@@ -45,82 +49,88 @@ string CToFTypeFormatter::EmitTranslationAndErrors(status current_status, string
     if (args.getHideMacros() == false) {
       return translation_string;  // No problem. Send the string right back.
     }
-    translation_string = "! Commenting out function like macro.\n" + 
-        translation_string;
+    translation_string = "Found function like macro.\n" + translation_string;
     error_string = "Warning: function like macro commented out: " + error_string;
     emit_errors = !silent;  // If not silent, emit errors.
     comment_out = true; 
   // If there is an unknown type we may want to comment it out.
   } else if (current_status == BAD_TYPE) {
-    if (args.getDetectInvalid() == false) {
-     emit_errors = !silent;  // Warn unless silenced. 
-     comment_out = false;
-     translation_string = "! Found illegal type in declaration.\n" + translation_string;
-    } else {  // We have been asked to comment these out in this case.
-      emit_errors = !silent; 
-      comment_out = true;
-      translation_string = "Commenting out illegal type.\n" + translation_string;
-    } 
-    // The error string should be the same.
+    emit_errors = !silent; 
+    // There is an option to disable commenting out of this type
+    // of problem. We check to see if that option has been invoked.
+    comment_out = args.ShouldCommentOut(BAD_TYPE);
+    translation_string = "Found illegal type.\n" + translation_string;
     error_string = "Warning: Unrecognized or illegal type found: " + error_string;
+  // An anonymous type has been discovered.
   } else if (current_status == BAD_ANON) {
     error_string = "Warning: anonymous type found:" + error_string;
-    translation_string = "Commenting out anonymous type.\n" + translation_string;
-    comment_out = true;  // Comment this out and usually warn about it.
+    translation_string = "Found anonymous type.\n" + translation_string;
+    comment_out = args.ShouldCommentOut(BAD_ANON);
     emit_errors = !silent;
+  // Deal with illegally long names and lines.
   } else if (current_status == BAD_LINE_LENGTH) {
-    comment_out = true;  // Comment this out and usually warn about it
+    comment_out = args.ShouldCommentOut(BAD_LINE_LENGTH);
     emit_errors = !silent;
     error_string = "Warning: line exceeding length maximum found: " + error_string;
-    translation_string = "Commenting out excessively long line.\n" + translation_string;
+    translation_string = "Found excessively long line.\n" + translation_string;
   } else if (current_status == BAD_NAME_LENGTH) {
-    comment_out = true;
+    comment_out = args.ShouldCommentOut(BAD_NAME_LENGTH);
     emit_errors = !silent;
     error_string = "Warning: name exceeding length maximum found: " + error_string;
-    translation_string = "Commenting out excessively long name.\n" + translation_string;
+    translation_string = "Found excessively long name.\n" + translation_string;
+  // Something went wrong translating a structure initialization.
   } else if (current_status == BAD_STRUCT_TRANS) {
     comment_out = true;
     emit_errors = !silent;  
     error_string = "Warning: stucture translation failure: " + error_string;
-    translation_string = "Commenting out structure translation failure.\n" +
+    translation_string = "Found structure translation failure.\n" +
         translation_string;
+  // This is an assumed size array in an illegal location.
   } else if (current_status == BAD_STAR_ARRAY) {
     comment_out = true;
     emit_errors = !silent;
     error_string = "Warning: bad use of variable size array: " + error_string;
-    translation_string = "Commenting out bad use of variable size array\n" +
+    translation_string = "Found bad use of variable size array\n" +
         translation_string; 
+  // An attempt to translate a variable has gone awry.
   } else if (current_status == UNKNOWN_VAR) {
     comment_out = true;
     emit_errors = !silent;
     error_string = "Warning: failed variable translation: " + error_string;
-    translation_string = "Commenting out bad variable translation.\n" + translation_string;
+    translation_string = "Found bad variable translation.\n" + translation_string;
+  // This is an internal error ie a nullpointer where one should not be.
   } else if (current_status == CRIT_ERROR) {
     comment_out = true;
     emit_errors = true;
     error_string = "Error during translation: " + error_string;
     translation_string = "Error during translation.\n" + translation_string;
+  // This is a holdover from when h2m could not translate long or
+  // unsigned macros. 
   } else if (current_status == U_OR_L_MACRO) {
     comment_out = true;
     emit_errors = !silent;
     error_string = "Warning: unsupported type in macro: " + error_string;
-    translation_string = "Commenting out unsupported macro type\n" + translation_string;
+    translation_string = "Found unsupported macro type\n" + translation_string;
+  // A duplicate identifier was discovered.
   } else if (current_status == DUPLICATE) {
-    comment_out = true;
+    // There is an option to not comment out this problem. 
+    // Check to see if it has been invoked.
+    comment_out = args.ShouldCommentOut(DUPLICATE);
     emit_errors = !silent;
-    error_string = "Warning: duplicate identifier commented out: " + error_string;
-    translation_string = "Commenting out duplicate identifier.\n" + translation_string;
+    error_string = "Warning: duplicate identifier detected: " + error_string;
+    translation_string = "Found duplicate identifier.\n" + translation_string;
   } else if (current_status == BAD_ARRAY) {
     comment_out = true;
     emit_errors = !silent;
     error_string = "Warning: failed translation of array: " + error_string;
-    translation_string = "Commenting out failed array translation.\n" + translation_string;
+    translation_string = "Found failed array translation.\n" + translation_string;
+  // An unrecognized macro type could not be translated.
   } else if (current_status == BAD_MACRO) {
     comment_out = true;
     emit_errors = !silent;
     error_string = "Warning: unrecognized macro type not translated: " + error_string;
-    translation_string = "Commenting out unrecongnized macro.\n" + translation_string;
-  } else {
+    translation_string = "Found unrecognized macro.\n" + translation_string;
+  } else {  // What sort of error is this?
     comment_out = true;
     emit_errors = !silent;
     error_string = "ERROR: unrecognized error code: " + error_string;
@@ -141,6 +151,11 @@ string CToFTypeFormatter::EmitTranslationAndErrors(status current_status, string
     for (std::string line; std::getline(in, line);) {
       translation_string += "! " + line + "\n";
     }
+  // If we are not commenting out the whole buffer, we need to comment out
+  // the first line in order to hide the error-explanation string which
+  // was added above.
+  } else {
+    translation_string = "! " + translation_string;
   }
   return translation_string;
 }
@@ -188,7 +203,7 @@ string CToFTypeFormatter::getFortranIdASString(string raw_id) {
 
 // This function is for use with arrays which are not initialized (usually).
 // This function will return the raw dimensions of an array as a comma separated
-// list. If requested on the command line, the dimensions will be reversed.
+// list "1, 2, 3". If requested on the command line, the dimensions will be reversed.
 // In the case that the array does not have constant dimensions, proper syntax
 // for an assumed shape array will be employed.
 string  CToFTypeFormatter::getFortranArrayDimsASString() {
@@ -442,13 +457,13 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
   // Translate a structure declaration. We will recieve
   // the declaration in the form "struct structname" and 
   // will have to deal with the space between the words.
-  // Unions have no interoperable Fortran incranation but they
+  // Unions have no interoperable Fortran incaranation but they
   // are translated as TYPE's and are handled here as well.
   } else if (c_qualType.getTypePtr()->isStructureType() ||
 	     c_qualType.getTypePtr()->isUnionType()) {
     f_type = c_qualType.getAsString();
 
-    // We need to somewhat deal with the potential of an anonymous struct
+    // We need to deal with the potential of an anonymous struct
     // or union. This will determine if that is the case by searching for
     // the string "anonymous" which is included in anon types.
     bool anon = false;
@@ -493,8 +508,8 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
     const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
     QualType e_qualType = at->getElementType ();
     // Call this function again on the type found inside the array
-    // declaration. This recursion will determine the correct type.
-    // There is another way to do this (getBaseElementType) but it works
+    // declaration. This recursion will determine the correct base type.
+    // There is another way to do this (getBaseElementType) but this works
     // so let sleeping dogs lie.
     CToFTypeFormatter etf(e_qualType, ac, sloc, args);
     f_type = etf.getFortranTypeASString(typeWrapper, problem);
@@ -503,7 +518,6 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
   } else {
     f_type = "WARNING_UNRECOGNIZED(" + c_qualType.getAsString()+")";
     problem = true;
-    // Warning only in the case of a typewrapper avoids repetitive error messages
   }
   return f_type;
 };
@@ -519,7 +533,7 @@ bool CToFTypeFormatter::isIntLike(const string input) {
   // "123L" "18446744073709551615ULL" "18446744073709551615UL" 
   
   if (std::all_of(input.begin(), input.end(), ::isdigit)) {
-    return true;
+    return true;  // All digits: this is an int of some kind
   } else if (isHex(input) == true) {  // This is a hexadecimal.
     return true;
   } else if (isBinary(input) == true) {  // This is a binary number.
@@ -529,7 +543,9 @@ bool CToFTypeFormatter::isIntLike(const string input) {
   } else {
     string temp = input;
     // These are double like digits, unacceptable in an int-like
-    size_t doubleF = temp.find_first_of(".eF");
+    // Note that F/f is alright in a hex number, but those have
+    // already been dealt with.
+    size_t doubleF = temp.find_first_of(".eFf");
     if (doubleF != std::string::npos) {
       return false;
     }    
@@ -537,7 +553,7 @@ bool CToFTypeFormatter::isIntLike(const string input) {
     // If there are no digits, it is not a number. Hex numbers might
     // have no digits, but those are dealt with above.
     size_t found = temp.find_first_of("01234567890");
-    if (found==std::string::npos) {
+    if (found == std::string::npos) {
       return false;
     }
 
@@ -585,7 +601,7 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
   // Now that all the digits are erased, we look at the suffixes,
   // e/E for exponents, . for decimals, and ()/+/- which may
   // appear. Note that this isn't full-proof. It's more of a
-  // best guess.
+  // best guess. Malicious numbers could fool it.
   if (!temp.empty()) {
     size_t doubleF = temp.find_first_of(".eEfFuUlL()+- ");
     while (doubleF != std::string::npos) {
@@ -605,7 +621,7 @@ bool CToFTypeFormatter::isDoubleLike(const string input) {
 bool CToFTypeFormatter::isHex(const string in_str) {
   string input = in_str;
   // Remove all leading spaces from the macro.
-  while (input[0] == ' ' || input[0] == '(' || input[0] == '-') {
+  while (input[0] == ' ' || input[0] == '(') {
     input.erase(input.begin(), input.begin() + 1);
   }
 
@@ -613,6 +629,7 @@ bool CToFTypeFormatter::isHex(const string in_str) {
     // Erase the 0x or 0X from the begining.
     input.erase(input.begin(), input.begin() + 2);
     size_t found = input.find_first_of("01234567890abcdefABCDEF");
+    // Loop through, erasing hex digits as they are found.
     while (found != std::string::npos) {
       if (found != 0) {  // The first digit should always be hex.
         break;  // Break out of the loop to inspect the remainders.
@@ -621,7 +638,7 @@ bool CToFTypeFormatter::isHex(const string in_str) {
       input.erase(found, found + 1);
       found = input.find_first_of("01234567890abcdefABCDEF");
     }
-  } else {
+  } else {  // The first digits did not match 0x or 0X
     return false;
   }
   // Strip of unsigned or long specifiers
@@ -644,7 +661,7 @@ bool CToFTypeFormatter::isHex(const string in_str) {
 bool CToFTypeFormatter::isBinary(const string in_str) {
   string input = in_str;
   // Remove all leading spaces from the macro.
-  while (input[0] == ' ' || input[0] == '(' || input[0] == '-') {
+  while (input[0] == ' ' || input[0] == '(') {
     input.erase(input.begin(), input.begin() + 1);
   }
   if (input[0] == '0' && (input[1] == 'b' || input[1] == 'B')) {
@@ -654,14 +671,13 @@ bool CToFTypeFormatter::isBinary(const string in_str) {
     while (input[0] == '0' || input[0] == '1') {
       input.erase(input.begin(), input.begin() + 1);
     }
-  } else {
+  } else {  // The first two digits are not 0b or 0B
     return false;
   }
   // Strip of unsigned or long specifiers
   if (input.empty() == false) {
     size_t found = input.find_first_of("UuLl() ");
-      while (found != std::string::npos)
-      {
+      while (found != std::string::npos) {
         input.erase(found, found+1);
         found=input.find_first_of("UuLl() ");
       }
@@ -678,7 +694,7 @@ bool CToFTypeFormatter::isBinary(const string in_str) {
 bool CToFTypeFormatter::isOctal(const string in_str) {
   string input = in_str;
   // Remove all leading spaces from the macro.
-  while (input[0] == ' ' || input[0] == '(' || input[0] == '-') {
+  while (input[0] == ' ' || input[0] == '(') {
     input.erase(input.begin(), input.begin() + 1);
   }
   // If the string is empty or just '0', it is not octal.
@@ -688,6 +704,13 @@ bool CToFTypeFormatter::isOctal(const string in_str) {
   if (input[0] == '0') {
     // Erase the 0 from the begining.
     input.erase(input.begin(), input.begin() + 1);
+    // This is the case if there were a 0U or 0L, which
+    // is not an octal digit, but might look like one.
+    if (isdigit(input[0]) == false) {
+      return false;
+    }
+
+    // Erase all the octal digits.
     size_t found = input.find_first_of("01234567");
     while (found != std::string::npos) {
       if (found != 0) {  // The first digit should always be octal..
@@ -720,9 +743,11 @@ bool CToFTypeFormatter::isOctal(const string in_str) {
 // which has no type.
 bool CToFTypeFormatter::isString(const string input) {
   string s = input;
+  // Strip off leading spaces.
   while (s[0] == ' ') {
     s = s.substr(1);
   }
+  // Check to make sure that there are enclosing quotes.
   if (s[0] == '\"' && s[s.size()-1] =='\"') {
     return true;
   }
@@ -734,9 +759,11 @@ bool CToFTypeFormatter::isString(const string input) {
 // how to translate a C macro which has no type.
 bool CToFTypeFormatter::isChar(const string input) {
   string s = input;
+  // Strip off leading spaces.
   while (s[0] == ' ') {
     s = s.substr(1);
   }
+  // Check to make sure there are enclosing quotes.
   if (s[0] == '\'' && s[s.size()-1] =='\'') {
     return true;
   }
@@ -841,10 +868,10 @@ string CToFTypeFormatter::DetermineIntegerType(const string integer_in, bool &in
 string CToFTypeFormatter::DetermineFloatingType(const string floating_in, bool &invalid) {
   invalid = false;
   string instr = floating_in;
-  int total_l = 0;  // Check long specifiers
-  int total_u = 0;  // Check unsigned specifiers
-  int total_f = 0;  // Check float type specifiers
-  int total_e = 0;  // This is th exponent specifier; we check for too many
+  int total_l = 0;  // Count long specifiers
+  int total_u = 0;  // Count unsigned specifiers
+  int total_f = 0;  // Count float type specifiers
+  int total_e = 0;  // This is th exponent specifier; we can't have more than one.
   size_t found = instr.find_first_of("Ll");
   // Count the number of appearnces of L or l in the string
   while (found != std::string::npos) {

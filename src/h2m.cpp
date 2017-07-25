@@ -17,9 +17,9 @@
 // structure requires this, otherwise you will have all sorts of
 // bizarre problems because it will think it has seen various module
 // names multiple times and start appending numbers to their names.
-// It keps track of modules seen in a static map and appends a number
+// It keeps track of modules seen in a static map and appends a number
 // to the end of duplicates to create unique names. It also adds
-// module_ to the front.
+// "module_" to the front.
 string Arguments::GenerateModuleName(string Filename) {
   // Map to keep track of the number of repeats seen.
   static std::map<string, int> repeats;
@@ -34,10 +34,12 @@ string Arguments::GenerateModuleName(string Filename) {
     filename = filename + "_" + std::to_string(append);  // Add _# to the end of the name
     // Note that module_ will be prepended to the name prior to returning the string.
     if (silent == false) {
-      errs() << "Warning: repeated module name module_" << oldfilename << " found, source is " << Filename;
+      errs() << "Warning: repeated module name module_" << oldfilename << 
+          " found, source is " << Filename;
       errs() << ". Name changed to module_" << filename << "\n";
     }
   } else {  // Record the first appearance of this module name
+    // If we see the same name again, we will append "_2" to the end.
     repeats[filename] = 2;
   }
   filename = "module_" + filename;  // Now check for illegal module name length
@@ -105,12 +107,15 @@ static cl::opt<bool> NoHeaders("no-system-headers", cl::cat(h2mOpts),
 static cl::alias NoHeaders2("n", cl::desc("Alias for -no-system-headers"), cl::cat(h2mOpts), 
     cl::aliasopt(NoHeaders));
 
+// This boolean option is to be used for source code files to specify that 
+// the tool should only translate that file's included headers.
 static cl::opt<bool> IgnoreThis("ignore-this", cl::cat(h2mOpts),
     cl::desc("Do not translate this file, only its included headers"));
 static cl::alias IgnoreThis2("i", cl::desc("Alias for -ignore-this"), cl::cat(h2mOpts), 
     cl::aliasopt(IgnoreThis));
 
-// Option to specify the compiler to use to test the output. No specification means no compilation.
+// Option to specify the compiler to use to test the output. No specification
+//  means no compilation.
 static cl::opt<string> Compiler("compile", cl::cat(h2mOpts), 
     cl::desc("Command to attempt compilation of the output file"));
 static cl::alias Compiler2("c", cl::desc("Alias for -compile"), cl::cat(h2mOpts), 
@@ -142,13 +147,6 @@ static cl::opt<bool> HideMacros("hide-macros", cl::cat(h2mOpts),
 static cl::alias HideMacros2("h", cl::cat(h2mOpts), cl::desc("Alias for -hide-macros"), 
     cl::aliasopt(HideMacros));
 
-// When unrecognized types are seen, or __va_list_tag, comment out
-// the entire declaration it is involved with.
-static cl::opt<bool> DetectUnrecognized("detect-unrecognized", cl::cat(h2mOpts),
-    cl::desc("Comment out lines with unrecognized or invalid types"));
-static cl::alias DetectUnrecognized2("d", cl::cat(h2mOpts), 
-    cl::desc("Alias for -detect-unrecognized"), cl::aliasopt(DetectUnrecognized));
-
 // Ignore all the clang tool errors and just link all the translated modules
 // together when working with a recursive run.
 static cl::opt<bool> LinkAll("link-all", cl::cat(h2mOpts),
@@ -156,17 +154,34 @@ static cl::opt<bool> LinkAll("link-all", cl::cat(h2mOpts),
 static cl::alias LinkAll2("l", cl::cat(h2mOpts), cl::desc("Alias for -link-all"),
     cl::aliasopt(LinkAll));
 
+// These five options define requets to NOT comment out errors which h2m
+// normal checks for. The five error types to be ignored if their respective
+// options are turned on are: BAD_NAME_LENGTH, BAD_LINE_LENGTH, BAD_TYPE,
+// BAD_ANON, and DUPLICATE
+static cl::opt<bool> IgnoreName("ignore-name-length", cl::cat(h2mOpts),
+    cl::desc("Do not comment out illegally long names"));
+static cl::opt<bool> IgnoreLine("ignore-line-length", cl::cat(h2mOpts),
+    cl::desc("Do not comment out illegally long lines"));
+static cl::opt<bool> IgnoreType("ignore-type", cl::cat(h2mOpts),
+    cl::desc("Do not comment out unrecognized types"));
+static cl::opt<bool> IgnoreAnon("ignore-anon", cl::cat(h2mOpts),
+    cl::desc("Do not comment out anonymous type definitions"));
+static cl::opt<bool> IgnoreDuplicate("ignore-duplicate", cl::cat(h2mOpts),
+    cl::desc("Do not comment out duplicate identifiers"));
+
 // These are the argunents for the clang compiler driver.
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
 
-//-----------AST visit functions----------------------------------------------------------------------------------------------------
+//-----------AST visit functions------------------------------------------------------
 
 // This function does the work of determining what the node currently under traversal
 // is and creating the proper object-translation object to handle it.
 bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
+  // Handle all the potential declarations which might appear
+  // in a header file.
   if (isa<TranslationUnitDecl> (d)) {
-    // tranlastion unit decl is the top node of all AST, ignore the inner structure of tud for now
+    // tranlastion unit decl is the top node of all of the AST
     RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
 
   } else if (isa<FunctionDecl> (d)) {
@@ -181,13 +196,16 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
         args.getTogether() == true) {
       FunctionDeclFormatter fdf(cast<FunctionDecl> (d), TheRewriter, args);
       string function_raw = fdf.getFortranFunctDeclASString();
+      // Functions are put at the end of the module and are stored as a 
+      // very long string until they are emitted.
+      // Note the function EmitTranslationAndErrors, which will inspect the
+      // status and string returned by the translation object, taking into 
+      // acount arguments, to determine what errors (if any) to print and
+      // whether the translated text should be emitted at all.
       allFunctionDecls += CToFTypeFormatter::EmitTranslationAndErrors(fdf.getStatus(),
           fdf.getErrorString(), function_raw, fdf.getSloc(), args);
     }
     
-    // args.getOutput().os() << "INTERFACE\n" 
-    // << fdf.getFortranFunctDeclASString()
-    // << "END INTERFACE\n";      
   } else if (isa<TypedefDecl> (d)) {
     // Keep included header files out of the mix by checking the location.
     // If we are asked to provide all includes together in one module,
@@ -197,6 +215,8 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
       TypedefDecl *tdd = cast<TypedefDecl> (d);
       TypedefDeclFormater tdf(tdd, TheRewriter, args);
       string typedef_raw = tdf.getFortranTypedefDeclASString();
+      // Determine whether to comment out text and what errors to print
+      // if any.
       args.getOutput().os() << CToFTypeFormatter::EmitTranslationAndErrors(tdf.getStatus(),
           tdf.getErrorString(), typedef_raw, tdf.getSloc(), args);
     }
@@ -204,6 +224,7 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
   } else if (isa<RecordDecl> (d)) {
     // Keep included header files out of the mix by checking the location
     // Record decls are things like structs and unions.
+    // Handle a request to put all code in one module as usual.
     if (TheRewriter.getSourceMgr().isInMainFile(d->getLocation()) ||
         args.getTogether() == true) {
       RecordDecl *rd = cast<RecordDecl> (d);
@@ -246,10 +267,8 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
       RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d);
     }
   }
-    // comment out because function declaration doesn't need to be traversed.
-    // RecursiveASTVisitor<TraverseNodeVisitor>::TraverseDecl(d); // Forward to base class
 
-    return true; // Return false to stop the AST analyzing
+  return true; // Return false to stop the AST analyzing
 
 };
 
@@ -259,8 +278,10 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 // necessary.
 bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
   string stmtText;
-  string stmtSrc = Lexer::getSourceText(CharSourceRange::getTokenRange(x->getLocStart(), x->getLocEnd()), TheRewriter.getSourceMgr(), LangOptions(), 0);
-  // comment out stmtText
+  // Get the statement text from the Lexer.
+  string stmtSrc = Lexer::getSourceText(CharSourceRange::getTokenRange(x->getLocStart(), 
+      x->getLocEnd()), TheRewriter.getSourceMgr(), LangOptions(), 0);
+  // comment out stmtText using a string stream to add ! after every newline
   std::istringstream in(stmtSrc);
   for (std::string line; std::getline(in, line);) {
     // Output warnings about commented out statements only if a loud run is in progress.
@@ -270,13 +291,17 @@ bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
     }
     stmtText += "! " + line + "\n";
   }
+  // Output the commented out text into the translated file.
   args.getOutput().os() << stmtText;
 
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseStmt(x);
+  // Continue traversing the AST.
   return true;
 };
+
 // Currently, there are no attempts made to traverse and translate types 
 // into Fotran. This method simply comments out the declaration.
+// These are believed to always be one line long.
 bool TraverseNodeVisitor::TraverseType(QualType x) {
   string qt_string = "!" + x.getAsString();
   args.getOutput().os() << qt_string;
@@ -284,10 +309,15 @@ bool TraverseNodeVisitor::TraverseType(QualType x) {
     errs() << "Warning: type " << qt_string << " commented out.\n";
   }
   RecursiveASTVisitor<TraverseNodeVisitor>::TraverseType(x);
+  // Continue traversing the AST
   return true;
 };
 
 //---------------------------Main Program Class Functions---------
+// Whenever a macro is defined, this function is called. It will call
+// the heleprs to get the macro's definition. The EmitTranslationAndErrors
+// function will then determine what errors to emit (if any) given the
+// object's status, and whether to comment out the text.
 void TraverseMacros::MacroDefined (const Token &MacroNameTok, const MacroDirective *MD) {
     MacroFormatter mf(MacroNameTok, MD, ci, args);
     string raw_macro = mf.getFortranMacroASString();
@@ -303,7 +333,9 @@ void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
 
   Visitor.TraverseDecl(Context.getTranslationUnitDecl());
 
-  // wrap all func decls in a single interface
+  // wrap all func decls in a single interface. The Visitor
+  // has kept track of functions in string form, waiting to
+  // output them all at once.
   if (!Visitor.allFunctionDecls.empty()) {
     args.getOutput().os() << "INTERFACE\n" 
     << Visitor.allFunctionDecls
@@ -327,22 +359,21 @@ bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef F
   beginSourceModule += "implicit none\n";
   args.getOutput().os() << beginSourceModule;
 
+  // Arrange for the preprocessor to record the definitions of macros.
   Preprocessor &pp = ci.getPreprocessor();
   pp.addPPCallbacks(llvm::make_unique<TraverseMacros>(ci, args));
   return true;
 }
 
-// Executed when a source file is finished. This allows the boiler plate required for the end of
-// a fotran module to be added to the file.
+// Executed when a source file is finished. This allows the boiler plate required 
+// for the end of a fotran module to be added to the file.
 void TraverseNodeAction::EndSourceFileAction() {
-    //Now emit the rewritten buffer. // This approach was abandoned -Michelle
-    //TheRewriter.getEditBuffer(TheRewriter.getSourceMgr().getMainFileID()).write(args.getOutput().os());
-
-    string endSourceModle;
-    endSourceModle = "END MODULE " + args.getModuleName() + "\n";
-    args.getOutput().os() << endSourceModle;
+    string endSourceModule;
+    endSourceModule = "END MODULE " + args.getModuleName() + "\n";
+    args.getOutput().os() << endSourceModule;
   }
 
+// Begin the execution of the h2m tool.
 int main(int argc, const char **argv) {
   if (argc > 1) {
     // Parse the command line options and create a new database to hold the Clang compilation
@@ -367,13 +398,13 @@ int main(int argc, const char **argv) {
       errs() << "Warning: request for all local includes to be sent to a single file accompanied\n";
       errs() << "by recursive translation (-t and -r) may result in multiple declaration errors.\n";
     }
-    // Determine file to open and initialize it. Wrtie to stdout if no file is given.
+    // Determine file to open and initialize it. Write to stdout if no file is given.
     string filename;
     std::error_code error;
     if (OutputFile.size()) {
       filename = OutputFile;
     } else {
-      filename = "-";
+      filename = "-";  // This will send output to stdout.
     }
     // The file is opened in text mode
     llvm::tool_output_file OutputFile(filename, error, llvm::sys::fs::F_Text);
@@ -382,11 +413,15 @@ int main(int argc, const char **argv) {
       return(1);  // We can't possibly keep going if the file can't be opened.
     }
     if (Optimistic == true) {  // Keep all output inspite of errors
-      OutputFile.keep();
+      OutputFile.keep();  // We have to call this in order for the file to be permanent.
     }
-    // Create an object to pass around arguments
+    // Create an object to pass around arguments. This object will hold
+    // the name of the current file processed as well as information about
+    // what to include, how to warn, and what problems should not be commented
+    // out (the various IgnoreSomething parameters).
     Arguments args(Quiet, Silent, OutputFile, NoHeaders, Together, Transpose,
-        Autobind, HideMacros, DetectUnrecognized);
+        Autobind, HideMacros, IgnoreName, IgnoreLine, IgnoreType, IgnoreAnon,
+        IgnoreDuplicate);
 
 
     // Create a new clang tool to be used to run the frontend actions
@@ -399,7 +434,7 @@ int main(int argc, const char **argv) {
     OutputFile.os() << "Tool.\n! See the h2m README file for credits and help information.\n\n";
 
     // Follow the preprocessor's inclusions to generate a recursive 
-    // order of hearders to be translated and linked by "USE" statements
+    // order of headers to be translated and linked by "USE" statements
     if (Recursive) {
       std::stack<string> stackfiles;
       // CHS means "CreateHeaderStack." 
@@ -416,11 +451,17 @@ int main(int argc, const char **argv) {
         } else if (stackfiles.empty() == true) {  // Whatever happend is not recoverable.
           errs() << "Unrecoverable initialization error. No files recorded to translate.\n";
           return(initerrs);
-        } else {
+        } else {  // Because we are optimistic and the error isn't hopeless, continue.
           errs() << "Optimistic run continuing.\n";
         }
       }
 
+      // The algorithm for sorting the order is as follows:
+      // 1. Every time the preprocessor changes to a new file, add that file to
+      //    the top of a stack.
+      // 2. Empty that stack. Every time a file is encountered for the first
+      //    time, add it to the top of a new stack
+      // 3. Use the new stack to give the translation order.
 
       // This set keeps track of which files have been seen so far.
       std::set<string> setfiles;
@@ -451,13 +492,13 @@ int main(int argc, const char **argv) {
         if (sorted_headers.empty() && IgnoreThis == true) {
           break;  // Leave the module processing while loop.
         }
-  
 
-        ClangTool stacktool(*Compilations, headerfile);  // Create a tool to run on each file in turn
+        // Create a tool to run on each file in turn
+        ClangTool stacktool(*Compilations, headerfile);  
         TNAFrontendActionFactory factory(modules_list, args);
-        // modules_list is the growing string of previously translated modules this module may depend on
-        // Run the translation tool.
-        tool_errors = stacktool.run(&factory);
+        // modules_list is the growing string of previously translated modules this
+        // module may depend on
+        tool_errors = stacktool.run(&factory);  // Run the translation tool.
 
         if (tool_errors != 0) {  // Tool error occurred
           if (Silent == false) {  // Do not report the error if the run is silent.

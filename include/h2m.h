@@ -15,7 +15,8 @@
 // Main class which works to translate the C to Fortran by calling helpers.
 // It performs actions to translate every node in the AST. It keeps track
 // of all seen functions so that it can put them together after the vars, macros 
-// and structures are translated.
+// and structures are translated, so it can wrap them in a sincle "interface"
+// statement.
 class TraverseNodeVisitor : public RecursiveASTVisitor<TraverseNodeVisitor> {
 public:
   TraverseNodeVisitor(Rewriter &R, Arguments& arg) :
@@ -26,42 +27,46 @@ public:
   bool TraverseDecl(Decl *d);
   bool TraverseStmt(Stmt *x);
   bool TraverseType(QualType x);
-  // All the function declarations processed so far in this AST.
+  // All the function declarations processed so far in this AST are kept in 
+  // a string to be emitted later. This should be private -Michelle
   string allFunctionDecls;
 
 private:
+  // This is no longer used for rewriting, only to get the SourceManager.
   Rewriter &TheRewriter;
   // Additional translation arguments (ie quiet/silent) from the action factory
   Arguments &args;
 };
 
-// Traces the preprocessor as it moves through files and records the inclusions in a stack
-// using a set to keep track of files already seen. This allows them to be translated in
-// the reverse order of inclusions so dependencies can be maintained. This is used for the
-// recursive -r option of h2m.
+// Traces the preprocessor as it moves through files and records the inclusions in a stack.
+// From the stack, the main program will be able to create an approximate order of 
+// dependencies in which to translate these files when making a recursive run.
+// Every time the preprocessor changes files, that new file is added onto the stack.
 class TraceFiles : public PPCallbacks {
 public:
   TraceFiles(CompilerInstance &ci, std::stack<string>& filesstack, Arguments& arg) :
   ci(ci), stackfiles(filesstack), args(arg) { }
 
-  // Writes into the stack if a new file is entered by the preprocessor and the file does
-  // not yet exist in the set, thus creating an exclusive reverse-ordered stack.
+  // Writes into the stack if a new file is entered by the preprocessor.
   void FileChanged(clang::SourceLocation loc, clang::PPCallbacks::FileChangeReason reason,
         clang::SrcMgr::CharacteristicKind filetype, clang::FileID prevfid) override {
 
     // We have found a system header and have been instructured to skip it, so we move along
+    // Before checking this, check that the location is valid at all.
     if (loc.isValid() == false) {
       return;  // We are not in a valid file. Don't include it. It's probably an error.    
-    } else if (ci.getSourceManager().isInSystemHeader(loc) == true && args.getNoSystemHeaders() == true) {
+    } else if (ci.getSourceManager().isInSystemHeader(loc) == true &&
+        args.getNoSystemHeaders() == true) {
       return;
     }
     // This is already guarded by the loc.isValid() above so we know that loc is valid when we ask this
     clang::PresumedLoc ploc = ci.getSourceManager().getPresumedLoc(loc);
     string filename = ploc.getFilename();
-    if (filename.find("<built-in>") != string::npos || filename.find("<command line>") != string::npos) {
+    if (filename.find("<built-in>") != string::npos || 
+        filename.find("<command line>") != string::npos) {
        // These are not real files. They may be called something else on other platforms, but
        // this was the best way I could think to try to get rid of them. They should not be
-       // translated in a recursive run. They do not actually exist. This doesn't actually fix the problem.
+       // translated in a recursive run. They do not actually exist.
        return;
      } else {  // Add the file to the stack
       stackfiles.push(filename);
@@ -70,7 +75,7 @@ public:
 
 private:
   CompilerInstance &ci;
-  // Order data structure to keep track of the order the files were seen in
+  // Order data structure to keep track of the order the files were seen by the preprocessor.
   std::stack<string>& stackfiles;
   Arguments &args;
 };
@@ -85,9 +90,9 @@ public:
   virtual void HandleTranslationUnit(clang::ASTContext &Context) {}
 };
 
-// Action to follow the preprocessor and create a stack of files to be dealt with
-// and translated into fortran in the order seen so as to have the proper order
-// of USE statements in recursive processing.
+// This is the action to follow the preprocessor and create a stack of files to be 
+// used to determine the order in which to translate files during a recursive
+// run of the tool (who is liked to who by USE statements?).
 class CreateHeaderStackAction : public clang::ASTFrontendAction {
 public:
   CreateHeaderStackAction(std::stack<string>& filesstack, Arguments &arg) :
@@ -104,7 +109,9 @@ public:
 
   // This is a dummy. For some reason or other, in order to get the action to
   // work, I had to use an ASTFrontendAction (PreprocessorOnlyAction did not
-  // work) thus this method has to exist (it is pure virtual).
+  // work) thus this method has to exist (it is pure virtual). If you 
+  // can get PreprocessorOnlyAction to work, feel free to fix this, otherwise just
+  // ignore it.
   std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
     clang::CompilerInstance &Compiler, llvm::StringRef InFile) override {
     return llvm::make_unique<InactiveNodeConsumer>();
@@ -117,9 +124,9 @@ private:
   Arguments &args;
 };
 
-// Factory to run the preliminary preprocessor file tracing action defined above;
-// determines the order to recursively translate header files with the help
-// or a set and a stack
+// This is the factory to run the preliminary preprocessor file tracing action
+// defined above; determines the order to recursively translate header files
+// with the help or a set and a stack
 class CHSFrontendActionFactory : public FrontendActionFactory {
 public:
   CHSFrontendActionFactory(std::stack<string>& stackfiles, Arguments &arg) :
@@ -148,9 +155,10 @@ class TraverseMacros : public PPCallbacks {
 public:
 
   explicit TraverseMacros(CompilerInstance &ci, Arguments &arg)
-  : ci(ci), args(arg) {}//, SM(ci.getSourceManager()), pp(ci.getPreprocessor()),
+  : ci(ci), args(arg) {}
 
-  // Call back to translate each macro when it is defined
+  // Call back to translate each macro when it is defined. This function
+  // is called to do the translation work.
   void MacroDefined (const Token &MacroNameTok, const MacroDirective *MD); 
 private:
   CompilerInstance &ci;
@@ -160,9 +168,10 @@ private:
 
   //-----------the main program----------------------------------------------------------------------------------------------------
 
-// The class which begins the translation process. HandleTranslationUnit
+// This is the class which begins the translation process. HandleTranslationUnit
 // is the main entry into the Clang AST. TranslationUnit is the overarching
-// unit found in each AST.
+// unit found in each AST. Note that nodes in the AST do NOT have a common
+// ancestor, thus they have this special function as an entry to the AST.
 class TraverseNodeConsumer : public clang::ASTConsumer {
 public:
   TraverseNodeConsumer(Rewriter &R, Arguments &arg) : Visitor(R, arg), args(arg)  {}
@@ -172,13 +181,13 @@ public:
   virtual void HandleTranslationUnit(clang::ASTContext &Context);
 
 private:
-// A RecursiveASTVisitor implementation.
+  // A RecursiveASTVisitor implementation to visit and translate nodes.
   TraverseNodeVisitor Visitor;
   // Additional arguments passed in from the action factory (quiet/silent)
   Arguments &args;
 };
 
-// Main translation action to be carried out on a C header file.
+// This is the main translation action to be carried out on a C header file.
 // This class defines all the actions to be carried out when a
 // source file is processed, including what to put at the start and
 // the end (the MODULE... END MODULE boilerplate).
@@ -188,10 +197,15 @@ public:
   TraverseNodeAction(string to_use, Arguments &arg) :
        use_modules(to_use), args(arg) {}
 
-  // // for macros inspection
+  // This function is used to paste boiler-plate needed at the beginning of
+  // every Fortran module. Note that the prototype for this function was
+  // changed after LLVM 4.0 in a way that is completley incompatible with
+  // this implementation (it no longer takes StringRef Filename).
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override;
 
-  // Action at the completion of a source file traversal, after code translation
+  // This action at the completion of a source file traversal, after code translation
+  // appends in the collected functions wrapped in an interface and closes the 
+  // module.
   void EndSourceFileAction() override;
 
   // Returns an AST consumer which does the majority of the translation work.

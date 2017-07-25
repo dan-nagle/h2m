@@ -4,7 +4,8 @@
 #include "h2m.h"
 
 // -----------initializer FunctionDeclFormatter--------------------
-FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
+FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, 
+    Arguments &arg) : rewriter(r), args(arg) {
   error_string = "";
   funcDecl = f;
   current_status = CToFTypeFormatter::OKAY;
@@ -13,8 +14,10 @@ FunctionDeclFormatter::FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Argum
   // Because sloc is checked for validity prior to use, this should be a fine way to deal with
   // invalid locations
   if (funcDecl->getSourceRange().getBegin().isValid()) {
-    sloc = rewriter.getSourceMgr().getPresumedLoc(funcDecl->getSourceRange().getBegin());
-    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(funcDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(
+        funcDecl->getSourceRange().getBegin());
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(
+        funcDecl->getSourceRange().getBegin());
   } else {
     isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header
   }
@@ -30,7 +33,8 @@ string FunctionDeclFormatter::getParamsTypesASString() {
   // loop through all arguments of the function, determine 
   // their types, and add them into the set.
   for (auto it = params.begin(); it != params.end(); it++) {
-    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
+    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(),
+        sloc, args);
     bool problem = false;
     // The flag will indicate a bad type.
     string type_no_wrapper = tf.getFortranTypeASString(false, problem);
@@ -70,6 +74,8 @@ string FunctionDeclFormatter::getParamsTypesASString() {
     paramsType += *iter + ", ";
   }
   // Erase the extra ", " added on in the last iteration.
+  // If there were no arguments and it was a subroutine, the
+  // string may be empty.
   if (paramsType.length() > 2) {  // Protect against an empty string.
     paramsType.erase(paramsType.end() - 2, paramsType.end());
   }
@@ -101,13 +107,15 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       error_string = pname + ", function parameter.";
     }
     
-    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(), sloc, args);
+    CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(),
+        sloc, args);
 
     // Array arguments must be handled diferently. They need the DIMENSION attribute.
     if (tf.isArrayType() == true) {
       paramsDecl += "    " + tf.getFortranArrayArgASString(pname) + "\n";
     } else {
-      // In some cases parameter doesn't have a name in C, but must have one by the time we get here.
+      // In some cases parameter doesn't have a name in C, but must have one by
+      //  the time we get here.
       bool problem = false;
       string type_wrapped = tf.getFortranTypeASString(true, problem);
       if (problem == true) {  // We have seen an unrecognized type
@@ -115,7 +123,8 @@ string FunctionDeclFormatter::getParamsDeclASString() {
         error_string = type_wrapped + ", parameter type.";
       }
       paramsDecl += "    " + type_wrapped + ", value" + " :: " + pname + "\n";
-      // need to handle the attribute later - Michelle doesn't know what this (original) commment means 
+      // need to handle the attribute later - Michelle doesn't know what this 
+      // (original) commment means 
     }
     // Similarly, check the length of the declaration line to make sure it is valid Fortran.
     // Note that the + 1 in length is to account for the newline character.
@@ -141,17 +150,19 @@ string FunctionDeclFormatter::getParamsNamesASString() {
     if (it == params.begin()) {
       // if the param name is empty, rename it to arg_index
       //uint64_t  getTypeSize (QualType T) const for array!!!
+      // -Michelle doesn't know what that second line means.
       string pname = (*it)->getNameAsString();
       if (pname.empty()) {
         pname = "arg_" + to_string(index);
       }
       if (pname.front() == '_') {  // Illegal character. Append a prefix.
+        // Note we only call this here to avoid multiple warnings.
         CToFTypeFormatter::PrependError(pname, args, sloc);
         pname = "h2m" + pname;
       }
       paramsNames += pname;
     } else { // parameters in between
-      // if the param name is empty, rename it to arg_index
+      // if the param name is empty, rename it to "arg_index"
       string pname = (*it)->getNameAsString();
       if (pname.empty()) {
         pname = "arg_" + to_string(index);
@@ -168,7 +179,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
 };
 
 // This simply determines whether or not the location of
-// an argument is valid and returns true if it is.
+// all arguments are valid and returns true if so.
 bool FunctionDeclFormatter::argLocValid() {
   for (auto it = params.begin(); it != params.end(); it++) {
     if ((*it)->getSourceRange().getBegin().isValid()) {
@@ -263,6 +274,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       fortranFunctDecl += commentedBody;
 
     }
+    // Close the function or subroutine as appropriate.
     if (returnQType.getTypePtr()->isVoidType()) {
       fortranFunctDecl += "END SUBROUTINE " + funcname + "\n\n";   
     } else {

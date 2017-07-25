@@ -56,28 +56,159 @@ using namespace llvm;
 using namespace std;
 
 
-//------------Utility Classes for Argument parsing etc-------------------------------------------------------------------------------
-// Used to pass arguments to the tool factories and actions so I don't have to keep changing them if more are added
-// This keeps track of the quiet and silent options, as well as the output file, and allows greater flexibility
-// in the future.
+//------------Utility Classes for Argument parsing etc------------------------------------
+class Arguments;  // This class uses part of CToFTypeFormatter, but CTFTF needs it, too
+
+//------------Formatter class decl----------------------------------------------------------------------------------------------------
+// This class holds a variety of functions used to transform C syntax into Fortran.
+class CToFTypeFormatter {
+public:
+  // Public status codes to be referenced by the formatter objects.
+  // FUNC_MACRO, is not an error code, just a statement that we are
+  // processing a function macro. U_OR_L_MACRO is for an object like
+  // macro with some unrecognized size/type modifier (now obsolete)
+  // BAD_STRUCT_TRANS is for failed translaiton of a structure init.
+  // DUPLICATE is for duplicate identifiers of any kind. BAD_TYPE
+  // is for an anonymous, unrecognized or va_list related type in
+  // a declaration. BAD_ANON is for the declaration of an anonymous
+  // structure type. BAD_ARRAY is for a failed array initialization
+  // evaluation. BAD_MACRO is for a confusing macro of any kind.
+  // CRIT_ERROR is for nullpointers and other serious, internal problems.
+  // BAD_STAR_ARRAY is for a variable size array outside of a 
+  // function prototype. UNKNOWN_VAR is for an unrecognized variable
+  // intialiation declaration. Others are self explanatory.
+  enum status {OKAY=0, FUNC_MACRO=1, BAD_ANON=2, BAD_LINE_LENGTH=3, BAD_TYPE=4,
+     BAD_NAME_LENGTH=5, BAD_STRUCT_TRANS=6, BAD_STAR_ARRAY=7, DUPLICATE=8,
+     U_OR_L_MACRO=9, UNKNOWN_VAR=10, CRIT_ERROR=11, BAD_MACRO=12, BAD_ARRAY=13};
+  typedef enum status status;
+
+  // QualTypes contain modifiers like "static" or "volatile"
+  // and information about an AST node's type
+  QualType c_qualType;
+  // ASTContext contains detailed information not held in the AST node
+  ASTContext &ac;
+  // Presumed location of the record being processed (file location).
+  PresumedLoc sloc;
+
+  CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc, Arguments &arg);
+  // Get the Fortran "TYPE(type_name)" or "type_name" phrase coresponding
+  // to the current type of declaration under consideration. In the case that
+  // the translation can't be completed, problem is set to FALSE. It must be
+  // true initially.
+  string getFortranTypeASString(bool typeWrapper, bool &problem);
+  // Gets the raw string, except in an array where dimensions are needed.
+  string getFortranIdASString(string raw_id);
+  // Gets the raw dimensions for the array in either regular or reversed order as
+  // requested in this.Arguments. The form returned is "dim1, dim2, dim3". 
+  string getFortranArrayDimsASString();
+  // The format of the arguments in a function prototype are completely different
+  // from the format of any other array reference. This function creates argument format.
+  string getFortranArrayArgASString(string dummy_name);
+  bool isSameType(QualType qt2);
+  // Used to classify function arguments (decide if we need DIMENSION atributes)
+  bool isArrayType();
+  // Here are functions to determine whether or not a macro resembles a given type.
+  static bool isIntLike(const string input);
+  static bool isDoubleLike(const string input);
+  // Does this macro define a new type? This kind of macro is quite rare.
+  static bool isType(const string input);
+  // These functions help determine a macro's type and proper translation.
+  static bool isString(const string input);
+  static bool isChar(const string input);
+  static bool isHex(const string in_str);
+  static bool isBinary(const string in_str);
+  static bool isOctal(const string in_str);
+  // This determines the fortran KIND for an integer-like macro.
+  static string DetermineIntegerType(const string integer_in, bool &invalid); 
+  // This determines the fortran KIND for a float like macro.
+  static string DetermineFloatingType(const string integer_in, bool &invalid); 
+  // These static functions remove questionable characters
+  // from floats, integers, and hex types respectively to 
+  // help create macros.
+  static string GroomFloatingType(const string in);
+  static string GroomIntegerType(const string in);
+  static string GroomHexType(const string in);
+
+  // This function emits a standard error relating to the frequent need
+  // to prepend "h2m" to the front of an illegal identifier.
+  static void PrependError(const string identifier, Arguments& args, PresumedLoc sloc);
+  // This is used to create a typedef like macro. These are approximate
+  // and only work on some types (short, int, long...)
+  static string createFortranType(const string macroName, const string macroVal,
+      PresumedLoc loc, Arguments &args);
+  // This somewhat complicated function handles emitting all errors and returning
+  // a (potentially) commented out string to the main translation routine as
+  // needed according to the status passed in and the values in args.
+  static string EmitTranslationAndErrors(status current_status, string error_string,
+      string translation_string, PresumedLoc sloc, Arguments &args);
+  // Prints an error location (file and line).
+  static void LineError(PresumedLoc sloc); 
+  // Constants to be used for length checking when comparing names/lines
+  // to see if they are valid Fortran.
+  static const int name_max = 63;
+  static const int line_max = 132;
+private:
+  Arguments &args;
+};
+
+//------------Utility Classes for Argument parsing etc------------------------------------
+// This is used to pass arguments to the tool factories and actions so I don't have to keep
+// changing them if more are added. This keeps track of the quiet and silent options,
+// as well as the output file, and allows greater flexibility in the future.
 class Arguments {
 public:
+  // Initialize all these boolean values to determine what is commented
+  // out/warned about. q is whether the run is quiet. s is whether it 
+  // is silent. sysheaders is whether to exclude system header form a 
+  // recursive line. t is whether to put all includes in one module. a
+  // is whether to transpose array dimensions. b is whether to bind to
+  // illegal C names automatically. h is whether to hide function like
+  // macros (don't translate them) The remaining options are whether
+  // or not to NOT comment out things h2m normally checks for.
   Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders,
-      bool t, bool a, bool b, bool h, bool u) :
-      quiet(q), silent(s), output(out), no_system_headers(sysheaders) , together(t),
-      array_transpose(a), auto_bind(b), hide_macros(h), detect_invalid(u)
-      { module_name = ""; }
+      bool t, bool a, bool b, bool h, bool bad_name_length,
+      bool bad_line_length, bool bad_type, bool bad_anon, bool duplicate) :
+      quiet(q), silent(s), output(out), no_system_headers(sysheaders) ,
+      together(t), array_transpose(a), auto_bind(b), hide_macros(h) {
+     module_name = "";
+     int i = 0;
+     // Initialize the array which tells us what problems, 
+     // usually commented out, should be ignored. The defaults
+     // are to ignore nothing.
+     for (i = 0; i < CToFTypeFormatter::BAD_ARRAY; i++) {
+       should_ignore[i] = false;
+     }
+     // Now initialize the specifically passed in options.
+     // Take advantage of the enumerated type to index the array.
+     should_ignore[CToFTypeFormatter::BAD_NAME_LENGTH] = bad_name_length;
+     should_ignore[CToFTypeFormatter::BAD_LINE_LENGTH] = bad_line_length;
+     should_ignore[CToFTypeFormatter::BAD_TYPE] = bad_type;
+     should_ignore[CToFTypeFormatter::BAD_ANON] = bad_anon;
+     should_ignore[CToFTypeFormatter::DUPLICATE] = duplicate; 
+
+   }
+  // These functions are setters and getters for the arguments members.
   llvm::tool_output_file &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
   bool getSilent() { return silent; }
   bool getNoSystemHeaders() { return no_system_headers; }
   string getModuleName() { return module_name; }
+  // This function (only to be called once for each file) will
+  // generate a unique module name based on a file name.
   void setModuleName(string newstr) { module_name = newstr; }
   bool getTogether() { return together; }
   bool getArrayTranspose() { return array_transpose; }
   bool getAutobind() { return auto_bind; }
   bool getHideMacros() { return hide_macros; }
-  bool getDetectInvalid() { return detect_invalid; }
+  // This will tell us if we should comment out problems 
+  // associated witht he status passed in as status_num.
+  // A value of true means we should comment the status
+  // out. A value of false means we should not.
+  bool ShouldCommentOut(CToFTypeFormatter::status status_num) {
+    // These are stored with true indicating we shouldn't
+    // comment out a certain kind of problem.
+    return !should_ignore[status_num];
+  }
   string GenerateModuleName(string Filename);
   
 private:
@@ -100,103 +231,18 @@ private:
   // Whether we should comment out all function like macro definitions or
   // make approximate tranlsations.
   bool hide_macros;
-  // Whether to comment out invalid types which are detected
-  bool detect_invalid;
+  // This array holds options to NOT comment out various problems for
+  // which h2m ususally checks. BAD_ARRAY is the last member of the 
+  // enumerated type. Add an extra 1 to account for zero indexing.
+  // should_ignore[BAD_ARRAY], for example will contain true
+  // if we should not comment out that bad array problems, and false
+  // otherwise.
+  bool should_ignore[CToFTypeFormatter::BAD_ARRAY + 1];
   // The module name may be altered during processing by the action;
   // by default this is an empty string. It is used to pass values out, not in.
   string module_name;
 };
 
-
-//------------Formatter class decl----------------------------------------------------------------------------------------------------
-// This class holds a variety of functions used to transform C syntax into Fortran.
-class CToFTypeFormatter {
-public:
-  // Public status codes to be referenced by the formatter objects.
-  // FUNC_MACRO, is not an error code, just a statement that we are
-  // processing a function macro. U_OR_L_MACRO is for an object like
-  // macro with some unrecognized size/type modifier (ie l/L or u/U).
-  // BAD_STRUCT_TRANS is for failed translaiton of a structure init.
-  // DUPLICATE is for duplicate identifiers of any kind. BAD_TYPE
-  // is for an anonymous, unrecognized or va_list related type in
-  // a declaration. BAD_ANON is for the declaration of an anonymous
-  // structure type. BAD_ARRAY is for a failed array initialization
-  // evaluation. BAD_MACRO is for a confusing macro of any kind.
-  // CRIT_ERROR is for nullpointers and other serious, internal problems.
-  // BAD_STAR_ARRAY is for a variable size array outside of a 
-  // function prototype. UNKNOWN_VAR is for an unrecognized variable
-  // intialiation declaration. Others are self explanatory.
-  enum status {OKAY, FUNC_MACRO, BAD_ANON, BAD_LINE_LENGTH, BAD_TYPE,
-     BAD_NAME_LENGTH, BAD_STRUCT_TRANS, BAD_STAR_ARRAY, DUPLICATE,
-     U_OR_L_MACRO, UNKNOWN_VAR, CRIT_ERROR, BAD_MACRO, BAD_ARRAY};
-  typedef enum status status;
-
-  // QualTypes contain modifiers like "static" or "volatile"
-  QualType c_qualType;
-  // ASTContext contains detailed information not held in the AST node
-  ASTContext &ac;
-  // Presumed location of the record being processed.
-  PresumedLoc sloc;
-
-  CToFTypeFormatter(QualType qt, ASTContext &ac, PresumedLoc sloc, Arguments &arg);
-  // Get the Fortran "TYPE(type_name)" or "type_name" phrase coresponding
-  // to the current type of declaration under consideration. In the case that
-  // the translation can't be completed, problem is set to FALSE. It must be
-  // true initially.
-  string getFortranTypeASString(bool typeWrapper, bool &problem);
-  // Gets the raw string, except in an array where dimensions are needed.
-  string getFortranIdASString(string raw_id);
-  // Gets the raw dimensions for the array in either regular or reversed order as
-  // requested. The form returned is "dim1, dim2, dim3". 
-  string getFortranArrayDimsASString();
-  // The format of the arguments in a function prototype are completely different
-  // from the format of any other array reference. This function creates argument format.
-  string getFortranArrayArgASString(string dummy_name);
-  bool isSameType(QualType qt2);
-  // Used to classify function arguments (decide if we need DIMENSION atributes)
-  bool isArrayType();
-  // Here are functions to determine whether or not a macro resembles a given type.
-  static bool isIntLike(const string input);
-  static bool isDoubleLike(const string input);
-  // Does this macro define a new type?
-  static bool isType(const string input);
-  // These functions help determine a macro's type
-  static bool isString(const string input);
-  static bool isChar(const string input);
-  static bool isHex(const string in_str);
-  static bool isBinary(const string in_str);
-  static bool isOctal(const string in_str);
-  // This determines the fortran KIND for an integer-like macro.
-  static string DetermineIntegerType(const string integer_in, bool &invalid); 
-  // This determines the fortran KIND for a flat like macro.
-  static string DetermineFloatingType(const string integer_in, bool &invalid); 
-  // These static functions remove questionable characters
-  // from floats, integers, and hex types respectively to 
-  // help create macros.
-  static string GroomFloatingType(const string in);
-  static string GroomIntegerType(const string in);
-  static string GroomHexType(const string in);
-
-  // This function emits a standard error relating to the frequent need
-  // to prepend "h2m" to the front of an illegal identifier.
-  static void PrependError(const string identifier, Arguments& args, PresumedLoc sloc);
-  // This is used to create a typedef like macro. These are approximate
-  // and only work on some types (short, int, long...)
-  static string createFortranType(const string macroName, const string macroVal,
-      PresumedLoc loc, Arguments &args);
-  // This somewhat complicated function handles emitting all errors and returning
-  // a (potentially) commented out string to the main translation routine.
-  static string EmitTranslationAndErrors(status current_status, string error_string,
-      string translation_string, PresumedLoc sloc, Arguments &args);
-  // Prints an error location.
-  static void LineError(PresumedLoc sloc); 
-  // Constants to be used for length checking when comparing names/lines
-  // to see if they are valid Fortran.
-  static const int name_max = 63;
-  static const int line_max = 132;
-private:
-  Arguments &args;
-};
 
 // This class is used to translate structs, unions, and typedefs
 // into Fortran equivalents. 
@@ -204,6 +250,8 @@ class RecordDeclFormatter {
 public:
   // Member functions declarations
   RecordDeclFormatter(RecordDecl *rd, Rewriter &r, Arguments &arg);
+  // These get information about how to get the proper identifier
+  // for the struct or union
   void setMode();
   void setTagName(string name);
   bool isStruct();
@@ -218,17 +266,22 @@ public:
   // declared twice. This frequently happens with typedefs
   // renaming structs. If the identifier provided already
   // exists, "false" is returned. Otherwise "true" is returned.
+  // It is in this class because originally it was only used
+  // on structures and typedefs (the most common offenders).
+  // This reasoning is now historical.
   static bool StructAndTypedefGuard(string name);
 
 private:
   // Rewriters are used, typically, to make small changes to the
-  // source code. This one, however, serves a different,
-  // mysterious purpose
+  // source code. This one, however, is left over from a previous
+  // code incarnation, but still used for things like geting the
+  // source manager or compiler instance.
   Rewriter &rewriter;
   // Arguments passed in from the action factory. This includes
   // quiet/silent, the module's name etc
   Arguments &args;
   // An anonymous struct may not have a declared name.
+  // These should be in a typedef but they are not -Michelle
   const int ANONYMOUS = 0;
   const int ID_ONLY = 1;
   const int TAG_ONLY = 2;
@@ -244,7 +297,8 @@ private:
   int mode = ANONYMOUS;
   bool structOrUnion = STRUCT;
   string tag_name;
-  // This doesn't actually seem to be used
+  // This is used to keep system headers out of the translation
+  // because we do not want them to leak in.
   bool isInSystemHeader;
   // Presumed location of this node
   PresumedLoc sloc;
@@ -256,7 +310,8 @@ private:
 };
 
 // This class is used to translate a C enumeration into a
-// Fortran equivalent.
+// Fortran equivalent. Note that Fortran enums don't actually
+// have names.
 class EnumDeclFormatter {
 public:
    // Member functions declarations
@@ -270,7 +325,10 @@ public:
 
 private:
   EnumDecl *enumDecl;
+  // Again, this keeps system header definitions from leaking
+  // into the local translation.
   bool isInSystemHeader;
+  // Presumed location within the source files.
   PresumedLoc sloc;
   Rewriter &rewriter;
   // Arguments passed in from the action factory.
@@ -283,7 +341,8 @@ private:
 };
 
 // This class is used to translate a variable declaration into
-// a Fortran equivalent.
+// a Fortran equivalent. It handles structs and arrays and will
+// attempt to translate an initialization as well.
 class VarDeclFormatter {
 public:
   // Member functions declarations
@@ -319,18 +378,19 @@ private:
   // The variable declaration we are actually looking at.
   VarDecl *varDecl;
   bool isInSystemHeader;
-  // The presumed location of this node
+  // The presumed location of this node in the source files.
   PresumedLoc sloc;
   // The initially empty string which describes the text where
   // an error occurred, if it did occur.
   string error_string;
-  // The status code which represents the translation's success.
+  // The status code which represents the translation's success 
+  // or failure (as the case may be).
   CToFTypeFormatter::status current_status;
-
 };
 
 // This class translates C typedefs into 
-// the closest possible fortran equivalent.
+// the closest possible fortran equivalent, a TYPE
+// with a single member. These are not interoperable.
 class TypedefDeclFormater {
 public:
   // Member functions declarations
@@ -341,10 +401,12 @@ public:
   string getErrorString() { return error_string; }
 
 private:
+  // This is used to keep out definitions from system headers.
   bool isInSystemHeader;
-  // The presumed location of the node
+  // The presumed location of the node in the source files.
   PresumedLoc sloc;
   TypedefDecl *typedefDecl;
+  // This is now only used to fetch information, not to rewrite anything.
   Rewriter &rewriter;
   // Whether or not the location of the node is valid according to clang
   bool isLocValid;
@@ -357,14 +419,12 @@ private:
   CToFTypeFormatter::status current_status;
 };
 
-// Class to translate a C function declaration into either a Fortran
+// This class translates a C function declaration into either a Fortran
 // function or subroutine as appropriate.
 class FunctionDeclFormatter {
 public:
-
-  // Member functions declarations
   FunctionDeclFormatter(FunctionDecl *f, Rewriter &r, Arguments &arg);
-  // These are the untyped parameters, used in the first line of the
+  // This gives the untyped parameters, used in the first line of the
   // function declaration.
   string getParamsNamesASString();
   // This is used to fetch the types as well as the names of the 
@@ -382,9 +442,11 @@ public:
   CToFTypeFormatter::status getStatus() { return current_status; } 
 
 private:
-  // The qualified type of the return value of the function 
+  // The qualified type of the return value of the function. It
+  // may be void in which case we create a corresponding subroutine.
   QualType returnQType;
-  // The parameters of the function are kept in an array ref
+  // The parameters of the function are kept in an array ref during
+  // processing.
   llvm::ArrayRef<ParmVarDecl *> params;
   // Again, this appears to be included from some previous incarnation
   // of the h2m software and not actually in use as a "rewriter"
@@ -392,7 +454,10 @@ private:
   // Arguments passed in from the action factory
   Arguments &args;
   FunctionDecl *funcDecl;
+  // This is used to keep system header definitions out of the
+  // local translation.
   bool isInSystemHeader;
+  // The location of the declaration in the source files.
   PresumedLoc sloc;
   // The initially empty string which describes the text where
   // an error occurred, if it did occur.
@@ -403,13 +468,17 @@ private:
 };
 
 
-// Class used to translate Macros into the closest appropriate 
+// This class is used to translate Macros into the closest appropriate 
 // Fortran equivalent. This may be a constant value or a subroutine
 // or function. Some macros cannot be translated and are commented
-// out instead.
+// out instead. It is not fool-proof. It can be fooled into giving
+// an incorrect translation, but someone would have to be trying
+// to write h2m-confusing code.
 class MacroFormatter {
 public:
-  MacroFormatter(const Token MacroNameTok, const MacroDirective *md, CompilerInstance &ci, Arguments &arg);
+  MacroFormatter(const Token MacroNameTok, const MacroDirective *md, 
+      CompilerInstance &ci, Arguments &arg);
+  // Is this macro like a string, int, double, char, or type definition?
   bool isObjectLike();
   bool isFunctionLike();
   string getFortranMacroASString();
@@ -419,13 +488,13 @@ public:
   PresumedLoc getSloc() { return sloc; }
 private:
   const MacroDirective *md;
-  // Name of the macro
   string macroName;
   // Value of the macro if it has something we can call a "value"
   string macroVal;
   // The string definition of the macro
   string macroDef;
-  bool isInSystemHeader;
+  // This is used to keep system headers out of the local translation.
+  bool isInSystemHeader; 
   // Presumed location of the macro's start according to clang
   PresumedLoc sloc;
 

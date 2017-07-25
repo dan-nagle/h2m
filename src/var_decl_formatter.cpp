@@ -5,15 +5,19 @@
 #include "h2m.h"
 
 // -----------initializer VarDeclFormatter--------------------
-VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : rewriter(r), args(arg) {
+VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : 
+    rewriter(r), args(arg) {
   varDecl = v;
   error_string = "";
   current_status = CToFTypeFormatter::OKAY;
-  // Because sloc is checked for validity prior to use, this should handle invalid locations. If it
-  // isn't initialized, it isn't valid according to the Clang check made in the helper.
+  // Because sloc is checked for validity prior to use, this should handle invalid
+  // locations. If it isn't initialized, it isn't valid according to the Clang
+  //  check made in the helper.
   if (varDecl->getSourceRange().getBegin().isValid()) {
-    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(varDecl->getSourceRange().getBegin());
-    sloc = rewriter.getSourceMgr().getPresumedLoc(varDecl->getSourceRange().getBegin());
+    isInSystemHeader = rewriter.getSourceMgr().isInSystemHeader(
+        varDecl->getSourceRange().getBegin());
+    sloc = rewriter.getSourceMgr().getPresumedLoc(
+        varDecl->getSourceRange().getBegin());
   } else {
     isInSystemHeader = false;  // If it isn't anywhere, it isn't in a system header.
   }
@@ -22,7 +26,8 @@ VarDeclFormatter::VarDeclFormatter(VarDecl *v, Rewriter &r, Arguments &arg) : re
 // In the event that a variable declaration has an initial value, this function
 // attempts to find that initialization value and return it as a string. It handles
 // pointers, reals, complexes, characters, ints. Arrays are defined here but actually
-// handled in their own function. Typedefs and structs are not handled here.
+// handled in their own function. Typedefs and structs are not handled here. They
+// all require special consideration.
 string VarDeclFormatter::getInitValueASString() {
   string valString;
 
@@ -34,7 +39,7 @@ string VarDeclFormatter::getInitValueASString() {
         // This should never be called but is here for safety.
     } else if (varDecl->getType().getTypePtr()->isCharType()) {
         // single CHAR
-      char character = varDecl->evaluateValue()->getInt().getExtValue ();
+      char character = varDecl->evaluateValue()->getInt().getExtValue();
       string cString;
       cString += character;
       valString = "\'" + cString + "\'";
@@ -63,6 +68,8 @@ string VarDeclFormatter::getInitValueASString() {
       QualType pointeeType = pointerType.getTypePtr()->getPointeeType();
       if (pointeeType.getTypePtr()->isCharType()) {
         // string literal
+        // This parses out the string from a string literal
+        // and then wraps it in Fortran syntax.
         Expr *exp = varDecl->getInit();
         if (isa<ImplicitCastExpr>(exp)) {
           ImplicitCastExpr *ice = cast<ImplicitCastExpr> (exp);
@@ -75,7 +82,8 @@ string VarDeclFormatter::getInitValueASString() {
         }
 
       } else {  // We don't recognize and can't handle this declaration.
-        valString = "!" + varDecl->evaluateValue()->getAsString(varDecl->getASTContext(), varDecl->getType());
+        valString = "!" + varDecl->evaluateValue()->getAsString(
+            varDecl->getASTContext(), varDecl->getType());
         if (args.getSilent() == false && args.getQuiet() == false) {
           errs() << "Variable declaration initialization commented out:\n";
           errs() << valString << "\n";
@@ -102,7 +110,7 @@ string VarDeclFormatter::getInitValueASString() {
       error_string = "Unknown variable declaration: " + valString;
     }
   }
-  return valString;  // This is empty if there was no initialization.
+  return valString;  // This is empty if we were in a system header.
 
 };
 
@@ -153,16 +161,16 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
         eleVal += "'";
       }
 
-      if (arrayValues.empty()) {
+      if (arrayValues.empty()) {  // Handle putting in the first element.
         arrayValues = eleVal;
       } else {
-        arrayValues += ", " + eleVal;
+        arrayValues += ", " + eleVal;  // All others require a ", " before hand
       }
     // Recursively calls to find the smallest element of the array if
     // it is multidimensional (in which case elements are themselves
     // some form of array).
     } else if (isa<InitListExpr> (innerelement)) {
-      InitListExpr *innerile = cast<InitListExpr> (innerelement);
+      InitListExpr *innerile = cast<InitListExpr>(innerelement);
       getFortranArrayEleASString(innerile, arrayValues, arrayShapes, evaluatable,
           (it == innerElements.begin()) && firstEle, is_char);
     } 
@@ -174,9 +182,8 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
 // Fortran string, but was specifically designed to be a recursive
 // helper for fetching structures embeded in structure definitions.
 // Note this function ONLY uses an expression, no information about the
-// VarDecl is requested, so recursive calls are acceptable. When a fatal
-// error occurs, success is set to "false" to let the caller know it should
-// comment out the declaration.
+// VarDecl is requested, so recursive calls are acceptable. It may,
+// however, set the status and error string if needed.
 string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
   string structDecl = "";  // This will eventually hold all the fields.
 
@@ -243,25 +250,30 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           // Other kinds of pointers are set to the appropriate null values because
           // it is not really feasible to create a proper Fortran translation.
           // Leave a message about this in the declaration by linking multiple
-          // lines with & and putting the comment before the declaration "& ! COMMENT \n DECL".
+          // lines with & and putting the comment before the declaration
+          //  "& ! COMMENT \n DECL".
           } else if (e_qualType.getTypePtr()->isFunctionPointerType()) {
-            structDecl += "& ! Initial pointer value: " + eleVal + " set to C_NULL_FUNPTR\n";
+            structDecl += "& ! Initial pointer value: " + eleVal +
+                " set to C_NULL_FUNPTR\n";
             eleVal = "C_NULL_FUNPTR";
             if (args.getSilent() == false) {
-              errs() << "Warning: pointer value " << eleVal << " set to C_NULL_FUNPTR\n";
+              errs() << "Warning: pointer value " << eleVal << 
+                  " set to C_NULL_FUNPTR\n";
               CToFTypeFormatter::LineError(sloc);
             }
           } else {
-            structDecl += "& ! Initial pointer value: " + eleVal + " set to C_NULL_PTR\n";
+            structDecl += "& ! Initial pointer value: " + eleVal + 
+                " set to C_NULL_PTR\n";
             eleVal = "C_NULL_PTR";
             if (args.getSilent() == false) {
-              errs() << "Warning: pointer value " << eleVal << " set to C_NULL_PTR\n";
+              errs() << "Warning: pointer value " << eleVal << 
+                  " set to C_NULL_PTR\n";
               CToFTypeFormatter::LineError(sloc);
             }
           }
         // We have found an array as a subtype. Currently this only knows
         // how to handle string literals, but only string literals should
-        // actually be evaluatable
+        // actually be evaluatable. All others will lead to recursive calls.
         } else if (e_qualType.getTypePtr()->isArrayType() == true) {
           bool isChar = varDecl->getASTContext().getBaseElementType(
               e_qualType).getTypePtr()->isCharType();
@@ -314,6 +326,7 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           } else {  // The translation failed.
             eleVal = "UntranslatableArray ! ";
             current_status = CToFTypeFormatter::BAD_ARRAY;
+            // Fetch the array text and return that.
             string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
                 element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
             eleVal += value;
@@ -329,6 +342,7 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           // if requested.
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isFunctionPointerType()) {
           eleVal = "C_NULL_FUNPTR";
+          // Fetch the initialization text for this function pointer.
           string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
               element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
           eleVal = "& ! Function pointer " + value + " set to C_NULL_FUNPTR\n" + eleVal;
@@ -338,6 +352,7 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           }
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isPointerType() == true) {
           eleVal = "C_NULL_PTR";      
+          // Fetch the initialization for this pointer.
           string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
               element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
           eleVal = "& ! Pointer " + value + " set to C_NULL_PTR\n" + eleVal;
@@ -378,8 +393,8 @@ string VarDeclFormatter::getFortranStructDeclASString(string struct_name) {
     Expr *exp = varDecl->getInit();
     structDecl += " = " + struct_name + "(";
     // Make a call to the helper (which may make recursive calls).
-    // Close the declaration.
     structDecl += getFortranStructFieldsASString(exp);
+    // Close the declaration.
     structDecl += ")";
   }
 
@@ -428,7 +443,8 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       // Note that the bindname will be empty unless certain options are in effect and
       // the function's actual name is illegal.
       bool problem = false;
-      arrayDecl += tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname + ") :: ";
+      arrayDecl += tf.getFortranTypeASString(true, problem) + 
+          ", public, BIND(C" + bindname + ") :: ";
       if (problem == true) {  // We have encountered an unrecognized type.
         current_status = CToFTypeFormatter::BAD_TYPE;
         error_string = tf.getFortranTypeASString(true, problem);
@@ -441,13 +457,15 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       Expr *exp = varDecl->getInit();
       // Whether this is a char array or not will have to be checked several times.
       // This checks whether or not the "innermost" type is a char type.
-      bool isChar = varDecl->getASTContext().getBaseElementType(e_qualType).getTypePtr()->isCharType();
-      // This fetches the actual text initialization, which may be a string literal or {'a', 'b'...}.
+      bool isChar = varDecl->getASTContext().getBaseElementType(
+          e_qualType).getTypePtr()->isCharType();
+      // This fetches the actual text initialization, which may be 
+      // a string literal or {'a', 'b'...}.
       string arrayText = Lexer::getSourceText(CharSourceRange::getTokenRange(exp->getExprLoc(),
             varDecl->getSourceRange().getEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
      // A char array might not be a string literal. A leading { character indicates this case.
      if (isChar == true && arrayText.front() != '{') {
-        // handle stringliteral case
+        // handle stringliteral case.
         // A parameter may not have a bind(c) attribute
         bool problem = false;  // The helper will set this flag appropriately.
         arrayDecl += tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
@@ -530,10 +548,10 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
             // The array is evaluatable and has been evaluated already. We assemble the
             //  declaration. INTEGER(C_INT) :: array(2,3) = RESHAPE((/ 1, 2, 3, 4, 5, 6 /),
             //  (/2, 3/)). The bindname may be empty.
-            bool problem = false;  // The helper sends back this flag.
-            arrayDecl += tf.getFortranTypeASString(true, problem)+", BIND(C" + bindname +  ") :: "+
-                identifier +"("+arrayShapes_fin+")";
-            if (problem == true) {  // We hav efound a bad type.
+            bool problem = false;  // The helper sends back this flag for an invalid type
+            arrayDecl += tf.getFortranTypeASString(true, problem)+", BIND(C" + bindname
+                 +  ") :: "+ identifier +"("+arrayShapes_fin+")";
+            if (problem == true) {  // We have found a bad type.
               current_status = CToFTypeFormatter::BAD_TYPE;
               error_string = identifier + ", array definition.";
             }
@@ -548,10 +566,10 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
 
 
 
-// Hanldes various variable declarations and returns them as fortran strings. Helper
+// Handles various variable declarations and returns them as Fortran strings. Helper
 // functions are called for arrays which are difficult to format. The type is 
-// fetched with the helper function getFortranTypeASString. Any illegal identifiers (ie _thing)
-// are prepended with "h2m" to become legal fortran identifiers.
+// fetched with the helper function getFortranTypeASString. Any illegal identifiers
+// (ie _thing) are prepended with "h2m" to become legal fortran identifiers.
 string VarDeclFormatter::getFortranVarDeclASString() {
   string vd_buffer = "";
   string identifier = "";   // Will eventually hold the variable's name
@@ -567,6 +585,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       CToFTypeFormatter tf(varDecl->getType(), varDecl->getASTContext(), sloc, args);
       identifier = tf.getFortranIdASString(varDecl->getNameAsString());
 
+      // Deal with an illegal identifier and a potential need for a bind name.
       if (identifier.front() == '_') {
         CToFTypeFormatter::PrependError(identifier, args, sloc);
         if (args.getAutobind() == true) {  // Set up the bind phrase if requested.
@@ -581,7 +600,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       // It also looks for the "anonymous at" qualifier which might be present if 
       // the other tell-tale signs are not. NOTE: the helper function will usually
       // catch anonymous types, so these checks may be unnecessary now.
-      bool problem;
+      bool problem;  // This will be set to true if the helper sees an illegal type.
       string f_type = tf.getFortranTypeASString(false, problem);
       if (problem == true) {  // Set the object's error flag for unrecognized types
         current_status = CToFTypeFormatter::BAD_TYPE;
@@ -607,7 +626,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
         identifier = "h2m" + identifier;
       }
       // This strips off potential size modifiers so we only get the name
-      // or the array: n rather than n(4,3).
+      // of the array: n rather than n(4,3).
       identifier = identifier.substr(0, identifier.find_first_of("("));
       vd_buffer = getFortranArrayDeclASString();
     } else if (varDecl->getType().getTypePtr()->isPointerType() && 
@@ -636,7 +655,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
       } else if (value[0] == '!') {
-        bool problem = false;
+        bool problem = false;  // The helper will set this flag if it sees an illegal type.
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer +=  + ") :: " + identifier + " " + value + "\n";
         if (problem == true) {  // We've found an unrecognized type
@@ -645,7 +664,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
         }
       } else {
         // A parameter may not have a bind(c) attribute.
-        bool problem = false;
+        bool problem = false;  // The helper will set this flag if it sees an illegal type.
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
             identifier + " = " + value + "\n";
         if (problem == true) {  // We've found an unrecognized type
@@ -668,15 +687,15 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       } 
       // Determine the state of the declaration and assemble the appropriate Fortran equivalent.
       // Include the bindname, which may be empty.
-      if (value.empty()) {
-        bool problem = false;
+      if (value.empty()) {  // This is an actual variable, uninitialized.
+        bool problem = false;  // The helper sets this flag if it sees an illegal type.
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer += ") :: " + identifier + "\n";
         if (problem == true) {  // We've found an unrecognized type
           current_status = CToFTypeFormatter::BAD_TYPE;
           error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
-      } else if (value[0] == '!') {
+      } else if (value[0] == '!') {  // This is left over from old logic but is her for safety.
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer += ") :: " + identifier + " " + value + "\n";
@@ -684,7 +703,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           current_status = CToFTypeFormatter::BAD_TYPE;
           error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
-      } else {
+      } else {  // This is an initialized variable to be treated as a parameter.
         // A parameter may not have a bind(c) attribute
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
