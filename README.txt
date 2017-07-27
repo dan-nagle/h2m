@@ -470,6 +470,9 @@ Fortran enums do not have their own scope as C enums do, the enumerator's name w
 be commented out. Interoperability is supported for the individual enumerators 
 within the enumerated type.
 
+Unsigned Numbers: Fortran does not have interoperability with unsigned numbers.
+Unsigned specifiers will be ignored where they are found.
+
 Typedefs: There is no Fortran type interoperable with a typedef. All typedefs will
 be translated into Fortran TYPE definitions containing exactly one field. This
 field will be named [typedef name]_[type redefined]. For example:

@@ -255,21 +255,21 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           } else if (e_qualType.getTypePtr()->isFunctionPointerType()) {
             structDecl += "& ! Initial pointer value: " + eleVal +
                 " set to C_NULL_FUNPTR\n";
-            eleVal = "C_NULL_FUNPTR";
             if (args.getSilent() == false) {
               errs() << "Warning: pointer value " << eleVal << 
                   " set to C_NULL_FUNPTR\n";
               CToFTypeFormatter::LineError(sloc);
             }
+            eleVal = "C_NULL_FUNPTR";
           } else {
             structDecl += "& ! Initial pointer value: " + eleVal + 
                 " set to C_NULL_PTR\n";
-            eleVal = "C_NULL_PTR";
             if (args.getSilent() == false) {
               errs() << "Warning: pointer value " << eleVal << 
                   " set to C_NULL_PTR\n";
               CToFTypeFormatter::LineError(sloc);
             }
+            eleVal = "C_NULL_PTR";
           }
         // We have found an array as a subtype. Currently this only knows
         // how to handle string literals, but only string literals should
@@ -281,6 +281,7 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
           if (eleVal.front() == '&' && isChar == true) {
             // Erase up to the beginning of the & symbol which may be present because 
             // C treats string literals as pointers to static memory.
+            // By doing this you get a string in the form "string".
             while (eleVal.front() != '"') {
               eleVal.erase(eleVal.begin(), eleVal.begin() + 1);
             }
@@ -324,7 +325,7 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
             // A ", " is added by the helper function so one isn't appended here.
             eleVal = "RESHAPE((/" + values + "/), (/" + shapes + "/))";
           } else {  // The translation failed.
-            eleVal = "UntranslatableArray ! ";
+            eleVal = "UntranslatableArray:";
             current_status = CToFTypeFormatter::BAD_ARRAY;
             // Fetch the array text and return that.
             string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
@@ -363,8 +364,8 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
         } else {  // We have no idea what this is or how to translate it. Warn and comment out.
           string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
               element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
-          eleVal = "untranslatable_component !" + value;
-          error_string = "Untranslatable array componenet: " + value;
+          eleVal = "UntranslatableComponent:" + value;
+          error_string = "Untranslatable structure componenet: " + value;
           current_status = CToFTypeFormatter::BAD_STRUCT_TRANS;
         }
       }
@@ -432,7 +433,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       // If necessary, prepare a bind name to properly link to the C function
       if (args.getAutobind() == true) {
         // This is the proper syntax to bind to a C variable: BIND(C, name="cname")
-        bindname = " , name =\"" + identifier + "\"";
+        bindname = ", name=\"" + identifier + "\"";
       }
       CToFTypeFormatter::PrependError(identifier, args, sloc);
       identifier = "h2m" + identifier;
@@ -590,7 +591,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
         CToFTypeFormatter::PrependError(identifier, args, sloc);
         if (args.getAutobind() == true) {  // Set up the bind phrase if requested.
           // The proper syntax is BIND(C, name="cname").
-          bindname = ", name=\"" + identifier + " \"";
+          bindname = ", name=\"" + identifier + "\"";
         }
         identifier = "h2m" + identifier;
       }
@@ -640,7 +641,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       if (identifier.front() == '_') {
         CToFTypeFormatter::PrependError(identifier, args, sloc);
         if (args.getAutobind() == true) {  // Setup the autobinding buffer if requested
-          bindname = ", name=\"" + identifier + " \"";
+          bindname = ", name=\"" + identifier + "\"";
         }
         identifier = "h2m" + identifier;
       }
@@ -681,7 +682,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       if (identifier.front() == '_') {
         CToFTypeFormatter::PrependError(identifier, args, sloc);
         if (args.getAutobind() == true) {  // Set the BIND(C, name=..." to link to the c name
-          bindname = ", name=\"" + identifier + " \"";
+          bindname = ", name=\"" + identifier + "\"";
         }  
         identifier = "h2m" + identifier;
       } 

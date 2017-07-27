@@ -14,6 +14,8 @@ double my_double_function(int x, double* y, char z[*]);
 
 void my_complex_subroutine(short v, long** c, struct simple* m);
 
+long double return_long_double(short x, long y, float z);
+
 struct simple return_struct();
 
 struct simple* return_struct_pointer();

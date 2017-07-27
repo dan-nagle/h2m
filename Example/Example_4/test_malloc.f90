@@ -34,6 +34,7 @@ if (C_ASSOCIATED(my_ptr)) then
       WRITE(*,*) my_bucket%v(i)
     end do
   endif
+  WRITE(*,*) "is the orginal array"
 
   ! Call a simple C routine to shuffle
   ! the array.
@@ -43,6 +44,7 @@ if (C_ASSOCIATED(my_ptr)) then
   do i = 1,50
     WRITE(*,*) my_bucket%v(i)
   end do
+  WRITE(*,*) "is the shuffled array"
 
   ! Nullify the pointers and free memory.
   nullify(my_bucket)

@@ -15,4 +15,5 @@ void get_stuff2(va_list my_list[]);
 
 struct my_struct {
   va_list illegal;
+
 };

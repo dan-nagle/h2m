@@ -13,9 +13,9 @@ errors = curl_global_init(CURL_GLOBAL_ALL)
 ! Let's get ourselves a handle!
 handle = curl_easy_init()
 if (.NOT. C_ASSOCIATED(handle)) then
-  WRITE(*,*) "You have no pointer."
+  WRITE(*,*) "No pointer."
 else
-  WRITE(*,*) "You have a pointer."
+  WRITE(*,*) "Establishing handle."
   ! Attempt to set the URL to google.
   url = "http://google.com" // C_NULL_CHAR
   errors = curl_easy_setopt(handle, CURLOPT_URL, C_LOC(url))
@@ -28,7 +28,7 @@ else
     if (errors .NE. 0) then
       WRITE(*,*) curl_easy_strerror(errors)
     else
-      WRITE(*,*) "Well, it did a thing."
+      WRITE(*,*) "Cleaning up Curl."
     endif
   endif
 

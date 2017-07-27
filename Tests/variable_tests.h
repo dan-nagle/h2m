@@ -3,6 +3,16 @@
 
 int x;
 
+short my_short;
+
+long long my_long_long;
+
+short stuff[5][5];
+
+float m;
+
+long double not_my_stuff[10][2];
+
 double y = 3.145;
 
 void* z;

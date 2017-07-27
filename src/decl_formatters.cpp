@@ -98,7 +98,7 @@ string TypedefDeclFormater::getFortranTypedefDeclASString() {
     }
     // Give a special warning about the odd way in which typedefs are made.
     if (args.getSilent() == false) {
-      errs() << "Warning: due to name collisions during typdef translation, " <<
+      errs() << "Warning: due to name collisions during typedef translation, " <<
           identifier;
       errs() <<  "\nrenamed " << identifier << "_" << type_no_wrapper << "\n";
       CToFTypeFormatter::LineError(sloc);
@@ -217,7 +217,7 @@ string EnumDeclFormatter::getFortranEnumASString() {
 
     // Because the actual enum name is commented out, we don't check it for a repeat. 
     if (anon == false) {  // Put the name after END ENUM unless there is no name.
-      enum_buffer += "END ENUM !" + enumName + "\n";
+      enum_buffer += "END ENUM ! " + enumName + "\n";
     } else {
       enum_buffer += "END ENUM\n";
     }

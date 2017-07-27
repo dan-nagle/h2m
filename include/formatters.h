@@ -1,8 +1,10 @@
-// Header file for the h2m Autofortran tool, written by
+// Header file for the h2m-AutoFortran tool, written by
 // Sisi Liu at NCAR, envisioned by Dan Nagle, and revised
 // by Michelle Anderson. 
 // This header includes all the necessary C/C++ headers and
 // all the necessary Clang/LLVM headers to run h2m.
+// All the helper classes used for translation of AST
+// nodes and argument handling are also in this file.
 
 // Declares clang::SyntaxOnlyAction.
 #include "clang/Frontend/FrontendActions.h"

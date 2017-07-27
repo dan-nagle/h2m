@@ -8,6 +8,7 @@
 #define my_binary 0b10101101
 #define my_binary_caps 0B000
 #define my_not_binary 0B20
+#define another_not_bin b10101
 
 #define my_odd_hex 0x00ff
 #define yet_another_hex 0xff00
@@ -22,6 +23,7 @@
 #define my_hex 0x345
 #define my_other_hex 0Xfedab
 #define my_not_hex 0xfg01
+#define other_not_hex xf01a
 
 #define my_long 123L
 

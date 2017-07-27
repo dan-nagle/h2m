@@ -1,4 +1,5 @@
 #define _bad_macro
+#define _bad_func_macro()
 
 int _bad_int;
 
@@ -12,7 +13,11 @@ struct _bad_struct {
   int _bad_struct_field;
 };
 
+struct _bad_struct _my_bad_struct_var;
+
 int _bad_function(double* _bad_argument);
+
+struct _bad_struct weird_function(struct _bad_struct my_bad, int x);
 
 typedef int _bad_typedef_int;
 

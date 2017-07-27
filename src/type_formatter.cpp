@@ -14,12 +14,13 @@ void CToFTypeFormatter::CToFTypeFormatter::LineError(PresumedLoc sloc) {
 }
 
 // This little helper outputs an error relating to prepending h2m to the
-// from of an identifier, if needed.
+// front of an identifier, if needed. It's nice to have a generic
+// error message in one place.
 void CToFTypeFormatter::PrependError(const string identifier, Arguments& args,
     PresumedLoc sloc) {
   if (args.getSilent() == false) {
-    errs() << "Warning: fortran identifiers may not begin with an underscore.\n" <<
-        identifier << " renamed h2m" << identifier;
+    errs() << "Warning: Fortran identifiers may not begin with an underscore. " <<
+        identifier << " renamed h2m" << identifier << "\n";
     LineError(sloc);
   }
 }
@@ -271,7 +272,7 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
         // This is likely a serious issue. It may prevent compilation. There is
         // no guarantee that this expression is evaluatable in Fortran.
         if (args.getSilent() == false) { 
-          errs() << "Warning: unevaluatable array dimensions: " << expr_text;
+          errs() << "Warning: unevaluatable array dimensions: " << expr_text << "\n";
           CToFTypeFormatter::LineError(sloc);
         }
       }
@@ -366,7 +367,14 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
       } else {
         f_type = "C_SHORT";
       }  
-    // Handle a long or a long long. Long longs are ignored here. The type is assumed to be long.
+    // Handle a long long
+    } else if (c_qualType.getAsString().find("long long") != std::string::npos) {
+      if (typeWrapper) {
+        f_type = "INTEGER(C_LONG_LONG)";
+      } else {
+        f_type = "C_LONG_LONG";
+      }
+    // Handle a regular long
     } else if (c_qualType.getAsString().find("long") != std::string::npos) {
       if (typeWrapper) {
         f_type = "INTEGER(C_LONG)";

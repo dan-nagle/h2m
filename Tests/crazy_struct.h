@@ -24,6 +24,14 @@ struct thing {
   int (*function_pointer)(int);
 };
 
+struct illegal_thing {
+  union my_union unicorn;
+};
+
 struct thing my_thing = {4, 2.34, 'a', "mine",  0, 
    {100, 10, {{'a', 'b', 'c'}, {'d', 'e', 'f'}}},
    {1, 2, 3}, &x, &a_func};
+
+struct illegal_thing my_illegal_thing = {{5423L}};
+
+

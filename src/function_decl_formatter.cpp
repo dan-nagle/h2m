@@ -236,7 +236,7 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
       // because we have been forced to change this function's declared name.
       if (args.getAutobind() == true) {
         // This is the proper syntax to bind to a C variable: BIND(C, name="cname")
-        bindname = " , name =\"" + funcname + "\"";
+        bindname = ", name =\"" + funcname + "\"";
       }
       funcname = "h2m" + funcname;  // Prepend h2m to fix the problem
     }
