@@ -1,4 +1,4 @@
-                          h2m Autofortran Tool Readme
+                          h2m-AutoFortran Tool Readme
 ______________________________________________________________________
 
 Contents:
@@ -13,7 +13,8 @@ Contents:
   3) Usage of h2m
      Behavior
      Options
-     Example
+     Examples
+     Tests
      Grooming Produced Files
   4) Known Issues
 
@@ -25,7 +26,7 @@ To build h2m if you do not have Clang or LLVM installed, run:
 ./h2mbuild.sh -download -download_dir [path to desired Clang/LLVM download]
 or run ./h2mbuild.sh -i for interactive mode.
 
-It is recommended to download and install CMake seperately from h2m, but 
+It is recommended to download and install CMake separately from h2m, but 
 the script may be able to do this for you.
 To build h2m if you are also missing CMake as well as Clang and LLVM, run:
 ./h2mbuild.sh -download -download_dir [path to desired Clang/LLVM download]
@@ -45,20 +46,20 @@ To run h2m after the build, run:
 
 1)   INTRODUCTION AND CREDITS
 
-The h2m Autofortran tool is designed to allow easy calls to C
+The h2m-AutoFortran tool is designed to allow easy calls to C
 routines from Fortran programs. Given a header file in standard C,
 h2m will produce a Fortran module providing function interfaces
 which maintain interoperability with C. Features for which there
 are no Fortran equivalents will not be translated and warnings 
 will be written to standard error.
-The h2m Autofortran tool is built into Clang, the LLVM C compiler.
+The h2m-AutoFortran tool is built into Clang, the LLVM C compiler.
 During translation, the Clang abstract syntax tree (AST) is used to 
 assemble information about the header file. Clang is a very strict
 compiler and will often generate warnings about the C code during
 this phase. Standard Clang options can be specified to control the
 compilation process and silence warnings.
 
-The h2m Autofortran tool was envisioned by Dan Nagle and completed
+The h2m-AutoFortran tool was envisioned by Dan Nagle and completed
 at NCAR by Sisi (Garnet) Liu and revised by Michelle Anderson. Special
 thanks to Davide Del Vento.
 LLVM and Clang are released under the University of Illinois/NCSA
@@ -81,7 +82,7 @@ of CMake, LLVM, and Clang are needed), bash, and standard Unix utilities.
 Utilities required to build LLVM are enumerated on the website
 llvm.org/docs/GettingStarted.html.
 Though it was principally designed for bash shells, h2mbuild.sh may
-run under other shells including ksh and zsh. Other posix compliant
+run under other shells including ksh and zsh. Other POSIX compliant
 shells may also work, but they have not been tested.
 LLVM and Clang are absolutely required to run h2m. The h2mbuild.sh
 script can handle the installation of this software if necessary. In
@@ -172,7 +173,7 @@ found. If this options is specified, -LLVM_LIB_PATH must also be provided.
 This option will be ignored if -download is specified.
 
 -CLANG_LIB_PATH	[path]		Option to specify the absolute path to 
-the Clang libraries. The directory specified should contain libclang... 
+the Clang libraries. The directory specified should contain libclang to 
 libclangToolingRefactor. These may be .a or .so files. This option only 
 needs to be specified if ClangConfig.cmake cannot be found. If this 
 option is specified, -CLANG_BUILD_PATH and -CLANG_INCLUDE_PATH must 
@@ -359,7 +360,7 @@ variable is being used or the package is in a default location and has
 been found. This can result in incompatible versions and linker errors.
 Often a clean download and build of LLVM and Clang can fix these problems.
 
-4. Newer versions of Clang/LLVm may be incompatible with the h2m
+4. Newer versions of Clang/LLVM may be incompatible with the h2m
 implementation. Release 4.0 is known to work, and this is the 
 default download URL. It is likely that releases after 4.0 will not
 work at all.
@@ -393,7 +394,7 @@ Refer to the CMake website for update and build instructions.
 website as a binary release. The script does not provide an option
 to do this, but it is not too difficult to do by hand.
 
-11. If linker warnings regarding visiblitity settings are seen (this
+11. If linker warnings regarding visibility settings are seen (this
 sometimes happens when building LLVM, Clang, and h2m with GCC) h2m
 may run perfectly normally. If it does not, you may need to override
 the compiler flags. This can be done by running CMake, providing all
@@ -405,7 +406,7 @@ The flags currently set by the project are:
 
 3)   USAGE OF H2M
 
-The h2m Autofortran tool is invoked at the shell as ./h2m [path to header].
+The h2m-AutoFortran tool is invoked at the shell as ./h2m [path to header].
 By default h2m sends the translated text to standard output. This can be
 redirected with an option or the shell redirection operators.
 
@@ -413,7 +414,7 @@ redirected with an option or the shell redirection operators.
 
 BEHAVIOR
 
-The h2m autofortran tool will attempt to translate struct, function, macros, enum,
+The h2m-AutoFortran tool will attempt to translate struct, function, macros, enum,
 and variable declarations. It is not designed to translate complex program code. For
 example, if a function definition is provided, it will be commented out in Fortran.
 Untranslatable features will be commented out. Invalid names beginning with an underscore
@@ -567,7 +568,7 @@ approximations.
 -ignore-anon		Do not comment out TYPE definitions translated form anonymous
 C structs. Warnings will still be printed. This applies only to definitions of anonymous
 types. C entities which use anonymous types will still be commented out. To disable
-commenting out of entities using anonyous types (ie structs containing anonymous
+commenting out of entities using anonymous types (ie structs containing anonymous
 structs) use -ignore-type.
 
 -ignore-duplicate	Do not comment out duplicate identifiers. Warnings will still
@@ -606,8 +607,7 @@ cause serious problems.
 
 -no-system-headers
 -n			During recursive processing, ignore all system header files.
-Clang's decision as to what constitutes a system header is not always what would
-be expected. 
+Clang's decision as to what constitutes a system header is correct and intuitive.
 
 -out=<string>
 -o=<string>    		The output file for the tool can be specified here as either a
@@ -646,7 +646,7 @@ as arguments to the Clang compiler instance used by the tool. The Clang/LLVM man
 and websites should be used as a reference for these options.
 
 
-EXAMPLE
+EXAMPLES
 
 The Example directory contains several subdirectories containing small h2m examples.
 The first directory, Example_1, contains a potentially useful script which will provide
@@ -678,13 +678,33 @@ gfortran -o example example.f90 c_source.o
 Step 6: Enjoy your mixed-language executable.
 ./example
 
+A number of other example directories are provided with h2m. The Example_2 directory
+contains a simple and somewhat contrived demonstration of using interoperable 
+function pointers. The Example_3 directory demonstrates the use of shared variables
+and also demonstrates the treatment of illegal names by h2m. The Example_4 directory
+contains instructions for translation of the C standard library and shows how to 
+call malloc and free from a Fortran program. The Example_5 directory includes 
+files which can read and write to a NetCDF file given h2m-provided translations of
+the C NetCDF library. These files demonstrate how to make more complicated calls
+to interoperable functions.
+The Demonstrating_Problems directory contains a few intentionally problematic
+files to reveal some common issues with the translations produced by the h2m
+software.
+
+TESTS
+
+The files found in the Tests subdirectory are tests run during development. The
+names of the files should be self explanatory. Running h2m on test files and
+inspecting the output should help to clarify some of the more obscure details
+regarding h2m's behavior and limitations. 
+
 GROOMING PRODUCED FILES
 
 First, note that h2m will report only one kind of error per translatable entity
 regardless of how many problems there actually are. When grooming translated files,
-check an entity which has been commented out thoroughly to make sure there are not
-additional, unreported problems. This may occur with anonyous types, which are 
-sometimes reported not as anonymous types but as in violation of name-length limits.
+carefully check an entity which has been commented out to make sure there are not
+additional, unreported problems. This may occur with anonymous types, which are 
+sometimes reported not as anonymous types but as violators of name-length limits.
 
 When translating complicated files, such as library or system headers, some problems
 can come up which require human intervention. 
@@ -695,7 +715,7 @@ are also unrecognized. Search for the pattern "WARNING_UNRECOGNIZED" in the crea
 header to find these instances.
 2. Length Problems
 Extremely long lines may sometimes result from function or initialization translations.
-The tool will comment out all declarations containing illegal long lines.  These 
+The tool will comment out all declarations containing illegally long lines.  These 
 must be split up by hand. The h2m tool should warn if such long lines exist. Extremely
 long names will also result in declarations being commented out, and these must be
 changed by the user, either by altering the symbol's name or by inserting a name=""
@@ -703,10 +723,10 @@ specification (if legal) into the translated Fortran and shortening the Fortran
 name only.
 3. Pointer Initialization
 Pointers in initialization lists will be set to C_NULL_PTR or C_NULL_FUNPTR as 
-appropriate. They will need to be reinitialized by hand. The h2m software will
+appropriate. They will need to be reinitialized manually. The h2m software will
 preserve their initialization values as comments.
 4. Macros
-Though h2m will attempt to handle simple macros, it may make mistakes even on these,
+Though h2m will attempt to handle simple macros, it may make mistakes occasionally,
 and the translations of function-like macros will need to be filled in or replaced
 completely. The h2m software will preserve the text of function like macros or
 untranslated macros as comments.
@@ -720,21 +740,22 @@ leads to duplicate identifiers.
 
 4)   KNOWN ISSUES
 
-If there are several different error conditions raised by a single line of
-code, only one of them will be reported. For example, if there is an 
-unrecognized type and an illegal line length detected in a function
+As a reiteration, if there are several different error conditions raised by a
+single line of code, only one of them will be reported. For example, if there 
+is an unrecognized type and an illegal line length detected in a function
 definition, only the illegal line length will be reported on standard error
 and in the output code. It is expected that the user will inspect code 
 which is reported as erroneous and fix all issues.
 
 Clang warnings may be generated during translation. This does not mean
 that there is necessarily something wrong with the code in question.
-When Clang raises warnings or errors on a file being translated, the translation
+When Clang raises warnings or errors about a file being translated, the translation
 may be incomplete. Removing the offending pieces of the C source code, or 
 altering Clang's behavior with a compiler option are two possible solutions to
 this problem.
 
-Name conflicts occur occasionally because C has different scoping rules than Fortran.
+Name conflicts occur occasionally because C has different rules than Fortran
+regarding structure tag names and considers capitalization to be significant.
 Usually, h2m will detect these conflicts and attempt to comment out the offenders.
 Compiler errors such as 'Error: Symbol [symbol] cannot have a type' are likely due to 
 name conflicts between module and function or type names. These name conflicts typically

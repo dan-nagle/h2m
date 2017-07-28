@@ -1,10 +1,9 @@
 #include <stdio.h>
 // The following header demonstrates problems with lengths
 // of lines and names which can arise during translation. 
-// Though this header will be translated to Fortran by h2m,
-// issues will arise during compilation. Often, h2m will
-// detect these problems, warn, and comment out the 
-// offending line.
+// Though h2m cannot yet automatically address line-length
+// problems, it will detect and comment out lines and
+// names exceeding the maximum.
 
 // C has no limit to line lengths, but Fortran does. 
 // Occasionally, particularly during typedefs or 

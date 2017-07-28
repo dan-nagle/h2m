@@ -20,15 +20,12 @@ integer :: index1, index2
 ! Open the netcdf file
 error = nc_open(C_LOC(FILE_NAME), NC_NOWRITE, C_LOC(ncid))
 ! Report any errors
-WRITE(*,*) error
 
 ! Get the identifiers from the data name.
 error = nc_inq_varid(ncid, C_LOC(data_name), C_LOC(data_in))
-WRITE(*,*) error
 
 ! Get the data from the file.
 error = nc_get_var_int(ncid, varid, C_LOC(data_in))
-WRITE(*,*) error
 
 ! Loop through and print the information
 do index1 = 1, nx
@@ -39,6 +36,5 @@ end do
 
 ! Close the netcdf file.
 error = nc_close(ncid)
-WRITE(*,*) error
 
 end program nc_read

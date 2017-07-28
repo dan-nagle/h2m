@@ -13,4 +13,14 @@ typedef void my_alias_for_void;
 
 // Very complicated types, particulary in typedef statements,
 // can also cause these problems, but they are difficult to
-// replicate in a controlled environment.
+// replicate in a controlled environment. Another villain
+// sometimes encountered is __builtin_va_list. This problem
+// is so common in system headers that h2m specifically
+// checks for type names containing va_list and comments 
+// them out.
+
+__builtin_va_list mylist[10];
+
+struct my_struct {
+  __builtin_va_list illegal;
+};

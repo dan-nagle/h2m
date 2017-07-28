@@ -1,12 +1,13 @@
+! Very small program to make a GET
+! request with curl.
 PROGRAM use_curl
 use, intrinsic :: iso_c_binding
 use module_curl
 implicit none
-
-integer(c_long) :: CURL_GLOBAL_ALL = 3
 integer(c_int) errors
 TYPE(C_PTR), TARGET :: handle
 CHARACTER(Kind=C_CHAR, len=20), TARGET :: url
+integer(c_long) :: CURL_GLOBAL_ALL = 3
 
 errors = curl_global_init(CURL_GLOBAL_ALL)
 
