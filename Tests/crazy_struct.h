@@ -34,4 +34,6 @@ struct thing my_thing = {4, 2.34, 'a', "mine",  0,
 
 struct illegal_thing my_illegal_thing = {{5423L}};
 
+union my_union these_unions[2] = {{543L}, {45.6}};
+
 

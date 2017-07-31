@@ -8,3 +8,6 @@ translations, unions, structure initializaitons,
 and macros.
 The Tests subdirectory, however, does not include
 detailed notes with the demonstrations.
+Run h2m on these files, read the comments in the
+files, and observe the output and errors to
+learn about the demonstrated limitations.

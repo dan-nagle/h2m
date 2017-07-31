@@ -25,14 +25,15 @@ END INTERFACE
 ! Declare the variables to pass into and obtain from 
 ! C functions.
 PROCEDURE(c_func_type), POINTER :: fort_fun_ptr
-TYPE(C_FUNPTR) :: c_fun_ptr
+TYPE(C_FUNPTR) :: c_fun_ptr  ! The C function pointer
 REAL(C_DOUBLE) :: first = 5
 REAL(C_DOUBLE) :: second = 200
 CHARACTER(C_CHAR) :: operation = '\'
 CHARACTER(C_CHAR) :: result_char
 INTEGER(C_INT) :: the_code = -1
 
-! Obtain the function pointer from the C function.
+! Obtain the function pointer from the C function
+! by providing two arguments and an operation to perform.
 c_fun_ptr = return_f_ptr(first, second, operation)
 
 ! Convert the C function pointer into something that
@@ -43,6 +44,7 @@ CALL C_F_PROCPOINTER(c_fun_ptr, fort_fun_ptr)
 result_char = fort_fun_ptr(the_code)
 
 ! Write the result to standard output.
+WRITE(*,*) "Your elusive letter is:"
 WRITE(*,*) result_char
-
+WRITE(*,*) "What a lot of work to get one letter!"
 END PROGRAM example_2

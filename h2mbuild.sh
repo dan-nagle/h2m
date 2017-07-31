@@ -56,10 +56,10 @@ is_absolute()
 download=no  # Default is no installation of clang/llvm
 download_dir="./clang-llvm"  # Default installation directory is ./clang-llvm
 download_cmake="no"
-download_cmake_dir="./cmake_dir"
-install_cmake_dir="/usr/local/bin"
+download_cmake_dir="./cmake_dir"  # Default cmake download url
+install_cmake_dir="/usr/local/bin"  # default cmake installation directory
 CMAKE_URL="https://cmake.org/files/v3.8/cmake-3.8.2.tar.gz"  # Default cmake url
-LLVM_DIR=
+LLVM_DIR=  # These empty variables have no reasonable defaults.
 CLANG_DIR=
 LLVM_LIB_PATH=
 LLVM_INCLUDE_PATH=
@@ -67,14 +67,14 @@ CLANG_LIB_PATH=
 CLANG_BUILD_PATH=
 CLANG_INCLUDE_PATH=
 CMAKE_INSTALL_PREFIX=
-force="no"
-all="yes"
-install="no"
-interactive="no"
-LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"
+force="no"  # Don't skip warnings.
+all="no"  # Don't link all LLVM libraries.
+install="no"  # By default do not install.
+interactive="no"  # By default do not be interactive.
+LLVM_URL="http://releases.llvm.org/4.0.0/llvm-4.0.0.src.tar.xz"  # Default download URLS
 CLANG_URL="http://releases.llvm.org/4.0.0/cfe-4.0.0.src.tar.xz"
-install_h2m="no"
-INSTALL_H2M_DIR="/usr/local/bin"
+install_h2m="no"  # By default do not install h2m.
+INSTALL_H2M_DIR="/usr/local/bin"  # Default h2m installation location.
 CXX_COMPILER=
 
 
@@ -625,6 +625,7 @@ which cmake>/dev/null || error_report "Error: CMake is needed to build LLVM/Clan
 
 # Attempt to execute the cmake commands to create h2m
 # The echo use is necessary to keep cmake from interpretting everything as the source directory
+echo "DEBUG: $cmake_command"
 cmake . `echo "$cmake_command" ` || exit 1
 make || exit 1
 
