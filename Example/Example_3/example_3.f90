@@ -12,7 +12,7 @@ INTEGER i, j ! Loop counters
 
 h2m_my_global_other = 9 ! This is set to zero in C
 
-! Initialize the variables
+! Initialize the variables in C.
 CALL initialize_vars
 
 WRITE(*,*) "Our character is: "
@@ -22,7 +22,7 @@ WRITE(*,*) my_global_double
 WRITE(*,*) "Our _my_global_other/h2m_my_global_other is: "
 WRITE(*,*) h2m_my_global_other
 
-! Print out the small array (which is four long)
+! Print out the small array (which is twelve numbers long)
 WRITE(*,*) "Our array is: "
 do i = 1, 3
   do j = 1, 4
