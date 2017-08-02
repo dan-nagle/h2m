@@ -69,7 +69,7 @@ string FunctionDeclFormatter::getParamsTypesASString() {
   }
   // We have placed all the types as strings in a set. Now we iterate
   // through the set and write them into the string of param types.
-  for (std::set<string>::iterator iter = param_types.begin(); iter != 
+  for (std::set<string>::iterator iter = param_types.begin(); iter !=
       param_types.end(); ++iter) {
     paramsType += *iter + ", ";
   }
@@ -97,6 +97,8 @@ string FunctionDeclFormatter::getParamsDeclASString() {
     if (pname.empty()) {
       pname = "arg_" + to_string(index);
     }
+    // The names of function parameters are usually
+    // irrelevant to interoperability.
     if (pname.front() == '_') {  // Illegal character. Append a prefix.
       string old_pname = pname;
       pname = "h2m" + pname;
@@ -107,6 +109,8 @@ string FunctionDeclFormatter::getParamsDeclASString() {
       error_string = pname + ", function parameter.";
     }
     
+    // Get the underlying type of the function argument (strip
+    // of typedefs in most cases).
     CToFTypeFormatter tf((*it)->getOriginalType(), funcDecl->getASTContext(),
         sloc, args);
 
@@ -178,7 +182,7 @@ string FunctionDeclFormatter::getParamsNamesASString() {
   return paramsNames;
 };
 
-// This simply determines whether or not the location of
+// This simply determines whether or not the locations of
 // all arguments are valid and returns true if so.
 bool FunctionDeclFormatter::argLocValid() {
   for (auto it = params.begin(); it != params.end(); it++) {
@@ -294,6 +298,8 @@ string FunctionDeclFormatter::getFortranFunctDeclASString() {
     // all valid fortran lengths.
     std::istringstream in(fortranFunctDecl);
     for (std::string line; std::getline(in, line);) {
+      // Trim the line to the point where a comment begins if it does.
+      line = line.substr(0, line.find_first_of("!"));
       if (line.length() > CToFTypeFormatter::line_max) {
         current_status = CToFTypeFormatter::BAD_LINE_LENGTH; 
         error_string = line + ", in function.";

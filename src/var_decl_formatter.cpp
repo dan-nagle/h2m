@@ -621,13 +621,14 @@ string VarDeclFormatter::getFortranVarDeclASString() {
     } else if (varDecl->getType().getTypePtr()->isArrayType()) {
       // Handle initialized numeric arrays specifically in the helper function.
       // We fetch the identifier here only to use it later to check for repeats
-      // or names which are too long. The warnings are printed elsewhere.
+      // or names which are too long. The warnings are printed in the helper.
       identifier = varDecl->getNameAsString();
       if (identifier[0] == '_') {
         identifier = "h2m" + identifier;
       }
       // This strips off potential size modifiers so we only get the name
-      // of the array: n rather than n(4,3).
+      // of the array: n rather than n(4,3). We want to check for duplicates
+      // of 'n' not, 'n(4,3)', so this is important.
       identifier = identifier.substr(0, identifier.find_first_of("("));
       vd_buffer = getFortranArrayDeclASString();
     } else if (varDecl->getType().getTypePtr()->isPointerType() && 
@@ -647,7 +648,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
       }
       // Determine the state of the declaration. Is there something declared? Is it commented out?
       // Create the declaration in correspondence with this. Add in the bindname, which may be empty
-      if (value.empty()) {
+      if (value.empty()) {  // The variable is not initialized.
         bool problem = false;  // The helper sets this flag to show status.
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer +=  ") :: " + identifier + "\n";
@@ -655,7 +656,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           current_status = CToFTypeFormatter::BAD_TYPE;
           error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
-      } else if (value[0] == '!') {
+      } else if (value[0] == '!') {  // I think this is now obsolete -Michelle
         bool problem = false;  // The helper will set this flag if it sees an illegal type.
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer +=  + ") :: " + identifier + " " + value + "\n";
@@ -663,9 +664,10 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           current_status = CToFTypeFormatter::BAD_TYPE;
           error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
-      } else {
+      } else {  // The variable is initialized. Provide its value.
         // A parameter may not have a bind(c) attribute.
         bool problem = false;  // The helper will set this flag if it sees an illegal type.
+        // Recall taht a BIND attribute is illegal for a parameter.
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", parameter, public :: " +
             identifier + " = " + value + "\n";
         if (problem == true) {  // We've found an unrecognized type
@@ -696,7 +698,7 @@ string VarDeclFormatter::getFortranVarDeclASString() {
           current_status = CToFTypeFormatter::BAD_TYPE;
           error_string = tf.getFortranTypeASString(true, problem) + ", in variable.";
         }
-      } else if (value[0] == '!') {  // This is left over from old logic but is her for safety.
+      } else if (value[0] == '!') {  // This, again, appears to be obsolete -Michelle
         bool problem = false;
         vd_buffer = tf.getFortranTypeASString(true, problem) + ", public, BIND(C" + bindname;
         vd_buffer += ") :: " + identifier + " " + value + "\n";
