@@ -1,0 +1,178 @@
+Here are some improvements and a very brief discussion of some
+of the implementation details of h2m. It may not be enlightening,
+but it may be worth a look.
+
+IMPROVEMENT LIST:
+I am greatly ashamed of many of these. They were things that
+just never occurred to me or somehow didn't get done and I 
+apologize for that.
+
+1. Automatic line length correction really should have been
+done. I have bemoaned this oversight before.
+2. It could greatly simplify logic and avoid code repetition
+if all the formatter classes inheritted from one abstract
+formatter. They all have to have many similar methods. I 
+can't believe I didn't just do this early on, but somehow
+it never occurred to me and now it is too late.
+3. It might make sense to change the current function which
+checks for the presence of a lead underscore so that, rather than
+just warning, it takes a reference to the string and actually
+prepends "h2m" to the front of the illegal identifier and no
+one else has to worry about it.
+4. Some of the solutions for dealing with character arrays
+feel jerry-rigged and it bothers me, but I was never able to
+come up with a better solution.
+5. I'm not sure that the tool should really delete output when
+a tool error occurs. Errors are false alarms so frequently that
+I'm not sure anymore if this is really a good idea.
+6. Unsigned numbers actually present security concerns in 
+certain instances. There should probably be an option to
+find unsigned specifiers and comment out their segments.
+This is especially annoying in macros. Perhaps unsigned 
+macros shouldn't be translated at all?
+7. Certain places, there are string handling functions
+which could, theoretically, throw exceptions that are 
+not caught. I'm not very familiar with C++ exceptions so
+I just tried to make sure that an exception couldn't occur.
+However, there really should be code to handle these.
+8. The current design of the function used to create a
+structured type could probably be revised to be simpler
+and better organized. I did improve the original function
+which was quite a bit of a mess.
+9. I'm not convinced that the use of a union shouldn't 
+just trigger error conditions whenever it is detected.
+They are just disasters.
+10. The build script makes attempts to check for the presence
+of a proper version of Clang or GCC before building begins,
+but I never found a very good way to do this and it is 
+far from full-proof. 
+11. At some point, the tool will probably have to be 
+changed to work with a newer version of Clang. This will
+require a revision to the method BeginSourceFile because it 
+will no longer take two arguments. The source file's name
+will have to be fetched inside the function. There are 
+methods to do that. The filename could be passed in from
+the main function (which will always know the file's name)
+if that were most convenient.
+12. Namespace chaos is pretty much unavoidable here. There
+were already several namespaces included in the software 
+when I got it and it's just not something I was ever able
+to think about fixing. For many of these functions, I have
+no idea whether they are in namespace Clang::tooling or
+namespace llvm:: or namespace std::... In some places, where
+I knew, and where specificying would not make the lines
+intolerably long, I have given namespace specifiers even
+though they are not actually necessary most of the time.
+13. There are some functions which are currently in
+CToFTypeFormatter that I'm not convinced shouldn't be
+in the MacroFormatter class. Maybe they should be static
+functions in the MacroFormatter class, and maybe they 
+shouldn't. They could potentially be useful elsewhere if
+the tool expands, but currently many of these functions 
+such as isHex or GroomFloatinPoint are only used by the 
+macro functions.
+14. I'm sorry I didn't always manage to keep capitalization
+conventions consistent. I just never got around to fixing
+that. Usually local variables will be lower case and may
+include underscores. Usually functions are camel case, but
+sometimes they have a lower case first letter. I almost
+always make my functions' first letters capitals, but 
+Garnet usually made them lower case, and there was already
+some lack of consistency when I got here which encouraged
+me to be sloppy.
+
+
+Code Location:
+The curent h2m code is split between several files, two headers
+and six source files. I have tried very hard to make it maintainable, 
+but I never had the chance to really make it nice. I just ran out
+of time and had to settle for some quick and dirty solutions to 
+some problems. I'll tell you a little bit about some of the 
+funny things you might find in the software so that it doesn't
+confuse you as much as it confused me.
+
+Command Line Arguments:
+Clang tools use their own special syntax for command arguments. 
+The current command arguments can be found in src/h2m.cpp, which
+is where the main() function is.
+
+Passing Arguments to the Tools:
+I kept on having to add new arguments, so I created an Arguments
+class which passes arguments to the tool (and also passes the
+determined name of the module back out so that it can be used
+in the USE module_name statements that link files during 
+recursive processing). The constructor is ridiculously long
+at this point, but this still seems to be the best solution.
+
+Running Clang Tools:
+The main function does the task of setting up and running the two
+Clang tools which comprise h2m. Clang tools are run through 
+FrotendActionFactories, which can create a new action for every
+file provided. The main function must first create a compilation
+database in order to keep track of options and paths. This step
+need only be done once. 
+The first tool creates a recursive stack of header files.
+The files are removed from this stack and put into another stack,
+but each file is only added to this stack the first time that
+it is seen. The files are then translated in the order seen in
+this second created stack. This gives an approximate order of
+the files seen by the preprocessor. Essentially, the bottom of
+the final stack is the last file that the preprocessor entered,
+the second to last is the second to last file it entered, etc.
+
+The Second Tool and the Formatter Classses:
+The second Clang tool actually translates C headers. The Clang
+AST can be traversed with NodeConsumer objects. The nodes are
+querried for their location to determine whether they should
+be translated at all (unless using the together option, nodes which
+are not in the main file are ignored) and then an appropriate
+object to translate the node is created. Most of these formatter
+classes are defined in src/decl_formatters.cpp. These are shorter
+classes that handle enums, typedefs, and structs. A variable 
+definition is more complicated and src/var_decl_formatter.cpp
+contains the class which translates variable declarations,
+including structure and array definitions, and handles their
+initialization values. The CToFTypeFormatter class is a utility
+class containing functions all the other classes need. It is 
+used by the MacroFormatter class to determine whether an object
+like macro is similar to an integer, it is used by all classes
+to determine the appropriate Fortran type for a variable or
+declaration, and it contains special functions for determining
+array dimensions and fetching a variable's name. The MacroFormatter
+class is quite different. Macros do not have nodes in the AST
+in Clang, thus are difficult to translate. Function like macros
+are translated approximately into subroutine declarations. Object
+like macros may be translated into integer, double, binary, hex,
+or octal constants if they can be positively identified as such
+by string operations. They are commented out if they cannot be
+positively identified as some sort of translatable macro. This 
+code is found in src/macro_formatter.cpp. Function declarations
+require translation either to a subroutine (for void functions)
+or a function (for non-void functions) and may involve arrays
+with variable sizes. There are many complexities involved in
+translating a function, including determining which types to
+include from the intrinsic iso_c_binding module, the names of
+the parameters, and the types of the parameters. This code
+is found in src/function_decl_formatter.cpp.
+
+Error Handling:
+The logic for determining what to comment out is still
+somewhat messy, but now depends on a status variable found
+within every translator class and defined in the 
+CToFTypeFormatter class. Each class instance has a status
+variable which is a member of an enumeration defined in 
+CToFTypeFormatter. At the end of each translation, as the
+output from the method to generate the translation is called,
+a static function in CToFTypeFormatter looks at the status
+variable's value, the arguments, and the error string which
+is included with the translation and decides whether or not
+to comment out the translation and whether or not to print
+a warning of some kind.
+
+There is some more hopefully helpful information about this
+software. I'm not sure if it is really useful. I hope that
+it didn't confuse you more.
+Contact me if you need help!
+-Michelle Anderson
+and04497@umn.edu
+michellegecko@gmail.com
