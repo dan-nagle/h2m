@@ -10,7 +10,7 @@
 // translate C to Fortran.
 #include "formatters.h"
 
-//------------Visitor class decl----------------------------------------------------------------------------------------------------
+//------------Visitor class decl------------------------------------------------
 
 // Main class which works to translate the C to Fortran by calling helpers.
 // It performs actions to translate every node in the AST. It keeps track
@@ -101,7 +101,11 @@ public:
   // When a source file begins, the callback to trace filechanges is registered
   // so that all changes are recorded and the order of includes can be preserved
   // in the stack.
+#if LLVM_VERSION_MAJOR < 5
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override {
+#else
+  bool BeginSourceFileAction(CompilerInstance &ci) override {
+#endif
     Preprocessor &pp = ci.getPreprocessor();
     pp.addPPCallbacks(llvm::make_unique<TraceFiles>(ci, stackfiles, args));
     return true;
@@ -146,7 +150,7 @@ private:
 };
   
 // Classes, specifications, etc for the main translation program!
-//-----------PP Callbacks functions----------------------------------------------------------------------------------------------------
+//-----------PP Callbacks functions---------------------------------------------
 // Class used by the main TNActions to inspect and translate C macros.
 // It pays no other attention to the preprocessor. This class is 
 // created by the TNActions and then follows the preprocessor throughout
@@ -166,7 +170,7 @@ private:
   Arguments &args;
 };
 
-  //-----------the main program----------------------------------------------------------------------------------------------------
+  //-----------the main program-------------------------------------------------
 
 // This is the class which begins the translation process. HandleTranslationUnit
 // is the main entry into the Clang AST. TranslationUnit is the overarching
@@ -201,7 +205,11 @@ public:
   // every Fortran module. Note that the prototype for this function was
   // changed after LLVM 4.0 in a way that is completley incompatible with
   // this implementation (it no longer takes StringRef Filename).
+#if LLVM_VERSION_MAJOR < 5
   bool BeginSourceFileAction(CompilerInstance &ci, StringRef Filename) override;
+#else
+  bool BeginSourceFileAction(CompilerInstance &ci) override;
+#endif
 
   // This action at the completion of a source file traversal, after code translation
   // appends in the collected functions wrapped in an interface and closes the 

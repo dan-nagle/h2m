@@ -10,8 +10,11 @@
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
+#include "clang/Basic/Version.h"
 // Declares llvm::cl::extrahelp.
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Config/llvm-config.h"
 
 // recursive converter
 #include "clang/AST/ASTConsumer.h"
@@ -58,10 +61,10 @@ using namespace llvm;
 using namespace std;
 
 
-//------------Utility Classes for Argument parsing etc------------------------------------
+//------------Utility Classes for Argument parsing etc--------------------------
 class Arguments;  // This class uses part of CToFTypeFormatter, but CTFTF needs it, too
 
-//------------Formatter class decl----------------------------------------------------------------------------------------------------
+//------------Formatter class decl----------------------------------------------
 // This class holds a variety of functions used to transform C syntax into Fortran.
 class CToFTypeFormatter {
 public:
@@ -153,7 +156,7 @@ private:
   Arguments &args;
 };
 
-//------------Utility Classes for Argument parsing etc------------------------------------
+//------------Utility Classes for Argument parsing etc--------------------------
 // This is used to pass arguments to the tool factories and actions so I don't have to keep
 // changing them if more are added. This keeps track of the quiet and silent options,
 // as well as the output file, and allows greater flexibility in the future.

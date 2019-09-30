@@ -2,7 +2,7 @@
 // translator.
 
 #include "h2m.h"
-//-----------formatter functions----------------------------------------------------------------------------------------------------
+//-----------formatter functions------------------------------------------------
 
 // -----------initializer MacroFormatter--------------------
 // The preprocessor is used to find the macro names in the source files. The macro is 
@@ -189,12 +189,17 @@ string MacroFormatter::getFortranMacroASString() {
       size_t rParen = macroDef.find(')');
       string functionBody = macroDef.substr(rParen+1, macroDef.size()-1);
       fortranMacro = "INTERFACE\n";
-      if (md->getMacroInfo()->arg_empty()) {
+#if CLANG_VERSION_MAJOR < 5
+#define param_empty arg_empty
+#define param_begin arg_begin
+#define param_end arg_end
+#endif
+      if (md->getMacroInfo()->param_empty()) {
         fortranMacro += "SUBROUTINE "+ actual_macroName + "() BIND(C)\n";
       } else {
         fortranMacro += "SUBROUTINE "+ actual_macroName + "(";
-        for (auto it = md->getMacroInfo()->arg_begin (); it !=
-            md->getMacroInfo()->arg_end (); it++) {
+        for (auto it = md->getMacroInfo()->param_begin (); it !=
+            md->getMacroInfo()->param_end (); it++) {
           // Assemble the macro arguments in a list and check names for illegal underscores. 
           string argname = (*it)->getName();
           if (argname.front() == '_') {

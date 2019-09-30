@@ -10,7 +10,7 @@
 // functions for node traversal.
 
 #include "h2m.h"
-//-----------formatter functions----------------------------------------------------------------------------------------------------
+//-----------formatter functions------------------------------------------------
 
 // Fetches the fortran module name from a given filepath Filename
 // IMPORTANT: ONLY call this ONCE for ANY FILE. The static 
@@ -23,10 +23,7 @@
 string Arguments::GenerateModuleName(string Filename) {
   // Map to keep track of the number of repeats seen.
   static std::map<string, int> repeats;
-  size_t slashes = Filename.find_last_of("/\\");
-  string filename = Filename.substr(slashes+1);
-  size_t dot = filename.find('.');
-  filename = filename.substr(0, dot);
+  string filename = llvm::sys::path::stem(Filename);
   if (repeats.count(filename) > 0) {  // We have found a repeated module name
     int append = repeats[filename];
     repeats[filename] = repeats[filename] + 1;  // Record the new repeat in the map
@@ -173,7 +170,7 @@ static cl::opt<bool> IgnoreDuplicate("ignore-duplicate", cl::cat(h2mOpts),
 static cl::opt<string> other(cl::ConsumeAfter, cl::desc("Front end arguments"));
 
 
-//-----------AST visit functions------------------------------------------------------
+//-----------AST visit functions------------------------------------------------
 
 // This function does the work of determining what the node currently under traversal
 // is and creating the proper object-translation object to handle it.
@@ -345,12 +342,12 @@ void TraverseNodeConsumer::HandleTranslationUnit(clang::ASTContext &Context) {
 
 // Executed when each source begins. This allows the boiler plate required for each
 // module to be added to the file.
+#if LLVM_VERSION_MAJOR < 5
 bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci, StringRef Filename)
+#else
+bool TraverseNodeAction::BeginSourceFileAction(CompilerInstance &ci)
+#endif
 {
-  fullPathFileName = Filename;
-  // We have to pass this back out to keep track of repeated module names
-  args.GenerateModuleName(Filename);
-
   // initalize Module and imports
   string beginSourceModule;
   beginSourceModule = "MODULE " + args.getModuleName() + "\n";
@@ -494,7 +491,9 @@ int main(int argc, const char **argv) {
         }
 
         // Create a tool to run on each file in turn
-        ClangTool stacktool(*Compilations, headerfile);  
+        ClangTool stacktool(*Compilations, headerfile);
+        // Extract module name from headerfile path
+        args.GenerateModuleName(headerfile);
         TNAFrontendActionFactory factory(modules_list, args);
         // modules_list is the growing string of previously translated modules this
         // module may depend on
@@ -529,6 +528,8 @@ int main(int argc, const char **argv) {
      }  // End looking through the stack and processing all headers (including the original).
 
     } else {  // No recursion, just run the tool on the first input file. No module list string is needed.
+      // Extract module name from inputfile path
+      args.GenerateModuleName(SourcePaths);
       TNAFrontendActionFactory factory("", args);
       tool_errors = Tool.run(&factory);
     }  // End processing of the translation
