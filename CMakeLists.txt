@@ -39,7 +39,7 @@ if(LLVM_FOUND) # We found the config and can use its definitions
     message(STATUS "Linking all LLVM libraries, as requested.")
     llvm_map_components_to_libnames(llvm_libs all)
   else()
-    llvm_map_components_to_libnames(llvm_libs support core irreader)
+    llvm_map_components_to_libnames(llvm_libs irreader)
   endif()
 elseif((EXISTS ${LLVM_LIB_PATH}) AND (EXISTS ${LLVM_INCLUDE_PATH})) # Woe, all must be done by hand
   message(STATUS "Found LLVM directory information")
@@ -90,7 +90,7 @@ endif()
 find_package(Clang CONFIG)
 if(Clang_FOUND) # We found the config and can use its definitions
   message(STATUS "Found Clang")
-  message(STATUS "Proceeding from ClangConfig.cmake")
+  message(STATUS "Proceeding from ${Clang_CONFIG}")
 
   # A bug in one of the releases means that the directories might need manual specification
   # Two different directory paths are needed to find all the clang includes.
