@@ -38,6 +38,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/ToolOutputFile.h"
 
+#if LLVM_VERSION_MAJOR < 6
+#define ToolOutputFile tool_output_file
+#endif
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -170,7 +173,7 @@ public:
   // illegal C names automatically. h is whether to hide function like
   // macros (don't translate them) The remaining options are whether
   // or not to NOT comment out things h2m normally checks for.
-  Arguments(bool q, bool s, llvm::tool_output_file &out, bool sysheaders,
+  Arguments(bool q, bool s, llvm::ToolOutputFile &out, bool sysheaders,
       bool t, bool a, bool b, bool h, bool bad_name_length,
       bool bad_line_length, bool bad_type, bool bad_anon, bool duplicate) :
       quiet(q), silent(s), output(out), no_system_headers(sysheaders) ,
@@ -193,7 +196,7 @@ public:
 
    }
   // These functions are setters and getters for the arguments members.
-  llvm::tool_output_file &getOutput() { return output; }
+  llvm::ToolOutputFile &getOutput() { return output; }
   bool getQuiet() { return quiet; } 
   bool getSilent() { return silent; }
   bool getNoSystemHeaders() { return no_system_headers; }
@@ -218,7 +221,7 @@ public:
   
 private:
   // Where to send translated Fortran code
-  llvm::tool_output_file &output;
+  llvm::ToolOutputFile &output;
   // Should we report lines which are commented out?
   bool quiet;
   // Should we report illegal identifiers and more serious issues?

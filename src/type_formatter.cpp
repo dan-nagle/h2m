@@ -211,7 +211,7 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
   string dim_str = "";  // String of dimensions to return.
 
   QualType element_type = c_qualType;  // Element type of the array for looping.
-  const Type *the_type_ptr = element_type.getTypePtr();
+  const clang::Type *the_type_ptr = element_type.getTypePtr();
   // Loop through the array's dimensions, pulling off layers by fetching
   // the element types and getting their array information. The nullptr
   // check is just for safety.
@@ -248,7 +248,7 @@ string  CToFTypeFormatter::getFortranArrayDimsASString() {
         }
       // If an array is declared as * size, we can just add "*, ". There are three
       // possible array size modifiers, Normal, Star, and Static (func decls only)
-      } else if (vat->getSizeModifier() == ArrayType::ArraySizeModifier::Star) {
+      } else if (vat->getSizeModifier() == clang::ArrayType::ArraySizeModifier::Star) {
         return "*";  // The approximation is as an assumed size array.
         // Fortran does not allow syntax such as int(*,*,*) or double(5,*).
       } else {  // We cannot evaluate the expression. We fetch the source text.
@@ -513,7 +513,7 @@ string CToFTypeFormatter::getFortranTypeASString(bool typeWrapper, bool &problem
 
   // Handle an array type declaration
   } else if (c_qualType.getTypePtr()->isArrayType()) {
-    const ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
+    const clang::ArrayType *at = c_qualType.getTypePtr()->getAsArrayTypeUnsafe ();
     QualType e_qualType = at->getElementType ();
     // Call this function again on the type found inside the array
     // declaration. This recursion will determine the correct base type.

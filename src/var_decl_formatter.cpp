@@ -453,7 +453,7 @@ string VarDeclFormatter::getFortranArrayDeclASString() {
       arrayDecl += tf.getFortranIdASString(identifier) + "\n";
     } else {
       // The array is declared and initialized. We must tranlate the initialization.
-      const ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
+      const clang::ArrayType *at = varDecl->getType().getTypePtr()->getAsArrayTypeUnsafe ();
       QualType e_qualType = at->getElementType();
       Expr *exp = varDecl->getInit();
       // Whether this is a char array or not will have to be checked several times.

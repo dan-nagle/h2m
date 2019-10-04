@@ -404,7 +404,7 @@ int main(int argc, const char **argv) {
       filename = "-";  // This will send output to stdout.
     }
     // The file is opened in text mode
-    llvm::tool_output_file OutputFile(filename, error, llvm::sys::fs::F_Text);
+    llvm::ToolOutputFile OutputFile(filename, error, llvm::sys::fs::F_Text);
     if (error) {  // Error opening file
       errs() << "Error opening output file: " << filename << error.message() << "\n";
       return(1);  // We can't possibly keep going if the file can't be opened.
