@@ -269,6 +269,10 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 
 };
 
+#if LLVM_VERSION_MAJOR < 8
+#define getBeginLoc getLocStart
+#define getEndLoc getLocEnd
+#endif
 
 // Currently, there are no attempts made to traverse and translate statements into 
 // Fortran. This method simply comments out statements and warns about them if
@@ -276,15 +280,15 @@ bool TraverseNodeVisitor::TraverseDecl(Decl *d) {
 bool TraverseNodeVisitor::TraverseStmt(Stmt *x) {
   string stmtText;
   // Get the statement text from the Lexer.
-  string stmtSrc = Lexer::getSourceText(CharSourceRange::getTokenRange(x->getLocStart(), 
-      x->getLocEnd()), TheRewriter.getSourceMgr(), LangOptions(), 0);
+  string stmtSrc = Lexer::getSourceText(CharSourceRange::getTokenRange(x->getBeginLoc(), 
+      x->getEndLoc()), TheRewriter.getSourceMgr(), LangOptions(), 0);
   // comment out stmtText using a string stream to add ! after every newline
   std::istringstream in(stmtSrc);
   for (std::string line; std::getline(in, line);) {
     // Output warnings about commented out statements only if a loud run is in progress.
     if (args.getQuiet() == false && args.getSilent() == false) {
       errs() << "Warning: statement " << stmtText << " commented out.\n";
-      CToFTypeFormatter::LineError(TheRewriter.getSourceMgr().getPresumedLoc(x->getLocStart()));
+      CToFTypeFormatter::LineError(TheRewriter.getSourceMgr().getPresumedLoc(x->getBeginLoc()));
     }
     stmtText += "! " + line + "\n";
   }

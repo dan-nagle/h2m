@@ -178,6 +178,11 @@ void VarDeclFormatter::getFortranArrayEleASString(InitListExpr *ile, string &arr
   
 };
 
+#if LLVM_VERSION_MAJOR < 8
+#define getBeginLoc getLocStart
+#define getEndLoc getLocEnd
+#endif
+
 // This will attempt to boil any Expr down into a corresponding
 // Fortran string, but was specifically designed to be a recursive
 // helper for fetching structures embeded in structure definitions.
@@ -328,8 +333,8 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
             eleVal = "UntranslatableArray:";
             current_status = CToFTypeFormatter::BAD_ARRAY;
             // Fetch the array text and return that.
-            string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
-                element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+            string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getBeginLoc(),
+                element->getEndLoc()), rewriter.getSourceMgr(), LangOptions(), 0);
             eleVal += value;
             error_string = value;
          }
@@ -344,8 +349,8 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isFunctionPointerType()) {
           eleVal = "C_NULL_FUNPTR";
           // Fetch the initialization text for this function pointer.
-          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
-              element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getBeginLoc(),
+              element->getEndLoc()), rewriter.getSourceMgr(), LangOptions(), 0);
           eleVal = "& ! Function pointer " + value + " set to C_NULL_FUNPTR\n" + eleVal;
           if (args.getSilent() == false) {
             errs() << "Warning: pointer value " << value << " set to C_NULL_FUNPTR\n";
@@ -354,16 +359,16 @@ string VarDeclFormatter::getFortranStructFieldsASString(Expr *exp) {
         } else if (e_qualType.getTypePtr()->getUnqualifiedDesugaredType()->isPointerType() == true) {
           eleVal = "C_NULL_PTR";      
           // Fetch the initialization for this pointer.
-          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
-              element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getBeginLoc(),
+              element->getEndLoc()), rewriter.getSourceMgr(), LangOptions(), 0);
           eleVal = "& ! Pointer " + value + " set to C_NULL_PTR\n" + eleVal;
           if (args.getSilent() == false) {
             errs() << "Warning: pointer value " << value << " set to C_NULL_PTR\n";
             CToFTypeFormatter::LineError(sloc);
           }
         } else {  // We have no idea what this is or how to translate it. Warn and comment out.
-          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getLocStart(),
-              element->getLocEnd()), rewriter.getSourceMgr(), LangOptions(), 0);
+          string value = Lexer::getSourceText(CharSourceRange::getTokenRange(element->getBeginLoc(),
+              element->getEndLoc()), rewriter.getSourceMgr(), LangOptions(), 0);
           eleVal = "UntranslatableComponent:" + value;
           error_string = "Untranslatable structure componenet: " + value;
           current_status = CToFTypeFormatter::BAD_STRUCT_TRANS;
